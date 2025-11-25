@@ -79,9 +79,10 @@ export async function runBackendCoverage(projectRoot: string): Promise<CoverageR
   }
 
   try {
-    // Run cargo llvm-cov with JSON output for parsing
-    // Exclude main.rs (binary entry point)
-    const result = await $`cargo llvm-cov --json --ignore-filename-regex "main\\.rs"`.cwd(tauriDir).quiet().nothrow();
+    // Run cargo +nightly llvm-cov with JSON output for parsing
+    // Uses nightly for #[coverage(off)] attribute support
+    // Untestable code is excluded via #[coverage(off)] in source files
+    const result = await $`cargo +nightly llvm-cov --json`.cwd(tauriDir).quiet().nothrow();
 
     const stdout = result.stdout.toString();
     const stderr = result.stderr.toString();

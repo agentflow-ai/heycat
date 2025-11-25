@@ -22,8 +22,8 @@ bun test --coverage
 
 if [ $? -ne 0 ]; then
   echo ""
-  echo "Pre-commit failed: frontend tests failed or coverage < 80%"
-  echo "Fix failing tests and ensure adequate coverage before committing."
+  echo "Pre-commit failed: frontend tests failed or coverage < 100%"
+  echo "Fix failing tests and ensure 100% coverage before committing."
   exit 1
 fi
 
@@ -36,16 +36,15 @@ echo "Frontend tests passed!"
 echo ""
 echo "Running backend tests with coverage..."
 cd src-tauri
-# Exclude main.rs (binary entry point)
-# Note: Line threshold is 65% to account for untestable GUI code (run function)
-# Function threshold remains at 80%
-cargo llvm-cov --ignore-filename-regex "main\.rs" --fail-under-lines 65 --fail-under-functions 80
+# Uses +nightly toolchain for #[coverage(off)] attribute support
+# 100% coverage required - untestable code must be excluded via #[coverage(off)]
+cargo +nightly llvm-cov --fail-under-lines 100 --fail-under-functions 100
 
 if [ $? -ne 0 ]; then
   echo ""
-  echo "Pre-commit failed: backend tests failed or coverage insufficient"
-  echo "Required: 65% line coverage, 80% function coverage"
-  echo "Fix failing tests and ensure adequate coverage before committing."
+  echo "Pre-commit failed: backend tests failed or coverage < 100%"
+  echo "Fix failing tests and ensure 100% coverage before committing."
+  echo "Use #[coverage(off)] to exclude untestable code."
   cd ..
   exit 1
 fi
