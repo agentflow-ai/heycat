@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "prepare": "husky",
-    "test": "bun test",
-    "test:coverage": "bun test --coverage"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "react": "^18.3.1",
