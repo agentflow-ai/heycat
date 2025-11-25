@@ -61,20 +61,26 @@ Project uses a Kanban-style issue tracking system in `/agile`. Use the `agile` s
 
 ## TCR (Test-Commit-Refactor) Workflow
 
-The TCR skill enforces test discipline through Claude Code hooks:
+The TCR skill enforces test discipline through two layers:
 
+### Development Feedback (Claude Code Hook)
 1. **Write a failing test first** (red)
 2. **Write code to make the test pass** (green)
 3. **Mark todo as completed** → tests run automatically
 4. **Tests pass** → WIP commit created automatically
 5. **Tests fail** → continue refactoring (after 5 failures, reconsider approach)
-6. **Git commits blocked** if tests are failing
+
+### Pre-Commit Enforcement (Husky)
+- Husky runs `bun test --coverage` before every commit
+- Requires **80% line and function coverage** (configured in `bunfig.toml`)
+- Commits blocked if tests fail or coverage is insufficient
 
 **Commands:**
 ```bash
 bun .claude/skills/tcr/tcr.ts run <files>   # Run tests manually
 bun .claude/skills/tcr/tcr.ts status        # Show current state
 bun .claude/skills/tcr/tcr.ts reset         # Reset failure counter
+bun test --coverage                          # Run all tests with coverage
 ```
 
 **Test discovery**: Convention-based (`foo.ts` → `foo.test.ts` or `foo.spec.ts`)
