@@ -61,7 +61,7 @@ Project uses a Kanban-style issue tracking system in `/agile`. Use the `agile` s
 
 ## TCR (Test-Commit-Refactor) Workflow
 
-The TCR skill enforces test discipline through two layers:
+The TCR skill enforces test discipline through two layers for both frontend and backend:
 
 ### Development Feedback (Claude Code Hook)
 1. **Write a failing test first** (red)
@@ -71,16 +71,31 @@ The TCR skill enforces test discipline through two layers:
 5. **Tests fail** → continue refactoring (after 5 failures, reconsider approach)
 
 ### Pre-Commit Enforcement (Husky)
-- Husky runs `bun test --coverage` before every commit
-- Requires **80% line and function coverage** (configured in `bunfig.toml`)
+- Husky runs both **frontend** and **backend** tests with coverage before every commit
+- **Frontend**: 80% line and function coverage (configured in `bunfig.toml`)
+- **Backend**: 65% line, 80% function coverage (lower line threshold accounts for untestable GUI code)
+- Backend enforced via `cargo llvm-cov --fail-under-lines 65 --fail-under-functions 80`
 - Commits blocked if tests fail or coverage is insufficient
 
-**Commands:**
+### Prerequisites
+
 ```bash
-bun .claude/skills/tcr/tcr.ts run <files>   # Run tests manually
-bun .claude/skills/tcr/tcr.ts status        # Show current state
-bun .claude/skills/tcr/tcr.ts reset         # Reset failure counter
-bun test --coverage                          # Run all tests with coverage
+# Required for Rust coverage (commits will be blocked without it)
+cargo install cargo-llvm-cov
 ```
 
-**Test discovery**: Convention-based (`foo.ts` → `foo.test.ts` or `foo.spec.ts`)
+### Commands
+
+```bash
+bun .claude/skills/tcr/tcr.ts run <files>       # Run tests manually
+bun .claude/skills/tcr/tcr.ts status            # Show current state
+bun .claude/skills/tcr/tcr.ts status --coverage # Show state with coverage metrics
+bun .claude/skills/tcr/tcr.ts coverage          # Run coverage checks (both targets)
+bun .claude/skills/tcr/tcr.ts coverage frontend # Run frontend coverage only
+bun .claude/skills/tcr/tcr.ts coverage backend  # Run backend coverage only
+bun .claude/skills/tcr/tcr.ts reset             # Reset failure counter
+```
+
+### Test Discovery
+- **Frontend**: Convention-based (`foo.ts` → `foo.test.ts` or `foo.spec.ts`)
+- **Backend**: Rust tests in `#[cfg(test)]` modules (`src-tauri/src/*.rs`)

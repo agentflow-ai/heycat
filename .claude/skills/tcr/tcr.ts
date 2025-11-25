@@ -5,6 +5,7 @@ import { handleStatus } from "./commands/status";
 import { handleReset } from "./commands/reset";
 import { handleHelp } from "./commands/help";
 import { handleHookTodoComplete } from "./commands/hook-todo-complete";
+import { handleCoverage } from "./commands/coverage";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -21,6 +22,9 @@ async function main(): Promise<void> {
         break;
       case "reset":
         await handleReset(commandArgs);
+        break;
+      case "coverage":
+        await handleCoverage(commandArgs);
         break;
       // Hidden hook handler (invoked by Claude Code hook)
       case "hook-todo-complete":

@@ -1,10 +1,14 @@
 import { loadState } from "../lib/state";
 import { findProjectRoot } from "../lib/utils";
 import { MAX_FAILURES } from "../lib/types";
+import { runAllCoverageChecks, formatPercentage } from "../lib/coverage";
 
-export async function handleStatus(_args: string[]): Promise<void> {
+export async function handleStatus(args: string[]): Promise<void> {
   const projectRoot = await findProjectRoot();
   const state = await loadState(projectRoot);
+
+  // Check if --coverage flag is passed
+  const showCoverage = args.includes("--coverage") || args.includes("-c");
 
   console.log("\n=== TCR Status ===\n");
 
@@ -20,7 +24,7 @@ export async function handleStatus(_args: string[]): Promise<void> {
   console.log(`Failures: [${failureBar}] ${state.failureCount}/${MAX_FAILURES}`);
 
   if (state.failureCount >= MAX_FAILURES) {
-    console.log("  ⚠️  Threshold reached - consider a different approach");
+    console.log("  Warning: Threshold reached - consider a different approach");
     console.log('  Run "tcr reset" to continue');
   }
 
@@ -28,7 +32,7 @@ export async function handleStatus(_args: string[]): Promise<void> {
   console.log("");
   if (state.lastTestResult) {
     const { passed, timestamp, error, target } = state.lastTestResult;
-    const status = passed ? "✅ PASS" : "❌ FAIL";
+    const status = passed ? "PASS" : "FAIL";
     const time = new Date(timestamp).toLocaleString();
 
     console.log(`Last Test: ${status}`);
@@ -40,6 +44,34 @@ export async function handleStatus(_args: string[]): Promise<void> {
     }
   } else {
     console.log("Last Test: No tests run yet");
+  }
+
+  // Coverage section (optional, runs tests to get current coverage)
+  if (showCoverage) {
+    console.log("");
+    console.log("=== Coverage ===");
+    console.log("(Running tests to collect coverage...)\n");
+
+    const coverage = await runAllCoverageChecks("both", projectRoot);
+
+    if (coverage.frontend) {
+      const { metrics, thresholds, passed } = coverage.frontend;
+      const statusStr = passed ? "PASS" : "FAIL";
+      console.log(`Frontend: ${formatPercentage(metrics.lines.percentage)} lines, ${formatPercentage(metrics.functions.percentage)} functions (${statusStr}, threshold: ${formatPercentage(thresholds.lines)})`);
+    }
+
+    if (coverage.backend) {
+      const { metrics, thresholds, passed, error } = coverage.backend;
+      const statusStr = passed ? "PASS" : "FAIL";
+      if (error && error.includes("cargo-llvm-cov not installed")) {
+        console.log(`Backend:  cargo-llvm-cov not installed`);
+      } else {
+        console.log(`Backend:  ${formatPercentage(metrics.lines.percentage)} lines, ${formatPercentage(metrics.functions.percentage)} functions (${statusStr}, threshold: ${formatPercentage(thresholds.lines)})`);
+      }
+    }
+  } else {
+    console.log("");
+    console.log("Tip: Run 'tcr status --coverage' to see current coverage metrics");
   }
 
   console.log("");

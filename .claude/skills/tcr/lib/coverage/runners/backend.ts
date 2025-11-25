@@ -80,7 +80,8 @@ export async function runBackendCoverage(projectRoot: string): Promise<CoverageR
 
   try {
     // Run cargo llvm-cov with JSON output for parsing
-    const result = await $`cargo llvm-cov --json`.cwd(tauriDir).quiet().nothrow();
+    // Exclude main.rs (binary entry point)
+    const result = await $`cargo llvm-cov --json --ignore-filename-regex "main\\.rs"`.cwd(tauriDir).quiet().nothrow();
 
     const stdout = result.stdout.toString();
     const stderr = result.stderr.toString();

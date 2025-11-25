@@ -8,7 +8,7 @@ import { runBackendCoverage } from "./runners/backend";
 // Re-exports
 // ============================================================================
 
-export { COVERAGE_CONFIG, DEFAULT_THRESHOLDS, getThresholdPercentage } from "./config";
+export { COVERAGE_CONFIG, FRONTEND_THRESHOLDS, BACKEND_THRESHOLDS, getThresholdPercentage } from "./config";
 export { checkCargoLlvmCovInstalled, runBackendCoverage } from "./runners/backend";
 export { runFrontendCoverage, runFrontendCoverageAll } from "./runners/frontend";
 export type {
