@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Run tests with coverage enforcement
+bun test --coverage
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "Pre-commit failed: tests failed or coverage < 80%"
+  echo "Fix failing tests and ensure adequate coverage before committing."
+  exit 1
+fi

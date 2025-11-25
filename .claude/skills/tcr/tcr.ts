@@ -5,7 +5,6 @@ import { handleStatus } from "./commands/status";
 import { handleReset } from "./commands/reset";
 import { handleHelp } from "./commands/help";
 import { handleHookTodoComplete } from "./commands/hook-todo-complete";
-import { handleHookPreCommit } from "./commands/hook-pre-commit";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -23,12 +22,9 @@ async function main(): Promise<void> {
       case "reset":
         await handleReset(commandArgs);
         break;
-      // Hidden hook handlers (invoked by Claude Code hooks)
+      // Hidden hook handler (invoked by Claude Code hook)
       case "hook-todo-complete":
         await handleHookTodoComplete();
-        break;
-      case "hook-pre-commit":
-        await handleHookPreCommit();
         break;
       case "help":
       case "--help":
