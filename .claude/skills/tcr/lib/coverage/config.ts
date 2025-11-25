@@ -8,21 +8,21 @@ import type { CoverageConfig, CoverageThresholds } from "./types";
  * Centralized coverage configuration for both frontend and backend.
  * This is the single source of truth for coverage thresholds.
  *
- * Note: Frontend thresholds should match bunfig.toml for consistency.
- * Backend thresholds use cargo-llvm-cov --fail-under-lines/functions flags.
+ * 100% coverage is required for all testable code.
+ * Untestable code must be explicitly excluded using #[coverage(off)] attribute.
  *
- * Backend line coverage is lower (65%) because Tauri's GUI initialization
- * code (run function) cannot be unit tested. Function coverage remains at 80%.
+ * Note: Frontend thresholds should match bunfig.toml for consistency.
+ * Backend uses cargo +nightly llvm-cov for #[coverage(off)] support.
  */
 
 export const FRONTEND_THRESHOLDS: CoverageThresholds = {
-  lines: 0.8, // 80%
-  functions: 0.8, // 80%
+  lines: 1.0, // 100%
+  functions: 1.0, // 100%
 };
 
 export const BACKEND_THRESHOLDS: CoverageThresholds = {
-  lines: 0.65, // 65% (accounts for untestable GUI code)
-  functions: 0.8, // 80%
+  lines: 1.0, // 100% (untestable code excluded via #[coverage(off)])
+  functions: 1.0, // 100%
 };
 
 export const COVERAGE_CONFIG: Record<"frontend" | "backend", CoverageConfig> = {
