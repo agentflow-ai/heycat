@@ -23,3 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[lints.rust]
+# Allow coverage and coverage_nightly cfg flags used by cargo-llvm-cov
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
+
