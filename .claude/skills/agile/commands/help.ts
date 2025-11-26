@@ -1,4 +1,4 @@
-import { STAGES, STAGE_NAMES } from "../lib/types";
+import { STAGES, STAGE_NAMES, SPEC_STATUSES, GUIDANCE_STATUSES } from "../lib/types";
 
 export function handleHelp(args: string[]): void {
   const [command] = args;
@@ -9,7 +9,7 @@ export function handleHelp(args: string[]): void {
         console.log(`
 Usage: agile.ts create <type> <name> [options]
 
-Create a new issue from a template.
+Create a new folder-based issue from a template.
 
 Arguments:
   type     Issue type: feature, bug, or task
@@ -20,6 +20,11 @@ Options:
   --owner, -o    Issue owner/assignee name
   --stage, -s    Initial stage (default: 1-backlog)
 
+Creates:
+  agile/<stage>/<name>/
+    - <type>.md              Main issue spec
+    - technical-guidance.md  Technical investigation document
+
 Examples:
   agile.ts create feature user-auth --title "User Authentication" --owner "Alice"
   agile.ts create bug fix-login --stage 2-todo --owner "Bob"
@@ -29,14 +34,20 @@ Examples:
         console.log(`
 Usage: agile.ts move <name> <stage>
 
-Move an issue to a different workflow stage.
+Move an issue folder to a different workflow stage.
 
 Arguments:
-  name     Issue name (with or without .md extension)
+  name     Issue name
   stage    Target stage: ${STAGES.join(", ")}
 
 Workflow (only sequential transitions allowed):
   1-backlog -> 2-todo -> 3-in-progress -> 4-review -> 5-done
+
+Validation Requirements:
+  - 2-todo: Description must be complete
+  - 3-in-progress: Owner assigned, technical guidance exists
+  - 4-review: All specs completed, guidance updated
+  - 5-done: All Definition of Done items checked
 
 Examples:
   agile.ts move user-auth 2-todo
@@ -63,7 +74,7 @@ Examples:
         console.log(`
 Usage: agile.ts archive <name>
 
-Archive an issue (move to agile/archive/ with timestamp).
+Archive an issue folder (move to agile/archive/<name>-<date>/).
 
 Arguments:
   name     Issue name to archive
@@ -76,7 +87,7 @@ Examples:
         console.log(`
 Usage: agile.ts delete <name>
 
-Permanently delete an issue.
+Permanently delete an issue folder and all its specs.
 
 Arguments:
   name     Issue name to delete
@@ -96,7 +107,9 @@ Arguments:
 
 Output includes:
   - Issue metadata (type, stage, owner, created date)
-  - Incomplete sections that still have placeholder text
+  - Specs status (pending, in-progress, completed)
+  - Technical guidance status
+  - Incomplete sections with placeholder text
   - Definition of Done progress
   - Stage-specific guidance and suggested actions
   - Readiness status for advancing to the next stage
@@ -104,6 +117,55 @@ Output includes:
 Examples:
   agile.ts work user-auth
   agile.ts work dark-mode
+`);
+        break;
+      case "spec":
+        console.log(`
+Usage: agile.ts spec <subcommand> [options]
+
+Manage specs within an issue folder.
+
+Subcommands:
+  list <issue>                          List all specs in an issue
+  add <issue> <name> [--title "..."]    Add a new spec
+  status <issue> <spec> <status>        Update spec status
+  delete <issue> <spec>                 Delete a spec
+  suggest <issue>                       AI-assisted spec breakdown
+
+Statuses: ${SPEC_STATUSES.join(", ")}
+
+Note: Completing a spec requires technical guidance to be updated first.
+
+Examples:
+  agile.ts spec list user-auth
+  agile.ts spec add user-auth login-flow --title "Implement Login Flow"
+  agile.ts spec status user-auth login-flow in-progress
+  agile.ts spec status user-auth login-flow completed
+  agile.ts spec delete user-auth unused-spec
+  agile.ts spec suggest user-auth
+`);
+        break;
+      case "guidance":
+        console.log(`
+Usage: agile.ts guidance <subcommand> [options]
+
+Manage technical guidance for an issue.
+
+Subcommands:
+  show <issue>                  Show technical guidance summary
+  update <issue>                Mark guidance as updated (set timestamp)
+  validate <issue>              Check if guidance is current
+  status <issue> <status>       Set guidance status
+
+Statuses: ${GUIDANCE_STATUSES.join(", ")}
+
+Technical guidance must be updated before completing specs.
+
+Examples:
+  agile.ts guidance show user-auth
+  agile.ts guidance update user-auth
+  agile.ts guidance validate user-auth
+  agile.ts guidance status user-auth active
 `);
         break;
       default:
@@ -114,29 +176,49 @@ Examples:
   }
 
   console.log(`
-Agile Workflow Manager
+Agile Workflow Manager (Folder-Based Issues with SPS Specs)
 
 Usage: agile.ts <command> [options]
 
-Commands:
-  create <type> <name>    Create a new issue (feature, bug, or task)
+Issue Commands:
+  create <type> <name>    Create a new issue folder (feature, bug, or task)
   move <name> <stage>     Move an issue to a different stage
-  list                    List all issues
+  list                    List all issues with spec progress
   work <name>             Analyze an issue and get stage-appropriate guidance
-  archive <name>          Archive an issue
-  delete <name>           Permanently delete an issue
-  help [command]          Show help for a command
+  archive <name>          Archive an issue folder
+  delete <name>           Permanently delete an issue folder
 
-Workflow Stages:
+Spec Commands:
+  spec list <issue>             List specs in an issue
+  spec add <issue> <name>       Add a new spec
+  spec status <issue> <s> <st>  Update spec status (pending/in-progress/completed)
+  spec delete <issue> <spec>    Delete a spec
+  spec suggest <issue>          AI-assisted spec breakdown
+
+Guidance Commands:
+  guidance show <issue>         Show technical guidance
+  guidance update <issue>       Mark guidance as updated
+  guidance validate <issue>     Check if guidance is current
+
+Workflow:
   1-backlog -> 2-todo -> 3-in-progress -> 4-review -> 5-done
 
-Only sequential transitions are allowed (forward or back by one stage).
+Issue Structure:
+  agile/<stage>/<issue-name>/
+    - feature.md (or bug.md/task.md)
+    - technical-guidance.md
+    - *.spec.md (SPS spec files)
+
+SPS Pattern (Smallest Possible Spec):
+  Each spec should be the smallest deliverable unit - roughly the size
+  of one "todo" item. All specs must be completed before moving to review.
 
 Examples:
   agile.ts create feature user-auth --title "User Authentication" --owner "Alice"
-  agile.ts move user-auth 2-todo
-  agile.ts list --stage 3-in-progress
-  agile.ts archive completed-feature
+  agile.ts spec suggest user-auth
+  agile.ts spec status user-auth login-flow in-progress
+  agile.ts guidance update user-auth
+  agile.ts move user-auth 4-review
 
 Run "agile.ts help <command>" for more information on a command.
 `);

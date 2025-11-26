@@ -1,24 +1,17 @@
 import { parseArgs } from "node:util";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import {
   STAGES,
   TEMPLATES,
   AGILE_DIR,
-  TEMPLATES_DIR,
   type Stage,
-  type Template,
 } from "../lib/types";
 import {
   isValidStage,
   isValidTemplate,
   toKebabCase,
-  toTitleCase,
-  getCurrentDate,
-  validateSlug,
   findProjectRoot,
-  findIssue,
 } from "../lib/utils";
+import { createIssueResolver } from "../lib/issue-resolver";
 
 export async function handleCreate(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -34,7 +27,7 @@ export async function handleCreate(args: string[]): Promise<void> {
   const [type, name] = positionals;
 
   if (!type || !name) {
-    console.error("Usage: agile.ts create <type> <name> [--title \"Title\"] [--owner \"Name\"]");
+    console.error("Usage: agile.ts create <type> <name> [--title \"Title\"] [--owner \"Name\"] [--stage <stage>]");
     console.error("Types: feature, bug, task");
     process.exit(1);
   }
@@ -51,39 +44,24 @@ export async function handleCreate(args: string[]): Promise<void> {
   }
 
   const slug = toKebabCase(name);
-  validateSlug(slug);
-
   const projectRoot = await findProjectRoot();
+  const resolver = createIssueResolver();
 
-  // Check if issue already exists
-  const existing = await findIssue(projectRoot, slug);
-  if (existing) {
-    console.error(`Issue already exists: ${existing.stage}/${existing.filename}`);
-    process.exit(1);
-  }
-
-  // Read template
-  const templatePath = join(projectRoot, TEMPLATES_DIR, `${type}.md`);
-  let content: string;
   try {
-    content = await readFile(templatePath, "utf-8");
-  } catch {
-    console.error(`Template not found: ${templatePath}`);
+    const issue = await resolver.createIssue(projectRoot, type, slug, {
+      title: values.title,
+      owner: values.owner,
+      stage: stage as Stage,
+    });
+
+    console.log(`Created: ${AGILE_DIR}/${issue.stage}/${issue.name}/`);
+    console.log(`  - ${issue.type}.md (main spec)`);
+    console.log(`  - technical-guidance.md`);
+    console.log(`\nNext steps:`);
+    console.log(`  1. Edit ${issue.mainFilePath} to fill in description`);
+    console.log(`  2. Run 'agile.ts spec suggest ${issue.name}' to generate specs`);
+  } catch (err) {
+    console.error(`Error: ${(err as Error).message}`);
     process.exit(1);
   }
-
-  // Replace placeholders
-  const title = values.title || toTitleCase(slug);
-  const owner = values.owner || "[Name]";
-  content = content.replace("[Title]", title);
-  content = content.replace("YYYY-MM-DD", getCurrentDate());
-  content = content.replace("[Name]", owner);
-
-  // Write issue
-  const targetDir = join(projectRoot, AGILE_DIR, stage);
-  await mkdir(targetDir, { recursive: true });
-  const targetPath = join(targetDir, `${slug}.md`);
-  await writeFile(targetPath, content);
-
-  console.log(`Created: ${AGILE_DIR}/${stage}/${slug}.md (${type})`);
 }

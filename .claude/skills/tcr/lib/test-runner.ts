@@ -1,9 +1,10 @@
-import type { TestTarget, TestRunResult } from "./types";
+import { type TestTarget, type TestRunResult } from "./types";
 import { runBackendCoverage, checkCargoLlvmCovInstalled } from "./coverage";
 import type { CoverageResult } from "./coverage";
+import { deriveRustTestModule } from "./utils";
 
 // ============================================================================
-// Frontend Test Runner (Bun)
+// Frontend Test Runner (Vitest)
 // ============================================================================
 
 export async function runFrontendTests(
@@ -21,8 +22,13 @@ export async function runFrontendTests(
       };
     }
 
-    // Run bun test with coverage (bunfig.toml enforces 80% threshold)
-    const result = await $`bun test --coverage ${testFiles}`.cwd(projectRoot).quiet().nothrow();
+    // Run vitest with coverage (vitest.config.ts enforces 100% threshold)
+    // Note: Bun's $ template literal auto-escapes interpolated values, preventing shell injection
+    // Arrays are spread as separate properly-escaped arguments
+    const result = await $`bun run test:coverage -- ${testFiles}`
+      .cwd(projectRoot)
+      .quiet()
+      .nothrow();
 
     const output = result.stdout.toString() + result.stderr.toString();
 
@@ -48,7 +54,17 @@ export interface BackendTestResult extends TestRunResult {
   coverage?: CoverageResult;
 }
 
-export async function runBackendTests(projectRoot: string): Promise<BackendTestResult> {
+/**
+ * Run backend tests with optional file-based filtering.
+ *
+ * @param projectRoot - The project root directory
+ * @param changedFiles - Optional array of changed file paths. When provided,
+ *                       only tests from modules corresponding to changed .rs files will run.
+ */
+export async function runBackendTests(
+  projectRoot: string,
+  changedFiles?: string[]
+): Promise<BackendTestResult> {
   // Check if cargo-llvm-cov is installed (required)
   const hasLlvmCov = await checkCargoLlvmCovInstalled();
 
@@ -60,8 +76,19 @@ export async function runBackendTests(projectRoot: string): Promise<BackendTestR
     };
   }
 
+  // Derive test modules from changed files
+  let testModules: string[] | undefined;
+  if (changedFiles && changedFiles.length > 0) {
+    testModules = changedFiles
+      .map((f) => deriveRustTestModule(f))
+      .filter((m): m is string => m !== null);
+
+    // Deduplicate
+    testModules = [...new Set(testModules)];
+  }
+
   // Run coverage check (which also runs tests)
-  const coverageResult = await runBackendCoverage(projectRoot);
+  const coverageResult = await runBackendCoverage(projectRoot, testModules);
 
   return {
     status: coverageResult.passed ? "pass" : "fail",
@@ -82,10 +109,19 @@ export interface CombinedTestResult {
   error: string | null;
 }
 
+/**
+ * Run tests for the specified target with file-based filtering.
+ *
+ * @param target - Which target(s) to run tests for
+ * @param testFiles - Frontend test files to run (filtered from changed files)
+ * @param projectRoot - The project root directory
+ * @param changedFiles - Optional array of all changed source files (used for backend filtering)
+ */
 export async function runTests(
   target: TestTarget,
   testFiles: string[],
-  projectRoot: string
+  projectRoot: string,
+  changedFiles?: string[]
 ): Promise<CombinedTestResult> {
   const result: CombinedTestResult = {
     passed: true,
@@ -108,9 +144,9 @@ export async function runTests(
     }
   }
 
-  // Run backend tests
+  // Run backend tests - pass changed files for module-based filtering
   if (target === "backend" || target === "both") {
-    result.backend = await runBackendTests(projectRoot);
+    result.backend = await runBackendTests(projectRoot, changedFiles);
 
     if (result.backend.status === "fail" || result.backend.status === "error") {
       result.passed = false;
@@ -136,7 +172,7 @@ export function formatTestOutput(result: CombinedTestResult): string {
     lines.push("=== Frontend Tests ===");
     lines.push(`Status: ${result.frontend.status}`);
     if (result.frontend.output) {
-      lines.push(result.frontend.output.slice(0, 500)); // Truncate long output
+      lines.push(result.frontend.output);
     }
   }
 
@@ -145,7 +181,7 @@ export function formatTestOutput(result: CombinedTestResult): string {
     lines.push("=== Backend Tests ===");
     lines.push(`Status: ${result.backend.status}`);
     if (result.backend.output) {
-      lines.push(result.backend.output.slice(0, 500)); // Truncate long output
+      lines.push(result.backend.output);
     }
   }
 

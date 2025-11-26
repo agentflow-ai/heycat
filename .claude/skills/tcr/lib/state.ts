@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { STATE_FILE, MAX_FAILURES, type TCRState, type TestResult } from "./types";
+import { STATE_FILE, MAX_FAILURES, TEST_TARGETS, type TCRState, type TestResult, type TestTarget } from "./types";
 import { fileExists, getCurrentTimestamp } from "./utils";
 
 // ============================================================================
@@ -16,6 +16,52 @@ function createDefaultState(): TCRState {
 }
 
 // ============================================================================
+// State Validation
+// ============================================================================
+
+/**
+ * Validate that a parsed object conforms to TCRState shape.
+ * Returns true if valid, false if corrupted or wrong format.
+ */
+function isValidState(obj: unknown): obj is TCRState {
+  if (typeof obj !== "object" || obj === null) {
+    return false;
+  }
+
+  const state = obj as Record<string, unknown>;
+
+  // Check required fields exist and have correct types
+  if (!("currentStep" in state) || !("failureCount" in state)) {
+    return false;
+  }
+
+  // currentStep should be string or null
+  if (state.currentStep !== null && typeof state.currentStep !== "string") {
+    return false;
+  }
+
+  // failureCount should be a non-negative number
+  if (typeof state.failureCount !== "number" || state.failureCount < 0) {
+    return false;
+  }
+
+  // Validate lastTestResult if present
+  if (state.lastTestResult !== null && state.lastTestResult !== undefined) {
+    const result = state.lastTestResult as Record<string, unknown>;
+
+    // Check required TestResult fields
+    if (typeof result.passed !== "boolean") return false;
+    if (typeof result.timestamp !== "string") return false;
+    if (!TEST_TARGETS.includes(result.target as TestTarget)) return false;
+    if (!Array.isArray(result.filesRun)) return false;
+    // error can be string or null
+    if (result.error !== null && typeof result.error !== "string") return false;
+  }
+
+  return true;
+}
+
+// ============================================================================
 // State Persistence
 // ============================================================================
 
@@ -25,10 +71,20 @@ export async function loadState(projectRoot: string): Promise<TCRState> {
   try {
     if (await fileExists(statePath)) {
       const content = await readFile(statePath, "utf-8");
-      return JSON.parse(content) as TCRState;
+      const parsed = JSON.parse(content);
+
+      if (!isValidState(parsed)) {
+        console.warn("TCR: Invalid state file, resetting to defaults");
+        return createDefaultState();
+      }
+
+      return parsed;
     }
-  } catch {
-    // If parsing fails, return default state
+  } catch (error) {
+    console.warn(
+      "TCR: Error loading state file:",
+      error instanceof Error ? error.message : "Unknown error"
+    );
   }
 
   return createDefaultState();
@@ -57,7 +113,9 @@ export async function setCurrentStep(projectRoot: string, step: string): Promise
 
 export async function incrementFailure(
   projectRoot: string,
-  error: string
+  error: string,
+  filesRun: string[] = [],
+  target: TestTarget = "frontend"
 ): Promise<number> {
   const state = await loadState(projectRoot);
 
@@ -66,8 +124,8 @@ export async function incrementFailure(
     passed: false,
     timestamp: getCurrentTimestamp(),
     error,
-    filesRun: [],
-    target: "frontend",
+    filesRun,
+    target,
   };
 
   await saveState(projectRoot, state);

@@ -1,15 +1,16 @@
 import { parseArgs } from "node:util";
-import { readdir } from "node:fs/promises";
-import { join, basename } from "node:path";
 import {
   STAGES,
   STAGE_NAMES,
   AGILE_DIR,
   type Stage,
+  type Issue,
 } from "../lib/types";
-import { isValidStage, findProjectRoot, parseIssueMeta } from "../lib/utils";
+import { isValidStage, findProjectRoot } from "../lib/utils";
+import { createIssueResolver } from "../lib/issue-resolver";
+import { createSpecManager } from "../lib/spec-manager";
 
-interface IssueInfo {
+interface IssueListInfo {
   name: string;
   stage: Stage;
   type: string;
@@ -17,6 +18,8 @@ interface IssueInfo {
   created: string;
   owner: string;
   path: string;
+  specsCompleted: number;
+  specsTotal: number;
 }
 
 export async function handleList(args: string[]): Promise<void> {
@@ -42,34 +45,30 @@ export async function handleList(args: string[]): Promise<void> {
   }
 
   const projectRoot = await findProjectRoot();
-  const stagesToList = filterStage ? [filterStage as Stage] : STAGES;
+  const resolver = createIssueResolver();
+  const specManager = createSpecManager();
 
-  const allIssues: IssueInfo[] = [];
+  const issues = await resolver.listIssues(
+    projectRoot,
+    filterStage as Stage | undefined
+  );
 
-  for (const stage of stagesToList) {
-    const stagePath = join(projectRoot, AGILE_DIR, stage);
-    let files: string[] = [];
-    try {
-      files = await readdir(stagePath);
-    } catch {
-      // Stage directory might not exist
-    }
+  const allIssues: IssueListInfo[] = [];
 
-    for (const file of files) {
-      if (file.endsWith(".md") && file !== ".gitkeep") {
-        const filePath = join(stagePath, file);
-        const meta = await parseIssueMeta(filePath);
-        allIssues.push({
-          name: basename(file, ".md"),
-          stage,
-          type: meta.type,
-          title: meta.title || basename(file, ".md"),
-          created: meta.created,
-          owner: meta.owner,
-          path: `${AGILE_DIR}/${stage}/${file}`,
-        });
-      }
-    }
+  for (const issue of issues) {
+    const specStatus = await specManager.getCompletionStatus(issue);
+
+    allIssues.push({
+      name: issue.name,
+      stage: issue.stage,
+      type: issue.type,
+      title: issue.meta.title || issue.name,
+      created: issue.meta.created,
+      owner: issue.meta.owner,
+      path: `${AGILE_DIR}/${issue.stage}/${issue.name}/`,
+      specsCompleted: specStatus.completed,
+      specsTotal: specStatus.total,
+    });
   }
 
   if (format === "json") {
@@ -78,10 +77,12 @@ export async function handleList(args: string[]): Promise<void> {
   }
 
   // Table format
+  const stagesToList = filterStage ? [filterStage as Stage] : STAGES;
+
   for (const stage of stagesToList) {
     const stageIssues = allIssues.filter((i) => i.stage === stage);
     console.log(`\n${STAGE_NAMES[stage]} (${stageIssues.length})`);
-    console.log("─".repeat(50));
+    console.log("─".repeat(60));
 
     if (stageIssues.length === 0) {
       console.log("  (empty)");
@@ -89,7 +90,10 @@ export async function handleList(args: string[]): Promise<void> {
       for (const issue of stageIssues) {
         const typeTag = `[${issue.type}]`.padEnd(10);
         const ownerTag = issue.owner && issue.owner !== "[Name]" ? ` (${issue.owner})` : "";
-        console.log(`  ${typeTag} ${issue.name} - ${issue.title}${ownerTag}`);
+        const specTag = issue.specsTotal > 0
+          ? ` [${issue.specsCompleted}/${issue.specsTotal} specs]`
+          : "";
+        console.log(`  ${typeTag} ${issue.name} - ${issue.title}${specTag}${ownerTag}`);
       }
     }
   }

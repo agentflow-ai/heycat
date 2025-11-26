@@ -1,5 +1,5 @@
 import { loadState } from "../lib/state";
-import { findProjectRoot } from "../lib/utils";
+import { findProjectRoot, readErrorLog } from "../lib/utils";
 import { MAX_FAILURES } from "../lib/types";
 import { runAllCoverageChecks, formatPercentage } from "../lib/coverage";
 
@@ -40,7 +40,7 @@ export async function handleStatus(args: string[]): Promise<void> {
     console.log(`  Target: ${target}`);
 
     if (error && !passed) {
-      console.log(`  Error: ${error.slice(0, 200)}${error.length > 200 ? "..." : ""}`);
+      console.log(`  Error: ${error}`);
     }
   } else {
     console.log("Last Test: No tests run yet");
@@ -72,6 +72,27 @@ export async function handleStatus(args: string[]): Promise<void> {
   } else {
     console.log("");
     console.log("Tip: Run 'tcr status --coverage' to see current coverage metrics");
+  }
+
+  // Show recent errors from error log
+  const errors = await readErrorLog(projectRoot);
+  if (errors.length > 0) {
+    console.log("");
+    console.log("=== Recent Errors ===");
+    console.log("(from .tcr-errors.log)\n");
+
+    // Show only the most recent 3 errors
+    const recentErrors = errors.slice(-3);
+    for (const entry of recentErrors) {
+      const time = new Date(entry.timestamp).toLocaleString();
+      const context = entry.context ? ` [${entry.context}]` : "";
+
+      console.log(`  ${time}${context}`);
+      console.log(`    ${entry.error}`);
+      console.log("");
+    }
+
+    console.log("  Run 'tcr reset' to clear errors along with failure count");
   }
 
   console.log("");

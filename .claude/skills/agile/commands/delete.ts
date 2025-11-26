@@ -1,8 +1,7 @@
 import { parseArgs } from "node:util";
-import { unlink } from "node:fs/promises";
-import { basename } from "node:path";
 import { STAGE_NAMES } from "../lib/types";
-import { findProjectRoot, findIssue } from "../lib/utils";
+import { findProjectRoot } from "../lib/utils";
+import { createIssueResolver } from "../lib/issue-resolver";
 
 export async function handleDelete(args: string[]): Promise<void> {
   const { positionals } = parseArgs({
@@ -18,15 +17,16 @@ export async function handleDelete(args: string[]): Promise<void> {
   }
 
   const projectRoot = await findProjectRoot();
-  const issue = await findIssue(projectRoot, name);
+  const resolver = createIssueResolver();
+  const issue = await resolver.findIssue(projectRoot, name);
 
   if (!issue) {
     console.error(`Issue not found: ${name}`);
     process.exit(1);
   }
 
-  await unlink(issue.path);
+  await resolver.deleteIssue(issue);
 
-  const slug = basename(issue.filename, ".md");
-  console.log(`Deleted: ${slug} (was in ${STAGE_NAMES[issue.stage]})`);
+  console.log(`Deleted: ${issue.name} (was in ${STAGE_NAMES[issue.stage]})`);
+  console.log(`  Removed folder and all specs`);
 }

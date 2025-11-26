@@ -1,3 +1,4 @@
+/* v8 ignore start - React DOM bootstrap cannot be unit tested */
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

@@ -11,7 +11,8 @@ export async function checkCargoLlvmCovInstalled(): Promise<boolean> {
   try {
     await $`cargo llvm-cov --version`.quiet();
     return true;
-  } catch {
+  } catch (_error) {
+    // cargo-llvm-cov not found or not executable
     return false;
   }
 }
@@ -51,7 +52,8 @@ function parseLlvmCovJson(output: string): CoverageMetrics {
         percentage: totals.functions.percent / 100,
       },
     };
-  } catch {
+  } catch (_error) {
+    // JSON parsing failed - return empty metrics
     return createEmptyMetrics();
   }
 }
@@ -60,7 +62,18 @@ function parseLlvmCovJson(output: string): CoverageMetrics {
 // Backend Coverage Runner
 // ============================================================================
 
-export async function runBackendCoverage(projectRoot: string): Promise<CoverageResult> {
+/**
+ * Run backend coverage, optionally filtering to specific test modules.
+ *
+ * @param projectRoot - The project root directory
+ * @param testModules - Optional array of test module filters (e.g., ["tests::", "foo::tests::"])
+ *                      If provided, only tests matching these patterns will run.
+ *                      If empty or undefined, all tests will run.
+ */
+export async function runBackendCoverage(
+  projectRoot: string,
+  testModules?: string[]
+): Promise<CoverageResult> {
   const { $ } = await import("bun");
   const config = COVERAGE_CONFIG.backend;
   const tauriDir = `${projectRoot}/src-tauri`;
@@ -82,7 +95,22 @@ export async function runBackendCoverage(projectRoot: string): Promise<CoverageR
     // Run cargo +nightly llvm-cov with JSON output for parsing
     // Uses nightly for #[coverage(off)] attribute support
     // Untestable code is excluded via #[coverage(off)] in source files
-    const result = await $`cargo +nightly llvm-cov --json`.cwd(tauriDir).quiet().nothrow();
+    //
+    // When testModules is provided, use `cargo llvm-cov test` with filters
+    // to run only tests from changed modules
+    let result;
+    if (testModules && testModules.length > 0) {
+      // Deduplicate modules
+      const uniqueModules = [...new Set(testModules)];
+      // Use test subcommand with filters - each filter runs tests matching that prefix
+      result = await $`cargo +nightly llvm-cov test --json -- ${uniqueModules}`
+        .cwd(tauriDir)
+        .quiet()
+        .nothrow();
+    } else {
+      // No filtering - run all tests
+      result = await $`cargo +nightly llvm-cov --json`.cwd(tauriDir).quiet().nothrow();
+    }
 
     const stdout = result.stdout.toString();
     const stderr = result.stderr.toString();

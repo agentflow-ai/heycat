@@ -1,8 +1,11 @@
 import type { CombinedCoverageResult, CoverageResult } from "./types";
 import { formatPercentage } from "./types";
-import type { TestTarget } from "../types";
+import { FORMATTING, type TestTarget } from "../types";
 import { runFrontendCoverage, runFrontendCoverageAll } from "./runners/frontend";
 import { runBackendCoverage } from "./runners/backend";
+
+// Report formatting constant
+const SEPARATOR = "=".repeat(FORMATTING.separatorWidth);
 
 // ============================================================================
 // Re-exports
@@ -31,12 +34,14 @@ export { createEmptyMetrics, formatPercentage, meetsThresholds } from "./types";
  * @param target - Which target to check: "frontend", "backend", or "both"
  * @param testFiles - Test files to run (for frontend)
  * @param projectRoot - Project root directory
+ * @param changedFiles - Optional changed source files (for backend module filtering)
  * @returns Combined coverage results with summary
  */
 export async function runCoverageChecks(
   target: TestTarget,
   testFiles: string[],
-  projectRoot: string
+  projectRoot: string,
+  changedFiles?: string[]
 ): Promise<CombinedCoverageResult> {
   const result: CombinedCoverageResult = {
     passed: true,
@@ -58,9 +63,20 @@ export async function runCoverageChecks(
     }
   }
 
-  // Run backend coverage
+  // Run backend coverage with module-based filtering
   if (target === "backend" || target === "both") {
-    result.backend = await runBackendCoverage(projectRoot);
+    // Derive test modules from changed files for filtering
+    const { deriveRustTestModule } = await import("../utils");
+    let testModules: string[] | undefined;
+
+    if (changedFiles && changedFiles.length > 0) {
+      testModules = changedFiles
+        .map((f) => deriveRustTestModule(f))
+        .filter((m): m is string => m !== null);
+      testModules = [...new Set(testModules)];
+    }
+
+    result.backend = await runBackendCoverage(projectRoot, testModules);
 
     if (!result.backend.passed) {
       result.passed = false;
@@ -114,13 +130,13 @@ export async function runAllCoverageChecks(
 function formatCoverageReport(result: CombinedCoverageResult): string {
   const lines: string[] = [];
 
-  lines.push("=".repeat(60));
+  lines.push(SEPARATOR);
   lines.push("                    COVERAGE REPORT");
-  lines.push("=".repeat(60));
+  lines.push(SEPARATOR);
 
   if (result.frontend) {
     lines.push("");
-    lines.push(formatTargetReport("Frontend (Bun)", result.frontend));
+    lines.push(formatTargetReport("Frontend (Vitest)", result.frontend));
   }
 
   if (result.backend) {
@@ -129,9 +145,9 @@ function formatCoverageReport(result: CombinedCoverageResult): string {
   }
 
   lines.push("");
-  lines.push("=".repeat(60));
+  lines.push(SEPARATOR);
   lines.push(`Overall: ${result.passed ? "PASS" : "FAIL"}`);
-  lines.push("=".repeat(60));
+  lines.push(SEPARATOR);
 
   return lines.join("\n");
 }

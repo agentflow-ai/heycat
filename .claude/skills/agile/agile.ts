@@ -6,6 +6,8 @@ import { handleList } from "./commands/list";
 import { handleArchive } from "./commands/archive";
 import { handleDelete } from "./commands/delete";
 import { handleWork } from "./commands/work";
+import { handleSpec } from "./commands/spec";
+import { handleGuidance } from "./commands/guidance";
 import { handleHelp } from "./commands/help";
 
 async function main(): Promise<void> {
@@ -32,6 +34,12 @@ async function main(): Promise<void> {
         break;
       case "work":
         await handleWork(commandArgs);
+        break;
+      case "spec":
+        await handleSpec(commandArgs);
+        break;
+      case "guidance":
+        await handleGuidance(commandArgs);
         break;
       case "help":
       case "--help":

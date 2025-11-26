@@ -26,6 +26,11 @@ export const FRONTEND_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 // Backend file extensions
 export const BACKEND_EXTENSIONS = [".rs"] as const;
 
+// Report formatting
+export const FORMATTING = {
+  separatorWidth: 60,
+} as const;
+
 // ============================================================================
 // State Interfaces
 // ============================================================================

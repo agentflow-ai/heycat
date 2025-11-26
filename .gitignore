@@ -25,3 +25,7 @@ dist-ssr
 
 # TCR state file
 .tcr-state.json
+.tcr-errors.log
+
+# Coverage output
+coverage/

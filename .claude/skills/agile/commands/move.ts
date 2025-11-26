@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
-import { rename, mkdir } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
   STAGES,
   STAGE_NAMES,
@@ -8,8 +8,10 @@ import {
   AGILE_DIR,
   type Stage,
 } from "../lib/types";
-import { isValidStage, findProjectRoot, findIssue, parseIssueMeta } from "../lib/utils";
-import { analyzeIssueFile, validateForTransition } from "../lib/analysis";
+import { isValidStage, findProjectRoot } from "../lib/utils";
+import { createIssueResolver } from "../lib/issue-resolver";
+import { analyzeIssue } from "../lib/analysis";
+import { createValidatorChain } from "../lib/validators";
 
 export async function handleMove(args: string[]): Promise<void> {
   const { positionals } = parseArgs({
@@ -31,7 +33,8 @@ export async function handleMove(args: string[]): Promise<void> {
   }
 
   const projectRoot = await findProjectRoot();
-  const issue = await findIssue(projectRoot, name);
+  const resolver = createIssueResolver();
+  const issue = await resolver.findIssue(projectRoot, name);
 
   if (!issue) {
     console.error(`Issue not found: ${name}`);
@@ -43,11 +46,11 @@ export async function handleMove(args: string[]): Promise<void> {
     return;
   }
 
-  // Validate transition
+  // Validate transition path
   const allowedTransitions = VALID_TRANSITIONS[issue.stage];
-  if (!allowedTransitions.includes(toStage)) {
+  if (!allowedTransitions.includes(toStage as Stage)) {
     console.error(
-      `Invalid transition: ${STAGE_NAMES[issue.stage]} -> ${STAGE_NAMES[toStage]}`
+      `Invalid transition: ${STAGE_NAMES[issue.stage]} -> ${STAGE_NAMES[toStage as Stage]}`
     );
     console.error(
       `Allowed from ${STAGE_NAMES[issue.stage]}: ${allowedTransitions.map((s) => STAGE_NAMES[s]).join(", ")}`
@@ -55,13 +58,13 @@ export async function handleMove(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Validate issue content is ready for the target stage
-  const meta = await parseIssueMeta(issue.path);
-  const analysis = await analyzeIssueFile(issue.path, meta.owner);
-  const validation = validateForTransition(toStage, analysis);
+  // Analyze issue and validate for target stage
+  const analysis = await analyzeIssue(issue);
+  const validatorChain = createValidatorChain();
+  const validation = validatorChain.validate(issue, analysis, toStage as Stage);
 
   if (!validation.valid) {
-    console.error(`Cannot move to ${STAGE_NAMES[toStage]} - requirements not met:`);
+    console.error(`Cannot move to ${STAGE_NAMES[toStage as Stage]} - requirements not met:`);
     for (const missing of validation.missing) {
       console.error(`  - ${missing}`);
     }
@@ -70,12 +73,18 @@ export async function handleMove(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Move the file
+  // Ensure target directory exists
   const targetDir = join(projectRoot, AGILE_DIR, toStage);
   await mkdir(targetDir, { recursive: true });
-  const targetPath = join(targetDir, issue.filename);
-  await rename(issue.path, targetPath);
 
-  console.log(`Moved: ${basename(issue.filename, ".md")}`);
-  console.log(`  ${STAGE_NAMES[issue.stage]} -> ${STAGE_NAMES[toStage]}`);
+  // Move the issue folder
+  const movedIssue = await resolver.moveIssue(projectRoot, issue, toStage as Stage);
+
+  console.log(`Moved: ${movedIssue.name}`);
+  console.log(`  ${STAGE_NAMES[issue.stage]} -> ${STAGE_NAMES[movedIssue.stage]}`);
+
+  // Show spec status if relevant
+  if (analysis.specsTotal > 0) {
+    console.log(`  Specs: ${analysis.specsCompleted}/${analysis.specsTotal} completed`);
+  }
 }

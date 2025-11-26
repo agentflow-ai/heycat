@@ -1,18 +1,42 @@
 import type { CoverageConfig, CoverageThresholds } from "./types";
 
 // ============================================================================
-// Coverage Configuration
+// COVERAGE THRESHOLDS - MANUAL SYNC REQUIRED
 // ============================================================================
 
 /**
- * Centralized coverage configuration for both frontend and backend.
- * This is the single source of truth for coverage thresholds.
+ * ============================================================
+ * IMPORTANT: THREE-WAY SYNC REQUIREMENT
+ * ============================================================
+ *
+ * Coverage is enforced in THREE places that must stay in sync:
+ *
+ * 1. THIS FILE (.claude/skills/tcr/lib/coverage/config.ts)
+ *    - Purpose: TCR status display and coverage reporting
+ *    - Values: FRONTEND_THRESHOLDS, BACKEND_THRESHOLDS (both 100%)
+ *
+ * 2. vitest.config.ts (project root)
+ *    - Purpose: Enforces frontend thresholds at test time
+ *    - Location: coverage.thresholds.lines, coverage.thresholds.functions
+ *    - Current: { lines: 100, functions: 100 }
+ *
+ * 3. .husky/pre-commit
+ *    - Purpose: Enforces backend thresholds via cargo llvm-cov
+ *    - Flags: --fail-under-lines 100 --fail-under-functions 100
+ *
+ * ============================================================
+ * IF YOU CHANGE THRESHOLDS, UPDATE ALL THREE LOCATIONS!
+ * ============================================================
  *
  * 100% coverage is required for all testable code.
- * Untestable code must be explicitly excluded using #[coverage(off)] attribute.
+ * Untestable code must be explicitly excluded:
  *
- * Note: Frontend thresholds should match bunfig.toml for consistency.
- * Backend uses cargo +nightly llvm-cov for #[coverage(off)] support.
+ * Frontend (TypeScript/React):
+ *   Single line:    // v8 ignore next
+ *   Multi-line:     // v8 ignore start ... // v8 ignore stop
+ *
+ * Backend (Rust):
+ *   Attribute:      #[cfg_attr(coverage_nightly, coverage(off))]
  */
 
 export const FRONTEND_THRESHOLDS: CoverageThresholds = {

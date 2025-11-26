@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import {
   STAGES,
@@ -7,8 +7,6 @@ import {
   SLUG_PATTERN,
   type Stage,
   type Template,
-  type IssueLocation,
-  type IssueMeta,
 } from "./types";
 
 // ============================================================================
@@ -72,60 +70,4 @@ export async function findProjectRoot(): Promise<string> {
     }
   }
   throw new Error("Could not find project root (no agile/ directory found)");
-}
-
-export async function findIssue(
-  projectRoot: string,
-  name: string
-): Promise<IssueLocation | null> {
-  const filename = name.endsWith(".md") ? name : `${name}.md`;
-
-  for (const stage of STAGES) {
-    const stagePath = join(projectRoot, AGILE_DIR, stage);
-    try {
-      const files = await readdir(stagePath);
-      if (files.includes(filename)) {
-        return {
-          stage,
-          path: join(stagePath, filename),
-          filename,
-        };
-      }
-    } catch {
-      // Stage directory might not exist
-    }
-  }
-  return null;
-}
-
-export async function parseIssueMeta(filePath: string): Promise<IssueMeta> {
-  const content = await readFile(filePath, "utf-8");
-  const lines = content.split("\n");
-
-  let title = "";
-  let type: Template | "unknown" = "unknown";
-  let created = "";
-  let owner = "";
-
-  // Parse first line for type and title
-  const firstLine = lines[0] || "";
-  const titleMatch = firstLine.match(/^#\s+(Feature|Bug|Task):\s*(.*)$/i);
-  if (titleMatch) {
-    type = titleMatch[1].toLowerCase() as Template;
-    title = titleMatch[2].trim();
-  }
-
-  // Parse created date and owner
-  for (const line of lines) {
-    const dateMatch = line.match(/\*\*Created:\*\*\s*(\d{4}-\d{2}-\d{2})/);
-    if (dateMatch) {
-      created = dateMatch[1];
-    }
-    const ownerMatch = line.match(/\*\*Owner:\*\*\s*(.+)$/);
-    if (ownerMatch) {
-      owner = ownerMatch[1].trim();
-    }
-  }
-
-  return { title, type, created, owner };
 }

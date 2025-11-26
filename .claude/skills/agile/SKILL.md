@@ -1,17 +1,20 @@
 ---
 name: agile
-description: |
-  Manage the project's Kanban-style agile workflow. Use this skill when you need to:
-  - Create new features, bugs, or tasks in the backlog
-  - Move issues through workflow stages (backlog -> todo -> in-progress -> review -> done)
-  - List current issues and their status
-  - Work through issues with stage-appropriate guidance
-  - Archive or delete completed work
+description: "Manage agile workflow with folder-based issues. Use when user wants to: create features/bugs/tasks, move through kanban stages (backlog->todo->in-progress->review->done), break down into specs, list/archive/delete issues."
 ---
 
 # Agile Workflow Management
 
-Manage issues in the project's Kanban board located in the `agile/` folder.
+Manage issues in the project's Kanban board located in the `agile/` folder. Each issue is a **folder** containing a main spec, technical guidance, and multiple SPS (Smallest Possible Spec) files.
+
+## Issue Structure
+
+```
+agile/<stage>/<issue-name>/
+  - feature.md (or bug.md/task.md)  # Main issue spec
+  - technical-guidance.md            # Technical investigation
+  - *.spec.md                        # SPS spec files
+```
 
 ## Workflow Stages
 
@@ -29,6 +32,8 @@ Manage issues in the project's Kanban board located in the `agile/` folder.
 bun .claude/skills/agile/agile.ts create <type> <name> [--title "Title"] [--owner "Name"] [--stage <stage>]
 ```
 
+Creates a folder-based issue with main spec and technical guidance files.
+
 **Arguments:**
 - `type`: `feature`, `bug`, or `task`
 - `name`: kebab-case identifier (e.g., `user-authentication`)
@@ -42,7 +47,6 @@ bun .claude/skills/agile/agile.ts create <type> <name> [--title "Title"] [--owne
 ```bash
 bun .claude/skills/agile/agile.ts create feature user-auth --title "User Authentication" --owner "Alice"
 bun .claude/skills/agile/agile.ts create bug fix-login --stage 2-todo --owner "Bob"
-bun .claude/skills/agile/agile.ts create task update-deps --owner "Charlie"
 ```
 
 ### Move an Issue
@@ -51,34 +55,14 @@ bun .claude/skills/agile/agile.ts create task update-deps --owner "Charlie"
 bun .claude/skills/agile/agile.ts move <name> <stage>
 ```
 
-**Arguments:**
-- `name`: Issue name (with or without `.md` extension)
-- `stage`: Target stage (`1-backlog`, `2-todo`, `3-in-progress`, `4-review`, `5-done`)
-
-**Valid Transitions:**
-- `1-backlog` can move to: `2-todo`
-- `2-todo` can move to: `1-backlog`, `3-in-progress`
-- `3-in-progress` can move to: `2-todo`, `4-review`
-- `4-review` can move to: `3-in-progress`, `5-done`
-- `5-done` can move to: `4-review` (reopen)
-
 **Transition Requirements (Strict Validation):**
-The move command validates that issues meet requirements before advancing:
 
 | Target Stage | Requirements |
 |--------------|--------------|
 | `2-todo` | Description section must be complete (no placeholders) |
-| `3-in-progress` | Owner must be assigned, Technical Notes must be present |
-| `4-review` | At least one Definition of Done item must be checked |
+| `3-in-progress` | Owner assigned, Technical guidance exists |
+| `4-review` | All specs completed, Guidance updated, >=1 DoD checked |
 | `5-done` | All Definition of Done items must be checked |
-
-If validation fails, run `work <name>` for guidance on what needs to be completed.
-
-**Examples:**
-```bash
-bun .claude/skills/agile/agile.ts move user-auth 2-todo
-bun .claude/skills/agile/agile.ts move user-auth 3-in-progress
-```
 
 ### Work on an Issue
 
@@ -86,23 +70,11 @@ bun .claude/skills/agile/agile.ts move user-auth 3-in-progress
 bun .claude/skills/agile/agile.ts work <name>
 ```
 
-Analyzes an issue and provides stage-appropriate guidance for working through it.
-
-**Arguments:**
-- `name`: Issue name to analyze
-
-**Output includes:**
-- Issue metadata (type, stage, owner, created date)
-- Incomplete sections that still have placeholder text
+Analyzes an issue and provides stage-appropriate guidance, including:
+- Specs status (pending, in-progress, completed)
+- Technical guidance status
 - Definition of Done progress
-- Stage-specific guidance and suggested actions
-- Readiness status for advancing to the next stage
-
-**Examples:**
-```bash
-bun .claude/skills/agile/agile.ts work user-auth
-bun .claude/skills/agile/agile.ts work dark-mode
-```
+- Readiness to advance
 
 ### List Issues
 
@@ -110,103 +82,136 @@ bun .claude/skills/agile/agile.ts work dark-mode
 bun .claude/skills/agile/agile.ts list [--stage <stage>] [--format table|json]
 ```
 
-**Options:**
-- `--stage, -s`: Filter by stage
-- `--format, -f`: Output format (`table` or `json`, default: `table`)
+Shows all issues with spec progress (e.g., `[3/5 specs]`).
 
-**Examples:**
-```bash
-bun .claude/skills/agile/agile.ts list
-bun .claude/skills/agile/agile.ts list --stage 3-in-progress
-bun .claude/skills/agile/agile.ts list --format json
-```
-
-### Archive an Issue
+### Archive / Delete
 
 ```bash
-bun .claude/skills/agile/agile.ts archive <name>
+bun .claude/skills/agile/agile.ts archive <name>  # Move folder to archive
+bun .claude/skills/agile/agile.ts delete <name>   # Permanently delete folder
 ```
 
-Moves the issue to `agile/archive/` with a timestamp suffix.
+## Spec Commands
 
-**Example:**
-```bash
-bun .claude/skills/agile/agile.ts archive completed-feature
-# Result: agile/archive/completed-feature-2025-11-25.md
-```
+Manage SPS (Smallest Possible Spec) files within an issue.
 
-### Delete an Issue
+### List Specs
 
 ```bash
-bun .claude/skills/agile/agile.ts delete <name>
+bun .claude/skills/agile/agile.ts spec list <issue>
 ```
 
-Permanently removes the issue file.
-
-**Example:**
-```bash
-bun .claude/skills/agile/agile.ts delete old-task
-```
-
-### Get Help
+### Add a Spec
 
 ```bash
-bun .claude/skills/agile/agile.ts help [command]
+bun .claude/skills/agile/agile.ts spec add <issue> <name> [--title "Title"]
 ```
+
+### Update Spec Status
+
+```bash
+bun .claude/skills/agile/agile.ts spec status <issue> <spec> <pending|in-progress|completed>
+```
+
+**Note:** Completing a spec requires technical guidance to be updated first.
+
+### Delete a Spec
+
+```bash
+bun .claude/skills/agile/agile.ts spec delete <issue> <spec>
+```
+
+### Suggest Specs (AI-Assisted)
+
+```bash
+bun .claude/skills/agile/agile.ts spec suggest <issue>
+```
+
+The agent will analyze the issue description and suggest a breakdown into specs following the SPS pattern.
+
+## Guidance Commands
+
+Manage technical guidance for an issue.
+
+### Show Guidance
+
+```bash
+bun .claude/skills/agile/agile.ts guidance show <issue>
+```
+
+### Mark as Updated
+
+```bash
+bun .claude/skills/agile/agile.ts guidance update <issue>
+```
+
+Sets the last-updated timestamp. Required before completing specs.
+
+### Validate Guidance
+
+```bash
+bun .claude/skills/agile/agile.ts guidance validate <issue>
+```
+
+Checks if guidance needs update (completed specs since last update).
+
+### Set Status
+
+```bash
+bun .claude/skills/agile/agile.ts guidance status <issue> <draft|active|finalized>
+```
+
+## SPS Pattern (Smallest Possible Spec)
+
+Each spec should be the **smallest deliverable unit** - roughly the size of one "todo" item. Specs contain:
+
+- **Title** and **Description**: What this spec accomplishes
+- **Acceptance Criteria**: Specific, testable criteria
+- **Test Cases**: Expected behaviors to verify
+- **Dependencies**: Other specs that must complete first
+- **Preconditions**: System state required
+- **Implementation Notes**: Technical details (updated during work)
+- **Related Specs**: Links to related work
 
 ## Typical Workflow
 
 ```bash
-# 1. Create a new feature with owner
+# 1. Create a new feature
 bun .claude/skills/agile/agile.ts create feature dark-mode --title "Dark Mode Toggle" --owner "Alice"
 
-# 2. Start working on it
+# 2. Fill in description, then move to todo
 bun .claude/skills/agile/agile.ts move dark-mode 2-todo
+
+# 3. Generate spec breakdown
+bun .claude/skills/agile/agile.ts spec suggest dark-mode
+# Agent suggests specs, you approve/edit
+
+# 4. Move to in-progress
 bun .claude/skills/agile/agile.ts move dark-mode 3-in-progress
 
-# 3. Submit for review
+# 5. Work through specs one at a time
+bun .claude/skills/agile/agile.ts spec status dark-mode ui-toggle in-progress
+# ... implement ...
+bun .claude/skills/agile/agile.ts guidance update dark-mode
+bun .claude/skills/agile/agile.ts spec status dark-mode ui-toggle completed
+
+# 6. Complete all specs, move to review
 bun .claude/skills/agile/agile.ts move dark-mode 4-review
 
-# 4. Complete the work
+# 7. Complete DoD items, move to done
 bun .claude/skills/agile/agile.ts move dark-mode 5-done
 
-# 5. Archive when no longer needed
+# 8. Archive when no longer needed
 bun .claude/skills/agile/agile.ts archive dark-mode
 ```
 
-## Issue Types
-
-- **feature**: New features and enhancements
-- **bug**: Bug reports with reproduction steps
-- **task**: General tasks and chores
-
-## Naming Convention
-
-Issue names must be in kebab-case: lowercase letters, numbers, and hyphens only.
-
-Valid: `user-auth`, `fix-login-bug`, `update-deps-2024`
-Invalid: `UserAuth`, `fix_login`, `update deps`
-
-## Workflow Agent
-
-A specialized `agile-workflow` agent is available to help work through issues interactively. The agent:
-
-1. Analyzes the issue's current state using the `work` command
-2. Provides stage-appropriate guidance based on the workflow stage
-3. Helps populate incomplete sections through conversation
-4. Validates readiness before advancing to the next stage
-5. Handles move failures gracefully with guidance on what's missing
-
-### Stage-Specific Guidance
+## Stage-Specific Guidance
 
 | Stage | Focus | Key Actions |
 |-------|-------|-------------|
 | **1-backlog** | Define clearly | Populate description, write acceptance criteria |
-| **2-todo** | Prepare for work | Add technical notes, assign owner |
-| **3-in-progress** | Support development | Track progress, update notes |
-| **4-review** | Ensure quality | Walk through DoD checklist |
+| **2-todo** | Break into specs | Run `spec suggest`, assign owner, update guidance |
+| **3-in-progress** | Work through specs | Complete specs one at a time, update guidance |
+| **4-review** | Ensure quality | Walk through DoD checklist, verify guidance |
 | **5-done** | Wrap up | Archive or identify follow-up |
 
-### Usage
-
-The workflow agent is automatically available. When asked to "work on" an issue, it will analyze and guide you through the appropriate stage.

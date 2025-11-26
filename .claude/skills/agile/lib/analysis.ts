@@ -1,5 +1,13 @@
 import { readFile } from "node:fs/promises";
-import { type Stage, type Template, STAGE_NAMES } from "./types";
+import {
+  type Stage,
+  type Issue,
+  type IssueAnalysis,
+  type DoDStatus,
+  type DoDItem,
+} from "./types";
+import { createSpecManager } from "./spec-manager";
+import { createGuidanceTracker } from "./guidance-tracker";
 
 // ============================================================================
 // Placeholder Detection
@@ -105,21 +113,22 @@ export function findIncompleteSections(content: string): string[] {
 // Definition of Done Parsing
 // ============================================================================
 
-export interface DoDStatus {
-  completed: number;
-  total: number;
-  items: { text: string; checked: boolean }[];
-}
-
 /**
  * Parse Definition of Done checkboxes from issue content
  */
 export function parseDoD(content: string): DoDStatus {
+  // Find the DoD section first
+  const dodSectionMatch = content.match(/## Definition of Done[\s\S]*?(?=##|$)/);
+  if (!dodSectionMatch) {
+    return { completed: 0, total: 0, items: [] };
+  }
+
+  const dodContent = dodSectionMatch[0];
   const checkboxPattern = /- \[([ xX])\]\s*(.+)$/gm;
-  const items: { text: string; checked: boolean }[] = [];
+  const items: DoDItem[] = [];
 
   let match;
-  while ((match = checkboxPattern.exec(content)) !== null) {
+  while ((match = checkboxPattern.exec(dodContent)) !== null) {
     items.push({
       checked: match[1].toLowerCase() === "x",
       text: match[2].trim(),
@@ -134,38 +143,57 @@ export function parseDoD(content: string): DoDStatus {
 }
 
 // ============================================================================
-// Issue Analysis
+// Issue Analysis (Folder-Based)
 // ============================================================================
 
-export interface IssueAnalysis {
-  incompleteSections: string[];
-  dod: DoDStatus;
-  hasDescription: boolean;
-  hasTechnicalNotes: boolean;
-  ownerAssigned: boolean;
-}
-
 /**
- * Analyze issue content for completeness
+ * Analyze a folder-based issue comprehensively
  */
-export function analyzeIssue(content: string, owner: string): IssueAnalysis {
-  const sections = parseSections(content);
+export async function analyzeIssue(issue: Issue): Promise<IssueAnalysis> {
+  const specManager = createSpecManager();
+  const guidanceTracker = createGuidanceTracker();
+
+  // Read main file content
+  const mainContent = await readFile(issue.mainFilePath, "utf-8");
+  const sections = parseSections(mainContent);
   const incompleteSections = sections.filter((s) => s.hasPlaceholders).map((s) => s.name);
 
+  // Check description
   const descSection = sections.find((s) => s.name === "Description");
-  const techSection = sections.find((s) => s.name === "Technical Notes");
+  const hasDescription = descSection
+    ? !descSection.hasPlaceholders && descSection.content.length > 10
+    : false;
+
+  // Check owner
+  const ownerAssigned = issue.meta.owner !== "[Name]" && issue.meta.owner.length > 0;
+
+  // Parse DoD
+  const dod = parseDoD(mainContent);
+
+  // Get specs
+  const specStatus = await specManager.getCompletionStatus(issue);
+
+  // Get technical guidance
+  const technicalGuidance = await guidanceTracker.getGuidanceMeta(issue);
+  const needsGuidanceUpdate = await guidanceTracker.needsUpdate(issue, specStatus.specs);
 
   return {
+    issue,
+    specs: specStatus.specs,
+    specsCompleted: specStatus.completed,
+    specsTotal: specStatus.total,
+    allSpecsCompleted: specStatus.allCompleted,
+    technicalGuidance,
+    needsGuidanceUpdate,
+    dod,
     incompleteSections,
-    dod: parseDoD(content),
-    hasDescription: descSection ? !descSection.hasPlaceholders && descSection.content.length > 10 : false,
-    hasTechnicalNotes: techSection ? !techSection.hasPlaceholders && techSection.content.length > 10 : false,
-    ownerAssigned: owner !== "[Name]" && owner.length > 0,
+    hasDescription,
+    ownerAssigned,
   };
 }
 
 // ============================================================================
-// Stage Guidance
+// Stage Guidance (Updated for Specs)
 // ============================================================================
 
 export interface StageGuidance {
@@ -179,111 +207,60 @@ export const STAGE_GUIDANCE: Record<Stage, StageGuidance> = {
     focus: "Define the issue clearly so it can be prioritized",
     actions: [
       "Populate Description with clear context and purpose",
-      "Write acceptance criteria (Given/When/Then for features)",
-      "Capture reproduction steps (for bugs)",
+      "Write high-level acceptance criteria",
       "Document the goal and approach",
+      "Consider initial spec breakdown using `spec suggest`",
     ],
     readinessChecklist: ["Description has no placeholder text", "Basic scope is defined"],
   },
   "2-todo": {
-    focus: "Prepare for implementation",
+    focus: "Break down into specs and prepare for implementation",
     actions: [
-      "Refine acceptance criteria to be testable",
-      "Add Technical Notes with implementation approach",
-      "Identify dependencies or blockers",
+      "Run `agile.ts spec suggest <issue>` to generate spec breakdown",
+      "Review and refine suggested specs",
+      "Add or remove specs as needed with `spec add/delete`",
+      "Update technical guidance with initial approach",
       "Ensure owner is assigned",
     ],
-    readinessChecklist: ["Owner is assigned", "Technical Notes present", "No blockers identified"],
+    readinessChecklist: [
+      "Owner is assigned",
+      "Technical guidance file exists",
+      "Specs are created (at least one)",
+    ],
   },
   "3-in-progress": {
-    focus: "Support active development",
+    focus: "Work through specs one at a time",
     actions: [
-      "Help with implementation questions",
-      "Update Technical Notes with discoveries",
-      "Track Definition of Done progress",
-      "Consider if issue should be split",
+      "Start a spec with `agile.ts spec status <issue> <spec> in-progress`",
+      "Complete the spec implementation",
+      "Update technical guidance with discoveries",
+      "Mark spec complete with `spec status <issue> <spec> completed`",
+      "Repeat for remaining specs",
     ],
-    readinessChecklist: ["Implementation complete", "Ready for review"],
+    readinessChecklist: [
+      "All specs completed",
+      "Technical guidance updated",
+      "Ready for review",
+    ],
   },
   "4-review": {
     focus: "Ensure quality and completeness",
     actions: [
       "Walk through Definition of Done checklist",
-      "Verify acceptance criteria are met",
+      "Verify all acceptance criteria are met",
       "Check tests are passing",
-      "Confirm documentation is updated",
+      "Confirm technical guidance reflects final state",
+      "Update documentation as needed",
     ],
     readinessChecklist: ["All DoD items checked", "All acceptance criteria met"],
   },
   "5-done": {
     focus: "Wrap up and archive",
-    actions: ["Celebrate completion!", "Suggest archiving if appropriate", "Identify follow-up work"],
+    actions: [
+      "Celebrate completion!",
+      "Archive with `agile.ts archive <issue>`",
+      "Identify follow-up work for future issues",
+    ],
     readinessChecklist: ["Work is complete"],
   },
 };
-
-// ============================================================================
-// Transition Validation
-// ============================================================================
-
-export interface ValidationResult {
-  valid: boolean;
-  missing: string[];
-}
-
-/**
- * Validate if an issue is ready to transition to a new stage
- */
-export function validateForTransition(
-  toStage: Stage,
-  analysis: IssueAnalysis
-): ValidationResult {
-  const missing: string[] = [];
-
-  switch (toStage) {
-    case "2-todo":
-      if (!analysis.hasDescription) {
-        missing.push("Description section must be complete (no placeholders)");
-      }
-      break;
-
-    case "3-in-progress":
-      if (!analysis.ownerAssigned) {
-        missing.push("Owner must be assigned");
-      }
-      if (!analysis.hasTechnicalNotes) {
-        missing.push("Technical Notes section must be present");
-      }
-      break;
-
-    case "4-review":
-      if (analysis.dod.completed === 0 && analysis.dod.total > 0) {
-        missing.push("At least one Definition of Done item must be checked");
-      }
-      break;
-
-    case "5-done":
-      if (analysis.dod.completed < analysis.dod.total) {
-        missing.push(
-          `All Definition of Done items must be checked (${analysis.dod.completed}/${analysis.dod.total})`
-        );
-      }
-      break;
-  }
-
-  return {
-    valid: missing.length === 0,
-    missing,
-  };
-}
-
-/**
- * Read and analyze an issue file
- */
-export async function analyzeIssueFile(
-  filePath: string,
-  owner: string
-): Promise<IssueAnalysis> {
-  const content = await readFile(filePath, "utf-8");
-  return analyzeIssue(content, owner);
-}

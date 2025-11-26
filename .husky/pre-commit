@@ -14,16 +14,17 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
 fi
 
 # ============================================================================
-# Frontend Tests (Bun)
+# Frontend Tests (Vitest)
 # ============================================================================
 
 echo "Running frontend tests with coverage..."
-bun test --coverage
+bun run test:coverage
 
 if [ $? -ne 0 ]; then
   echo ""
   echo "Pre-commit failed: frontend tests failed or coverage < 100%"
   echo "Fix failing tests and ensure 100% coverage before committing."
+  echo "Use /* v8 ignore */ to exclude untestable code."
   exit 1
 fi
 

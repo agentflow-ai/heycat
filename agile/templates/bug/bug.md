@@ -5,7 +5,7 @@
 
 ## Description
 
-[What's broken - be specific about the observed behavior]
+[What's broken and the impact]
 
 ## Steps to Reproduce
 
@@ -15,11 +15,11 @@
 
 ## Expected Behavior
 
-[What should happen instead]
+[What should happen]
 
 ## Actual Behavior
 
-[What currently happens - include error messages if applicable]
+[What currently happens]
 
 ## Environment
 
@@ -28,6 +28,8 @@
 
 ## Definition of Done
 
+- [ ] All specs completed
+- [ ] Technical guidance finalized
 - [ ] Code reviewed and approved
 - [ ] Tests written and passing
-- [ ] Documentation updated (if applicable)
+- [ ] Root cause documented

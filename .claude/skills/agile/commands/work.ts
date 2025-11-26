@@ -1,11 +1,9 @@
 import { parseArgs } from "node:util";
 import { STAGE_NAMES, VALID_TRANSITIONS, type Stage } from "../lib/types";
-import { findProjectRoot, findIssue, parseIssueMeta } from "../lib/utils";
-import {
-  analyzeIssueFile,
-  STAGE_GUIDANCE,
-  validateForTransition,
-} from "../lib/analysis";
+import { findProjectRoot } from "../lib/utils";
+import { createIssueResolver } from "../lib/issue-resolver";
+import { analyzeIssue, STAGE_GUIDANCE } from "../lib/analysis";
+import { createValidatorChain } from "../lib/validators";
 
 export async function handleWork(args: string[]): Promise<void> {
   const { positionals } = parseArgs({
@@ -22,16 +20,16 @@ export async function handleWork(args: string[]): Promise<void> {
   }
 
   const projectRoot = await findProjectRoot();
-  const issue = await findIssue(projectRoot, name);
+  const resolver = createIssueResolver();
+  const issue = await resolver.findIssue(projectRoot, name);
 
   if (!issue) {
     console.error(`Issue not found: ${name}`);
     process.exit(1);
   }
 
-  // Parse issue metadata
-  const meta = await parseIssueMeta(issue.path);
-  const analysis = await analyzeIssueFile(issue.path, meta.owner);
+  // Analyze issue
+  const analysis = await analyzeIssue(issue);
   const guidance = STAGE_GUIDANCE[issue.stage];
 
   // Determine next stage
@@ -41,9 +39,10 @@ export async function handleWork(args: string[]): Promise<void> {
   );
 
   // Validate readiness for next stage
+  const validatorChain = createValidatorChain();
   let readiness = { valid: true, missing: [] as string[] };
   if (forwardStage) {
-    readiness = validateForTransition(forwardStage, analysis);
+    readiness = validatorChain.validate(issue, analysis, forwardStage);
   }
 
   // Output structured analysis
@@ -53,13 +52,49 @@ export async function handleWork(args: string[]): Promise<void> {
   console.log();
 
   console.log("ISSUE DETAILS");
-  console.log(`  Type:     ${meta.type}`);
+  console.log(`  Type:     ${issue.type}`);
   console.log(`  Stage:    ${issue.stage} (${STAGE_NAMES[issue.stage]})`);
-  console.log(`  Owner:    ${meta.owner}`);
-  console.log(`  Created:  ${meta.created}`);
-  console.log(`  Path:     ${issue.path}`);
+  console.log(`  Owner:    ${issue.meta.owner}`);
+  console.log(`  Created:  ${issue.meta.created}`);
+  console.log(`  Path:     ${issue.path}/`);
   console.log();
 
+  // Specs status
+  console.log("SPECS STATUS");
+  if (analysis.specsTotal === 0) {
+    console.log("  No specs created yet");
+    console.log("  Run: agile.ts spec suggest " + name);
+  } else {
+    console.log(`  Total: ${analysis.specsTotal} specs`);
+    console.log(`  Completed: ${analysis.specsCompleted} | In Progress: ${analysis.specs.filter(s => s.frontmatter.status === "in-progress").length} | Pending: ${analysis.specs.filter(s => s.frontmatter.status === "pending").length}`);
+    console.log();
+    console.log("  ┌─────────────────────────────┬────────────┐");
+    console.log("  │ Spec                        │ Status     │");
+    console.log("  ├─────────────────────────────┼────────────┤");
+    for (const spec of analysis.specs) {
+      const specName = spec.name.padEnd(27).slice(0, 27);
+      const status = spec.frontmatter.status.padEnd(10);
+      console.log(`  │ ${specName} │ ${status} │`);
+    }
+    console.log("  └─────────────────────────────┴────────────┘");
+  }
+  console.log();
+
+  // Technical guidance status
+  console.log("TECHNICAL GUIDANCE");
+  if (analysis.technicalGuidance) {
+    console.log(`  Last Updated: ${analysis.technicalGuidance.frontmatter.lastUpdated}`);
+    console.log(`  Status: ${analysis.technicalGuidance.frontmatter.status}`);
+    if (analysis.needsGuidanceUpdate) {
+      console.log("  ⚠ NEEDS UPDATE (spec completed since last update)");
+      console.log("  Run: agile.ts guidance update " + name);
+    }
+  } else {
+    console.log("  ⚠ Technical guidance file not found");
+  }
+  console.log();
+
+  // Analysis
   console.log("ANALYSIS");
   if (analysis.incompleteSections.length > 0) {
     console.log("  Incomplete Sections:");

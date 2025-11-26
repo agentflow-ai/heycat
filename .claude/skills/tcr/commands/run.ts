@@ -13,38 +13,49 @@ export async function handleRun(args: string[]): Promise<void> {
 
   const projectRoot = await findProjectRoot();
 
-  // Find test files for the given source files
+  // Determine target based on source files first (needed for early exit logic)
+  const target = determineTarget(args);
+
+  // Find test files for the given source files (frontend convention: foo.ts → foo.test.ts)
   const testFiles = await findTestFiles(args, projectRoot);
 
-  if (testFiles.length === 0) {
+  // For frontend, we need discovered test files. For backend, tests are inline in source files.
+  if (testFiles.length === 0 && target === "frontend") {
     console.log("No test files found for the specified source files.");
     console.log("Convention: foo.ts → foo.test.ts or foo.spec.ts");
     return;
   }
 
-  console.log(`Found ${testFiles.length} test file(s):`);
-  for (const file of testFiles) {
-    console.log(`  - ${file}`);
+  if (testFiles.length > 0) {
+    console.log(`Found ${testFiles.length} frontend test file(s):`);
+    for (const file of testFiles) {
+      console.log(`  - ${file}`);
+    }
+    console.log("");
   }
-  console.log("");
 
-  // Determine target based on source files
-  const target = determineTarget(args);
+  if (target === "backend" || target === "both") {
+    console.log("Backend tests are inline in source files (Rust #[cfg(test)] modules)");
+    console.log("");
+  }
+
   console.log(`Running ${target} tests...`);
   console.log("");
 
-  // Run tests
-  const result = await runTests(target, testFiles, projectRoot);
+  // Run tests - pass source files for backend module filtering
+  const result = await runTests(target, testFiles, projectRoot, args);
 
   // Display output
   console.log(formatTestOutput(result));
 
   // Record result
+  // For backend, include source files since tests are inline
+  const filesRun = target === "backend" ? args : testFiles.length > 0 ? testFiles : args;
   const testResult: TestResult = {
     passed: result.passed,
     timestamp: getCurrentTimestamp(),
     error: result.error,
-    filesRun: testFiles,
+    filesRun,
     target,
   };
   await recordTestResult(projectRoot, testResult);
@@ -54,6 +65,6 @@ export async function handleRun(args: string[]): Promise<void> {
     console.log("\n✅ All tests passed");
   } else {
     console.log("\n❌ Tests failed");
-    process.exit(1);
+    process.exit(2);
   }
 }

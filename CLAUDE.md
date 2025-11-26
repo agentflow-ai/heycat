@@ -54,10 +54,15 @@ fn command_name(arg1: &str, arg2: i32) -> String {
 
 ## Agile Workflow
 
-Project uses a Kanban-style issue tracking system in `/agile`. Use the `agile` skill to create, move, list, and archive issues.
+Project uses a Kanban-style issue tracking system in `/agile`.
 
-- **Work through issues**: Use the `agile-workflow` agent or `work` command for stage-appropriate guidance
-- **Strict validation**: Transitions require complete content (description, owner, DoD items)
+**When to use:** Invoke the `agile` skill when the user wants to:
+- Create a new feature, bug, or task
+- Work on or refine an existing issue
+- Move issues through workflow stages
+- List, archive, or delete issues
+
+The skill provides full documentation and CLI commands. Transitions require complete content (description, owner, DoD items).
 
 ## TCR (Test-Commit-Refactor) Workflow
 
@@ -73,13 +78,30 @@ The TCR skill enforces test discipline through two layers for both frontend and 
 ### Pre-Commit Enforcement (Husky)
 - Husky runs both **frontend** and **backend** tests with coverage before every commit
 - **100% coverage required** for both frontend and backend
-- Untestable code must be explicitly excluded using `#[coverage(off)]` attribute
-- Backend uses `cargo +nightly llvm-cov` for coverage attribute support
+- Untestable code must be explicitly excluded (see Coverage Exclusions below)
 - Commits blocked if tests fail or coverage is insufficient
 
 ### Coverage Exclusions
 
-For Rust code that cannot be unit tested (e.g., GUI initialization), use:
+Both frontend and backend require 100% coverage. Use inline exclusion comments for untestable code:
+
+#### Frontend (TypeScript/React)
+
+Uses Vitest with `/* v8 ignore */` comments:
+
+```typescript
+/* v8 ignore next */
+setGreetMsg(await invoke("greet", { name })); // Single line
+
+/* v8 ignore start */
+// Multiple lines excluded
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+/* v8 ignore stop */
+```
+
+#### Backend (Rust)
+
+Uses `#[coverage(off)]` attribute (requires nightly):
 
 ```rust
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -105,7 +127,9 @@ bun .claude/skills/tcr/tcr.ts status --coverage # Show state with coverage metri
 bun .claude/skills/tcr/tcr.ts coverage          # Run coverage checks (both targets)
 bun .claude/skills/tcr/tcr.ts coverage frontend # Run frontend coverage only
 bun .claude/skills/tcr/tcr.ts coverage backend  # Run backend coverage only
-bun .claude/skills/tcr/tcr.ts reset             # Reset failure counter
+bun .claude/skills/tcr/tcr.ts verify-config     # Verify coverage thresholds are in sync
+bun .claude/skills/tcr/tcr.ts reset             # Reset failure counter and clear error log
+bun .claude/skills/tcr/tcr.ts help              # Show help message
 ```
 
 ### Test Discovery
