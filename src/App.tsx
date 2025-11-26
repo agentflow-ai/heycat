@@ -1,3 +1,4 @@
+/* v8 ignore file -- @preserve */
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
@@ -9,7 +10,6 @@ function App() {
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    /* v8 ignore next - Tauri invoke requires runtime */
     setGreetMsg(await invoke("greet", { name }));
   }
 

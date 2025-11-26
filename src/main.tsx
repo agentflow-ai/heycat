@@ -1,4 +1,4 @@
-/* v8 ignore start - React DOM bootstrap cannot be unit tested */
+/* v8 ignore file -- @preserve */
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
