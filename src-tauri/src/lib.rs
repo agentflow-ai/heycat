@@ -10,7 +10,7 @@ mod hotkey;
 mod recording;
 
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Concrete type for HotkeyService with TauriShortcutBackend
 type HotkeyServiceHandle = hotkey::HotkeyService<hotkey::TauriShortcutBackend>;
@@ -60,6 +60,7 @@ pub fn run() {
             // Clone for callback
             let integration_clone = integration.clone();
             let state_clone = recording_state.clone();
+            let app_handle_clone = app.handle().clone();
 
             // Register hotkey
             eprintln!("[app] Registering global hotkey (Cmd+Shift+R)...");
@@ -74,6 +75,14 @@ pub fn run() {
                     }
                     Err(e) => {
                         eprintln!("[app] Failed to acquire integration lock: {}", e);
+                        // Emit error event so frontend knows something went wrong
+                        let _ = app_handle_clone.emit(
+                            events::event_names::RECORDING_ERROR,
+                            events::RecordingErrorPayload {
+                                message: "Internal error: please restart the application"
+                                    .to_string(),
+                            },
+                        );
                     }
                 }
             })) {
