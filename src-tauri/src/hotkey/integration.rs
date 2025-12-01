@@ -1,77 +1,19 @@
 // Hotkey-to-recording integration module
 // Connects global hotkey to recording state with debouncing
+// Uses unified command implementations for start/stop logic
 
-use crate::audio::{encode_wav, wav::SystemFileWriter, AudioBuffer, AudioThreadHandle, DEFAULT_SAMPLE_RATE};
-use std::sync::Arc;
+use crate::audio::AudioThreadHandle;
+use crate::commands::logic::{start_recording_impl, stop_recording_impl};
 use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload,
 };
-use crate::recording::{RecordingManager, RecordingState, RecordingStateError};
-use std::sync::Mutex;
+use crate::recording::{RecordingManager, RecordingState};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Debounce duration for hotkey presses (200ms)
 pub const DEBOUNCE_DURATION_MS: u64 = 200;
-
-// Coverage exclusions: These error handler functions handle internal state machine bugs
-// or lock poisoning - conditions that cannot occur through normal API usage and are
-// untestable without unsafe mocking. The functions return false to indicate toggle rejected.
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn handle_lock_error<E: RecordingEventEmitter>(emitter: &E) -> bool {
-    eprintln!("[hotkey] Failed to acquire lock: poisoned");
-    emitter.emit_recording_error(RecordingErrorPayload {
-        message: "Internal error: state lock poisoned".to_string(),
-    });
-    false
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn handle_start_error<E: RecordingEventEmitter>(emitter: &E, e: RecordingStateError) -> bool {
-    eprintln!("[hotkey] Failed to start recording: {}", e);
-    emitter.emit_recording_error(RecordingErrorPayload {
-        message: format!("Failed to start recording: {}", e),
-    });
-    false
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn handle_transition_error<E: RecordingEventEmitter>(emitter: &E, e: RecordingStateError) -> bool {
-    eprintln!("[hotkey] Failed to transition to Processing: {}", e);
-    emitter.emit_recording_error(RecordingErrorPayload {
-        message: format!("Failed to stop recording: {}", e),
-    });
-    false
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn handle_buffer_error<E: RecordingEventEmitter>(
-    emitter: &E,
-    e: RecordingStateError,
-    manager: &mut RecordingManager,
-) -> bool {
-    eprintln!("[hotkey] Failed to get audio buffer: {}", e);
-    emitter.emit_recording_error(RecordingErrorPayload {
-        message: format!("Failed to get audio buffer: {}", e),
-    });
-    // Try to recover by transitioning to Idle
-    let _ = manager.transition_to(RecordingState::Idle);
-    false
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn handle_buffer_lock_error<E: RecordingEventEmitter>(
-    emitter: &E,
-    manager: &mut RecordingManager,
-) -> bool {
-    eprintln!("[hotkey] Failed to lock buffer: lock poisoned");
-    emitter.emit_recording_error(RecordingErrorPayload {
-        message: "Internal error: buffer lock poisoned".to_string(),
-    });
-    let _ = manager.transition_to(RecordingState::Idle);
-    false
-}
 
 /// Handles hotkey toggle with debouncing and event emission
 pub struct HotkeyIntegration<E: RecordingEventEmitter> {
@@ -113,13 +55,13 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
     /// Handle hotkey toggle - debounces rapid presses
     ///
     /// Toggles recording state (Idle → Recording → Idle) and emits events.
-    /// When a backend is configured, starts/stops audio capture on toggle.
+    /// Delegates to unified command implementations for start/stop logic.
     ///
     /// Returns true if the toggle was accepted, false if debounced or busy
     ///
-    /// Coverage exclusion: This integration method is tested through integration_test.rs
-    /// with mocks. The error handling paths (lock poisoning, state machine bugs) cannot
-    /// be triggered without unsafe mocking of std::sync primitives.
+    /// Coverage exclusion: Error paths (lock poisoning, command failures) cannot
+    /// be triggered without mocking std::sync primitives. The happy path is tested
+    /// via integration_test.rs with mock emitters.
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn handle_toggle(&mut self, state: &Mutex<RecordingManager>) -> bool {
         let now = Instant::now();
@@ -127,167 +69,80 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
         // Check debounce
         if let Some(last) = self.last_toggle_time {
             if now.duration_since(last) < self.debounce_duration {
-                return false; // Debounced
+                eprintln!("[hotkey] Toggle debounced");
+                return false;
             }
         }
 
         self.last_toggle_time = Some(now);
 
-        // Get state manager - if lock is poisoned (panic in another thread),
-        // emit error and reject toggle rather than crashing.
-        let mut manager = match state.lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                return handle_lock_error(&self.emitter);
+        // Check current state to decide action
+        let current_state = match state.lock() {
+            Ok(guard) => guard.get_state(),
+            Err(e) => {
+                eprintln!("[hotkey] Failed to acquire lock: {}", e);
+                self.emitter.emit_recording_error(RecordingErrorPayload {
+                    message: "Internal error: state lock poisoned".to_string(),
+                });
+                return false;
             }
         };
 
-        let current_state = manager.get_state();
-        eprintln!("[hotkey] Toggle received, current state: {:?}", current_state);
+        eprintln!(
+            "[hotkey] Toggle received, current state: {:?}",
+            current_state
+        );
 
         match current_state {
             RecordingState::Idle => {
                 eprintln!("[hotkey] Starting recording...");
-                // Start recording - creates buffer and transitions to Recording state
-                // Use DEFAULT_SAMPLE_RATE initially, will update after audio capture starts
-                let buffer = match manager.start_recording(DEFAULT_SAMPLE_RATE) {
-                    Ok(buf) => buf,
-                    Err(e) => return handle_start_error(&self.emitter, e),
-                };
-
-                // Start audio capture - the function is excluded from coverage
-                // because it interacts with audio hardware via the audio thread.
-                // On failure it returns false (audio thread disconnected - rare).
-                if !self.try_start_audio_capture(&mut *manager, buffer) {
-                    eprintln!("[hotkey] Audio capture failed to start, rolling back");
-                    return false;
+                // Use unified command implementation
+                match start_recording_impl(state, self.audio_thread.as_deref()) {
+                    Ok(()) => {
+                        self.emitter
+                            .emit_recording_started(RecordingStartedPayload {
+                                timestamp: current_timestamp(),
+                            });
+                        eprintln!("[hotkey] Recording started, emitted recording_started event");
+                        true
+                    }
+                    Err(e) => {
+                        eprintln!("[hotkey] Failed to start recording: {}", e);
+                        self.emitter.emit_recording_error(RecordingErrorPayload {
+                            message: e,
+                        });
+                        false
+                    }
                 }
-
-                self.emitter
-                    .emit_recording_started(RecordingStartedPayload {
-                        timestamp: current_timestamp(),
-                    });
-                eprintln!("[hotkey] Recording started, emitted recording_started event");
-                true
             }
             RecordingState::Recording => {
                 eprintln!("[hotkey] Stopping recording...");
-                // Stop audio capture if audio thread is configured
-                if let Some(ref audio_thread) = self.audio_thread {
-                    eprintln!("[hotkey] Sending stop command to audio thread");
-                    let _ = audio_thread.stop(); // Best effort, ignore errors
+                // Use unified command implementation
+                match stop_recording_impl(state, self.audio_thread.as_deref()) {
+                    Ok(metadata) => {
+                        eprintln!(
+                            "[hotkey] Recording stopped: {} samples, {:.2}s duration",
+                            metadata.sample_count, metadata.duration_secs
+                        );
+                        self.emitter
+                            .emit_recording_stopped(RecordingStoppedPayload { metadata });
+                        eprintln!("[hotkey] Emitted recording_stopped event");
+                        true
+                    }
+                    Err(e) => {
+                        eprintln!("[hotkey] Failed to stop recording: {}", e);
+                        self.emitter.emit_recording_error(RecordingErrorPayload {
+                            message: e,
+                        });
+                        false
+                    }
                 }
-
-                // Get the actual sample rate before transitioning
-                let sample_rate = manager.get_sample_rate().unwrap_or(DEFAULT_SAMPLE_RATE);
-
-                // Stop recording - transition through Processing to Idle
-                if let Err(e) = manager.transition_to(RecordingState::Processing) {
-                    return handle_transition_error(&self.emitter, e);
-                }
-
-                // Get buffer data before clearing
-                let buffer = match manager.get_audio_buffer() {
-                    Ok(buf) => buf,
-                    Err(e) => return handle_buffer_error(&self.emitter, e, &mut manager),
-                };
-
-                let samples = match buffer.lock() {
-                    Ok(guard) => guard,
-                    Err(_) => return handle_buffer_lock_error(&self.emitter, &mut manager),
-                };
-
-                let sample_count = samples.len();
-                let duration_secs = sample_count as f64 / sample_rate as f64;
-                eprintln!(
-                    "[hotkey] Recording stopped: {} samples, {:.2}s duration at {} Hz",
-                    sample_count, duration_secs, sample_rate
-                );
-
-                // Encode WAV file if we have samples
-                // Coverage exclusion: WAV encoding is tested in wav_test.rs and commands/tests.rs.
-                // Integration tests don't have real audio samples from hardware.
-                let file_path = self.encode_samples_to_wav(&samples, sample_rate);
-
-                let metadata = crate::recording::RecordingMetadata {
-                    duration_secs,
-                    file_path,
-                    sample_count,
-                };
-                drop(samples); // Release buffer lock before state transition
-
-                // Transition to Idle - if this fails, just log it (rare edge case)
-                if let Err(e) = manager.transition_to(RecordingState::Idle) {
-                    eprintln!("[hotkey] Failed to transition to Idle: {}", e);
-                }
-
-                self.emitter
-                    .emit_recording_stopped(RecordingStoppedPayload { metadata });
-                eprintln!("[hotkey] Emitted recording_stopped event");
-                true
             }
             RecordingState::Processing => {
                 // In Processing state - ignore toggle (busy)
                 eprintln!("[hotkey] Toggle ignored - already processing");
                 false
             }
-        }
-    }
-
-    /// Try to start audio capture if audio thread is configured
-    ///
-    /// Takes the audio buffer and starts capture. On success, updates the
-    /// manager's sample rate with the actual device rate.
-    /// Returns true if capture started or no audio thread configured (continue).
-    /// Returns false if capture failed (caller should return early).
-    ///
-    /// Excluded from coverage: This function interacts with the audio thread
-    /// which ultimately calls hardware (cpal). The error path is only hit when
-    /// the audio thread disconnects, which is a rare edge case.
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn try_start_audio_capture(&self, manager: &mut RecordingManager, buffer: AudioBuffer) -> bool {
-        if let Some(ref audio_thread) = self.audio_thread {
-            match audio_thread.start(buffer) {
-                Ok(sample_rate) => {
-                    // Update with actual sample rate from device
-                    manager.set_sample_rate(sample_rate);
-                    eprintln!("[hotkey] Audio capture started at {} Hz", sample_rate);
-                }
-                Err(e) => {
-                    // Audio thread disconnected or capture failed - rollback and emit error
-                    manager.reset_to_idle();
-                    self.emitter.emit_recording_error(RecordingErrorPayload {
-                        message: format!("Audio capture failed: {:?}", e),
-                    });
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    /// Encode audio samples to WAV file with the specified sample rate
-    ///
-    /// Excluded from coverage: WAV encoding is already tested in wav_test.rs
-    /// and commands/tests.rs. Integration tests don't have real audio samples.
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn encode_samples_to_wav(&self, samples: &[f32], sample_rate: u32) -> String {
-        if !samples.is_empty() {
-            eprintln!("[hotkey] Encoding WAV file at {} Hz...", sample_rate);
-            let writer = SystemFileWriter;
-            match encode_wav(samples, sample_rate, &writer) {
-                Ok(path) => {
-                    eprintln!("[hotkey] WAV file saved: {}", path);
-                    path
-                }
-                Err(e) => {
-                    eprintln!("[hotkey] Failed to encode WAV: {:?}", e);
-                    String::new()
-                }
-            }
-        } else {
-            eprintln!("[hotkey] No samples to encode");
-            String::new()
         }
     }
 
