@@ -16,8 +16,6 @@ use std::sync::mpsc::Sender;
 pub struct CpalBackend {
     state: CaptureState,
     stream: Option<Stream>,
-    /// Actual sample rate from the audio device
-    sample_rate: Option<u32>,
 }
 
 impl CpalBackend {
@@ -26,7 +24,6 @@ impl CpalBackend {
         Self {
             state: CaptureState::Idle,
             stream: None,
-            sample_rate: None,
         }
     }
 }
@@ -214,7 +211,6 @@ impl AudioCaptureBackend for CpalBackend {
         eprintln!("[cpal] Audio stream started successfully!");
         self.stream = Some(stream);
         self.state = CaptureState::Capturing;
-        self.sample_rate = Some(actual_sample_rate);
         Ok(actual_sample_rate)
     }
 
