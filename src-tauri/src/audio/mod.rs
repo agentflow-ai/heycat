@@ -80,7 +80,8 @@ pub enum AudioCaptureError {
 /// Trait for audio capture backends (allows mocking in tests)
 pub trait AudioCaptureBackend {
     /// Start capturing audio into the provided buffer
-    fn start(&mut self, buffer: AudioBuffer) -> Result<(), AudioCaptureError>;
+    /// Returns the actual sample rate of the audio device
+    fn start(&mut self, buffer: AudioBuffer) -> Result<u32, AudioCaptureError>;
 
     /// Stop capturing audio
     fn stop(&mut self) -> Result<(), AudioCaptureError>;

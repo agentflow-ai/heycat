@@ -1,7 +1,7 @@
 // Hotkey-to-recording integration module
 // Connects global hotkey to recording state with debouncing
 
-use crate::audio::{encode_wav, wav::SystemFileWriter, AudioThreadHandle, DEFAULT_SAMPLE_RATE};
+use crate::audio::{encode_wav, wav::SystemFileWriter, AudioBuffer, AudioThreadHandle, DEFAULT_SAMPLE_RATE};
 use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload,
@@ -78,15 +78,16 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
         match current_state {
             RecordingState::Idle => {
                 eprintln!("[hotkey] Starting recording...");
-                // Start recording - transition is always valid from Idle
-                manager
-                    .transition_to(RecordingState::Recording)
+                // Start recording - creates buffer and transitions to Recording state
+                // Use DEFAULT_SAMPLE_RATE initially, will update after audio capture starts
+                let buffer = manager
+                    .start_recording(DEFAULT_SAMPLE_RATE)
                     .expect("Idle->Recording is always valid");
 
                 // Start audio capture - the function is excluded from coverage
                 // because it interacts with audio hardware via the audio thread.
                 // On failure it returns false (audio thread disconnected - rare).
-                if !self.try_start_audio_capture(&mut *manager) {
+                if !self.try_start_audio_capture(&mut *manager, buffer) {
                     eprintln!("[hotkey] Audio capture failed to start, rolling back");
                     return false;
                 }
@@ -106,6 +107,9 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                     let _ = audio_thread.stop(); // Best effort, ignore errors
                 }
 
+                // Get the actual sample rate before transitioning
+                let sample_rate = manager.get_sample_rate().unwrap_or(DEFAULT_SAMPLE_RATE);
+
                 // Stop recording - transition through Processing to Idle
                 manager
                     .transition_to(RecordingState::Processing)
@@ -117,16 +121,16 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                     .expect("Buffer available in Processing");
                 let samples = buffer.lock().unwrap();
                 let sample_count = samples.len();
-                let duration_secs = sample_count as f64 / DEFAULT_SAMPLE_RATE as f64;
+                let duration_secs = sample_count as f64 / sample_rate as f64;
                 eprintln!(
-                    "[hotkey] Recording stopped: {} samples, {:.2}s duration",
-                    sample_count, duration_secs
+                    "[hotkey] Recording stopped: {} samples, {:.2}s duration at {} Hz",
+                    sample_count, duration_secs, sample_rate
                 );
 
                 // Encode WAV file if we have samples
                 // Coverage exclusion: WAV encoding is tested in wav_test.rs and commands/tests.rs.
                 // Integration tests don't have real audio samples from hardware.
-                let file_path = self.encode_samples_to_wav(&samples);
+                let file_path = self.encode_samples_to_wav(&samples, sample_rate);
 
                 let metadata = crate::recording::RecordingMetadata {
                     duration_secs,
@@ -155,6 +159,8 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
 
     /// Try to start audio capture if audio thread is configured
     ///
+    /// Takes the audio buffer and starts capture. On success, updates the
+    /// manager's sample rate with the actual device rate.
     /// Returns true if capture started or no audio thread configured (continue).
     /// Returns false if capture failed (caller should return early).
     ///
@@ -162,11 +168,16 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
     /// which ultimately calls hardware (cpal). The error path is only hit when
     /// the audio thread disconnects, which is a rare edge case.
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn try_start_audio_capture(&self, manager: &mut RecordingManager) -> bool {
+    fn try_start_audio_capture(&self, manager: &mut RecordingManager, buffer: AudioBuffer) -> bool {
         if let Some(ref audio_thread) = self.audio_thread {
-            if let Ok(buffer) = manager.get_audio_buffer() {
-                if let Err(e) = audio_thread.start(buffer) {
-                    // Audio thread disconnected - rollback and emit error
+            match audio_thread.start(buffer) {
+                Ok(sample_rate) => {
+                    // Update with actual sample rate from device
+                    manager.set_sample_rate(sample_rate);
+                    eprintln!("[hotkey] Audio capture started at {} Hz", sample_rate);
+                }
+                Err(e) => {
+                    // Audio thread disconnected or capture failed - rollback and emit error
                     manager.reset_to_idle();
                     self.emitter.emit_recording_error(RecordingErrorPayload {
                         message: format!("Audio capture failed: {:?}", e),
@@ -178,16 +189,16 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
         true
     }
 
-    /// Encode audio samples to WAV file
+    /// Encode audio samples to WAV file with the specified sample rate
     ///
     /// Excluded from coverage: WAV encoding is already tested in wav_test.rs
     /// and commands/tests.rs. Integration tests don't have real audio samples.
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn encode_samples_to_wav(&self, samples: &[f32]) -> String {
+    fn encode_samples_to_wav(&self, samples: &[f32], sample_rate: u32) -> String {
         if !samples.is_empty() {
-            eprintln!("[hotkey] Encoding WAV file...");
+            eprintln!("[hotkey] Encoding WAV file at {} Hz...", sample_rate);
             let writer = SystemFileWriter;
-            match encode_wav(samples, DEFAULT_SAMPLE_RATE, &writer) {
+            match encode_wav(samples, sample_rate, &writer) {
                 Ok(path) => {
                     eprintln!("[hotkey] WAV file saved: {}", path);
                     path

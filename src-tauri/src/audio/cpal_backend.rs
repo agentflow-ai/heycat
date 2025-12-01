@@ -14,6 +14,8 @@ use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState};
 pub struct CpalBackend {
     state: CaptureState,
     stream: Option<Stream>,
+    /// Actual sample rate from the audio device
+    sample_rate: Option<u32>,
 }
 
 impl CpalBackend {
@@ -22,6 +24,7 @@ impl CpalBackend {
         Self {
             state: CaptureState::Idle,
             stream: None,
+            sample_rate: None,
         }
     }
 }
@@ -33,7 +36,7 @@ impl Default for CpalBackend {
 }
 
 impl AudioCaptureBackend for CpalBackend {
-    fn start(&mut self, buffer: AudioBuffer) -> Result<(), AudioCaptureError> {
+    fn start(&mut self, buffer: AudioBuffer) -> Result<u32, AudioCaptureError> {
         eprintln!("[cpal] Starting audio capture...");
 
         // Get the default audio host
@@ -55,9 +58,10 @@ impl AudioCaptureBackend for CpalBackend {
             eprintln!("[cpal] ERROR: Failed to get input config: {}", e);
             AudioCaptureError::DeviceError(e.to_string())
         })?;
+        let actual_sample_rate = config.sample_rate().0;
         eprintln!(
             "[cpal] Config: {} Hz, {:?}, {} channels",
-            config.sample_rate().0,
+            actual_sample_rate,
             config.sample_format(),
             config.channels()
         );
@@ -133,7 +137,8 @@ impl AudioCaptureBackend for CpalBackend {
         eprintln!("[cpal] Audio stream started successfully!");
         self.stream = Some(stream);
         self.state = CaptureState::Capturing;
-        Ok(())
+        self.sample_rate = Some(actual_sample_rate);
+        Ok(actual_sample_rate)
     }
 
     fn stop(&mut self) -> Result<(), AudioCaptureError> {

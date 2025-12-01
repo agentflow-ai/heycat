@@ -29,13 +29,13 @@ pub fn start_recording_impl(state: &Mutex<RecordingManager>) -> Result<(), Strin
         return Err("Already recording".to_string());
     }
 
-    // Transition to Recording
+    // Start recording with default sample rate
+    // Note: Currently commands don't start actual audio capture - that's handled
+    // by the hotkey integration. This will be fixed in Phase 2 to add audio
+    // thread integration to commands.
     manager
-        .transition_to(RecordingState::Recording)
+        .start_recording(DEFAULT_SAMPLE_RATE)
         .map_err(|e| e.to_string())?;
-
-    // Note: Actual audio capture is handled by the hotkey integration
-    // The IPC commands manage state, hotkey manages capture
 
     Ok(())
 }
@@ -61,6 +61,9 @@ pub fn stop_recording_impl(state: &Mutex<RecordingManager>) -> Result<RecordingM
         return Err("Not currently recording".to_string());
     }
 
+    // Get the actual sample rate before transitioning
+    let sample_rate = manager.get_sample_rate().unwrap_or(DEFAULT_SAMPLE_RATE);
+
     // Transition to Processing
     manager
         .transition_to(RecordingState::Processing)
@@ -74,15 +77,15 @@ pub fn stop_recording_impl(state: &Mutex<RecordingManager>) -> Result<RecordingM
     // Encode WAV if we have samples
     let file_path = if !samples.is_empty() {
         let writer = SystemFileWriter;
-        encode_wav(&samples, DEFAULT_SAMPLE_RATE, &writer)
+        encode_wav(&samples, sample_rate, &writer)
             .map_err(|e| format!("Encoding error: {:?}", e))?
     } else {
         // No samples recorded - return placeholder
         String::new()
     };
 
-    // Calculate duration
-    let duration_secs = sample_count as f64 / DEFAULT_SAMPLE_RATE as f64;
+    // Calculate duration using actual sample rate
+    let duration_secs = sample_count as f64 / sample_rate as f64;
 
     // Transition to Idle
     manager

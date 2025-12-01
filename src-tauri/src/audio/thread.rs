@@ -4,15 +4,18 @@
 // CpalBackend contains cpal::Stream which is NOT Send+Sync, so we isolate
 // it on a dedicated thread and communicate via channels.
 
-use super::{AudioBuffer, AudioCaptureBackend, CpalBackend};
+use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CpalBackend};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
+/// Response from a Start command
+pub type StartResponse = Result<u32, AudioCaptureError>;
+
 /// Commands sent to the audio thread
-#[derive(Debug)]
 pub enum AudioCommand {
     /// Start capturing audio into the provided buffer
-    Start(AudioBuffer),
+    /// Includes a response channel to return the sample rate or error
+    Start(AudioBuffer, Sender<StartResponse>),
     /// Stop capturing audio
     Stop,
     /// Shutdown the audio thread (used in tests)
@@ -46,12 +49,19 @@ impl AudioThreadHandle {
 
     /// Start audio capture into the provided buffer
     ///
-    /// Returns Ok(()) if the command was sent successfully.
-    /// The actual capture may still fail on the audio thread.
-    pub fn start(&self, buffer: AudioBuffer) -> Result<(), AudioThreadError> {
+    /// Returns the actual sample rate of the audio device on success.
+    /// Blocks until the audio thread responds.
+    pub fn start(&self, buffer: AudioBuffer) -> Result<u32, AudioThreadError> {
+        let (response_tx, response_rx) = mpsc::channel();
         self.sender
-            .send(AudioCommand::Start(buffer))
-            .map_err(|_| AudioThreadError::ThreadDisconnected)
+            .send(AudioCommand::Start(buffer, response_tx))
+            .map_err(|_| AudioThreadError::ThreadDisconnected)?;
+
+        // Wait for response from audio thread
+        response_rx
+            .recv()
+            .map_err(|_| AudioThreadError::ThreadDisconnected)?
+            .map_err(AudioThreadError::CaptureError)
     }
 
     /// Stop audio capture
@@ -75,6 +85,8 @@ impl AudioThreadHandle {
 pub enum AudioThreadError {
     /// The audio thread has disconnected
     ThreadDisconnected,
+    /// Audio capture failed
+    CaptureError(AudioCaptureError),
 }
 
 /// Main loop for the audio thread
@@ -89,12 +101,20 @@ fn audio_thread_main(receiver: Receiver<AudioCommand>) {
 
     while let Ok(command) = receiver.recv() {
         match command {
-            AudioCommand::Start(buffer) => {
+            AudioCommand::Start(buffer, response_tx) => {
                 eprintln!("[audio-thread] Received START command");
-                match backend.start(buffer) {
-                    Ok(()) => eprintln!("[audio-thread] Audio capture started successfully"),
+                let result = backend.start(buffer);
+                match &result {
+                    Ok(sample_rate) => {
+                        eprintln!(
+                            "[audio-thread] Audio capture started successfully at {} Hz",
+                            sample_rate
+                        )
+                    }
                     Err(e) => eprintln!("[audio-thread] Audio capture failed to start: {:?}", e),
                 }
+                // Send response back - ignore if receiver dropped
+                let _ = response_tx.send(result);
             }
             AudioCommand::Stop => {
                 eprintln!("[audio-thread] Received STOP command");
@@ -129,13 +149,22 @@ mod tests {
         assert!(handle.shutdown().is_ok());
     }
 
+    /// Test that start and stop commands work
+    /// Excluded from coverage because hardware availability varies
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn test_start_stop_commands() {
         let handle = AudioThreadHandle::spawn();
         let buffer = AudioBuffer::new();
 
-        // Start should succeed (command sent)
-        assert!(handle.start(buffer).is_ok());
+        // Start returns sample rate on success (or CaptureError if no device)
+        let result = handle.start(buffer);
+        // Either succeeds with sample rate or fails with CaptureError (no device in CI)
+        match result {
+            Ok(sample_rate) => assert!(sample_rate > 0),
+            Err(AudioThreadError::CaptureError(_)) => {} // Expected in CI without audio device
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
 
         // Stop should succeed
         assert!(handle.stop().is_ok());

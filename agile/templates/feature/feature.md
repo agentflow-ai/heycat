@@ -2,6 +2,7 @@
 
 **Created:** YYYY-MM-DD
 **Owner:** [Name]
+**Discovery Phase:** not_started
 
 ## Description
 
@@ -9,9 +10,10 @@
 
 ## BDD Scenarios
 
-> Run `agile.ts discover <name>` for guided scenario creation, or write manually using Given/When/Then format.
+<!-- Run 'agile.ts discover <name>' for guided scenario creation -->
+<!-- Required sections: User Persona, Problem Statement, Gherkin scenarios, Out of Scope, Assumptions -->
 
-[No scenarios defined yet]
+[No scenarios defined yet - run discovery to complete this section]
 
 ## Acceptance Criteria (High-Level)
 

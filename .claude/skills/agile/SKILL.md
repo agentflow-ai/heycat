@@ -59,10 +59,12 @@ bun .claude/skills/agile/agile.ts move <name> <stage>
 
 | Target Stage | Requirements |
 |--------------|--------------|
-| `2-todo` | Description section must be complete (no placeholders) |
+| `2-todo` | Description complete. **Features:** discovery phase = `complete` + valid BDD scenarios |
 | `3-in-progress` | Owner assigned, Technical guidance exists |
 | `4-review` | All specs completed, Guidance updated, >=1 DoD checked |
 | `5-done` | All Definition of Done items must be checked |
+
+**Note:** Bugs and tasks skip BDD discovery. Use `--force` to bypass validation if needed.
 
 ### Work on an Issue
 
@@ -75,6 +77,70 @@ Analyzes an issue and provides stage-appropriate guidance, including:
 - Technical guidance status
 - Definition of Done progress
 - Readiness to advance
+
+### BDD Discovery (Features Only)
+
+```bash
+bun .claude/skills/agile/agile.ts discover <name> [subcommand]
+```
+
+Guides BDD scenario creation through product research questions. Features must complete discovery before moving to `2-todo`.
+
+**Subcommands:**
+- `(none)` - Show current phase guidance and questions
+- `advance` - Move to next phase (validates current phase)
+- `status` - Show discovery progress and validation status
+- `validate` - Check BDD format without advancing
+- `reset` - Restart discovery to `not_started`
+
+**Discovery Phases:**
+```
+not_started → persona → paths → scope → synthesize → complete
+```
+
+| Phase | Purpose | Output |
+|-------|---------|--------|
+| `persona` | WHO/WHAT/WHY questions | `### User Persona`, `### Problem Statement` |
+| `paths` | Happy + failure paths | Gherkin scenarios (Given/When/Then) |
+| `scope` | Boundaries | `### Out of Scope`, `### Assumptions` |
+| `synthesize` | Validate completeness | Fix validation errors |
+
+**Expected BDD Section Structure:**
+```markdown
+## BDD Scenarios
+
+### User Persona
+<who is the user and their context>
+
+### Problem Statement
+<what problem is being solved>
+
+```gherkin
+Feature: <title>
+
+  Scenario: Happy path - <description>
+    Given <context>
+    When <action>
+    Then <outcome>
+
+  Scenario: Error case - <description>
+    Given <context>
+    When <failure>
+    Then <error handling>
+```
+
+### Out of Scope
+- <deferred item>
+
+### Assumptions
+- <assumption>
+```
+
+**Validation Requirements:**
+- Format: BDD section exists, at least one scenario with Given/When/Then, no placeholder text
+- Completeness: User Persona, Problem Statement, Out of Scope, Assumptions sections + at least 2 scenarios
+
+**Slash Command:** Use `/agile:discover` for guided discovery workflow.
 
 ### List Issues
 
@@ -249,27 +315,32 @@ Each spec should be the **smallest deliverable unit** - roughly the size of one 
 # 1. Create a new feature
 bun .claude/skills/agile/agile.ts create feature dark-mode --title "Dark Mode Toggle" --owner "Alice"
 
-# 2. Fill in description, then move to todo
+# 2. Run BDD discovery (features only) - use /agile:discover for guided workflow
+bun .claude/skills/agile/agile.ts discover dark-mode
+# Interview through phases: persona → paths → scope → synthesize
+# Each phase advance: bun .claude/skills/agile/agile.ts discover dark-mode advance
+
+# 3. Move to todo (requires valid BDD for features)
 bun .claude/skills/agile/agile.ts move dark-mode 2-todo
 
-# 3. Generate spec breakdown
+# 4. Generate spec breakdown
 bun .claude/skills/agile/agile.ts spec suggest dark-mode
 # Agent suggests specs, you approve/edit
 
-# 4. Move to in-progress
+# 5. Move to in-progress
 bun .claude/skills/agile/agile.ts move dark-mode 3-in-progress
 
-# 5. Work through specs one at a time
+# 6. Work through specs one at a time
 bun .claude/skills/agile/agile.ts spec status dark-mode ui-toggle in-progress
 # ... implement ...
 bun .claude/skills/agile/agile.ts guidance update dark-mode
 bun .claude/skills/agile/agile.ts spec status dark-mode ui-toggle in-review
 
-# 5b. Review the spec (using independent subagent)
+# 6b. Review the spec (using independent subagent)
 bun .claude/skills/agile/agile.ts review
 # Subagent verifies implementation and appends review section
 
-# 5c. Handle review verdict
+# 6c. Handle review verdict
 # If APPROVED:
 bun .claude/skills/agile/agile.ts spec status dark-mode ui-toggle completed
 
@@ -278,13 +349,13 @@ bun .claude/skills/agile/agile.ts fix
 # ... fix issues based on feedback ...
 # Run /agile:review again for re-review
 
-# 6. Complete all specs, move to review
+# 7. Complete all specs, move to review
 bun .claude/skills/agile/agile.ts move dark-mode 4-review
 
-# 7. Complete DoD items, move to done
+# 8. Complete DoD items, move to done
 bun .claude/skills/agile/agile.ts move dark-mode 5-done
 
-# 8. Archive when no longer needed
+# 9. Archive when no longer needed
 bun .claude/skills/agile/agile.ts archive dark-mode
 ```
 
@@ -292,7 +363,7 @@ bun .claude/skills/agile/agile.ts archive dark-mode
 
 | Stage | Focus | Key Actions |
 |-------|-------|-------------|
-| **1-backlog** | Define clearly | Populate description, write acceptance criteria |
+| **1-backlog** | Define clearly | Populate description, **features:** run BDD discovery (`/agile:discover`) |
 | **2-todo** | Break into specs | Run `spec suggest`, assign owner, update guidance |
 | **3-in-progress** | Work through specs | Complete specs one at a time, update guidance |
 | **4-review** | Ensure quality | Walk through DoD checklist, verify guidance |

@@ -8,9 +8,12 @@ import {
   type SpecInfo,
   type SpecIntegrationStatus,
   type IntegrationAnalysis,
+  type DiscoveryPhase,
+  DISCOVERY_PHASES,
 } from "./types";
 import { createSpecManager } from "./spec-manager";
 import { createGuidanceTracker } from "./guidance-tracker";
+import { validateBDDScenarios, hasBDDScenarios } from "./validators/bdd-validator";
 
 // ============================================================================
 // Placeholder Detection
@@ -162,6 +165,40 @@ export function detectBDDScenarios(content: string): boolean {
 }
 
 // ============================================================================
+// Discovery Phase Parsing
+// ============================================================================
+
+/**
+ * Parse discovery_phase from feature file frontmatter or content
+ * Returns 'not_started' if not found
+ */
+export function parseDiscoveryPhase(content: string): DiscoveryPhase {
+  // Check frontmatter for discovery_phase
+  const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (frontmatterMatch) {
+    const frontmatter = frontmatterMatch[1];
+    const phaseMatch = frontmatter.match(/discovery_phase:\s*(\w+)/i);
+    if (phaseMatch) {
+      const phase = phaseMatch[1].toLowerCase() as DiscoveryPhase;
+      if (DISCOVERY_PHASES.includes(phase)) {
+        return phase;
+      }
+    }
+  }
+
+  // Also check for **Discovery Phase:** format (in body)
+  const bodyMatch = content.match(/\*\*Discovery Phase:\*\*\s*(\w+)/i);
+  if (bodyMatch) {
+    const phase = bodyMatch[1].toLowerCase() as DiscoveryPhase;
+    if (DISCOVERY_PHASES.includes(phase)) {
+      return phase;
+    }
+  }
+
+  return "not_started";
+}
+
+// ============================================================================
 // Definition of Done Parsing
 // ============================================================================
 
@@ -308,9 +345,19 @@ export async function analyzeIssue(issue: Issue): Promise<IssueAnalysis> {
   // Analyze integration readiness
   const integration = await analyzeIntegration(specStatus.specs);
 
-  // Check for BDD scenarios (only meaningful for features)
-  const hasBDDScenarios = issue.type === "feature"
-    ? detectBDDScenarios(mainContent)
+  // Parse discovery phase (features only)
+  const discoveryPhase = issue.type === "feature"
+    ? parseDiscoveryPhase(mainContent)
+    : "complete"; // Non-features don't need discovery
+
+  // Validate BDD scenarios (features only)
+  const bddValidation = issue.type === "feature"
+    ? validateBDDScenarios(mainContent)
+    : null;
+
+  // Check for BDD scenarios (backward compatibility + quick check)
+  const hasBDDScenariosResult = issue.type === "feature"
+    ? hasBDDScenarios(mainContent)
     : true; // Non-features don't need BDD scenarios
 
   return {
@@ -326,7 +373,9 @@ export async function analyzeIssue(issue: Issue): Promise<IssueAnalysis> {
     hasDescription,
     ownerAssigned,
     integration,
-    hasBDDScenarios,
+    hasBDDScenarios: hasBDDScenariosResult,
+    discoveryPhase,
+    bddValidation,
   };
 }
 

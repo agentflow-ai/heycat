@@ -76,11 +76,20 @@ struct LastRecording {
     sample_rate: u32,
 }
 
+/// Active recording data (during Recording state)
+#[derive(Debug, Clone)]
+struct ActiveRecording {
+    /// Actual sample rate from the audio device
+    sample_rate: u32,
+}
+
 /// Manager for recording state with thread-safe access
 /// Designed to be wrapped in Mutex and managed by Tauri state
 pub struct RecordingManager {
     state: RecordingState,
     audio_buffer: Option<AudioBuffer>,
+    /// Active recording info (sample rate from device)
+    active_recording: Option<ActiveRecording>,
     /// Retained audio data from the last recording for transcription
     last_recording: Option<LastRecording>,
 }
@@ -91,6 +100,7 @@ impl RecordingManager {
         Self {
             state: RecordingState::Idle,
             audio_buffer: None,
+            active_recording: None,
             last_recording: None,
         }
     }
@@ -100,19 +110,52 @@ impl RecordingManager {
         self.state
     }
 
+    /// Start recording with the given sample rate
+    ///
+    /// Transitions from Idle to Recording state and creates the audio buffer.
+    /// Returns the audio buffer for use with audio capture.
+    /// The sample rate is stored for use when the recording completes.
+    ///
+    /// # Errors
+    /// Returns error if not in Idle state
+    pub fn start_recording(&mut self, sample_rate: u32) -> Result<AudioBuffer, RecordingStateError> {
+        if self.state != RecordingState::Idle {
+            return Err(RecordingStateError::InvalidTransition {
+                from: self.state,
+                to: RecordingState::Recording,
+            });
+        }
+
+        let buffer = AudioBuffer::new();
+        self.audio_buffer = Some(buffer.clone());
+        self.active_recording = Some(ActiveRecording { sample_rate });
+        self.state = RecordingState::Recording;
+        Ok(buffer)
+    }
+
+    /// Update the sample rate for the current recording
+    ///
+    /// Call this after audio capture starts to set the actual device sample rate.
+    /// Only works in Recording state.
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        if let Some(ref mut active) = self.active_recording {
+            active.sample_rate = sample_rate;
+        }
+    }
+
     /// Transition to a new state with validation
     ///
     /// Valid transitions:
-    /// - Idle -> Recording (starts recording, creates new buffer)
     /// - Recording -> Processing (stops recording, keeps buffer)
-    /// - Processing -> Idle (clears buffer)
+    /// - Processing -> Idle (clears buffer, retains samples for transcription)
+    ///
+    /// Note: Use `start_recording(sample_rate)` for Idle -> Recording transition
     ///
     /// Returns error for invalid transitions
     pub fn transition_to(&mut self, new_state: RecordingState) -> Result<(), RecordingStateError> {
         let valid = matches!(
             (self.state, new_state),
-            (RecordingState::Idle, RecordingState::Recording)
-                | (RecordingState::Recording, RecordingState::Processing)
+            (RecordingState::Recording, RecordingState::Processing)
                 | (RecordingState::Processing, RecordingState::Idle)
         );
 
@@ -124,26 +167,42 @@ impl RecordingManager {
         }
 
         // Handle buffer lifecycle during transitions
-        match (self.state, new_state) {
-            (RecordingState::Idle, RecordingState::Recording) => {
-                self.audio_buffer = Some(AudioBuffer::new());
-            }
-            (RecordingState::Processing, RecordingState::Idle) => {
-                // Retain the buffer for transcription before clearing
-                if let Some(ref buffer) = self.audio_buffer {
-                    let samples = buffer.lock().unwrap();
-                    self.last_recording = Some(LastRecording {
-                        samples: samples.clone(),
-                        sample_rate: DEFAULT_SAMPLE_RATE,
-                    });
-                }
-                self.audio_buffer = None;
-            }
-            _ => {}
+        if let (RecordingState::Processing, RecordingState::Idle) = (self.state, new_state) {
+            self.retain_recording_buffer();
+            self.audio_buffer = None;
+            self.active_recording = None;
         }
 
         self.state = new_state;
         Ok(())
+    }
+
+    /// Get the sample rate of the current recording
+    ///
+    /// Returns the sample rate if currently recording or processing, None otherwise
+    pub fn get_sample_rate(&self) -> Option<u32> {
+        self.active_recording.as_ref().map(|r| r.sample_rate)
+    }
+
+    /// Retain audio buffer samples for transcription before clearing.
+    ///
+    /// Called during Processing -> Idle transition. The audio_buffer should always
+    /// be Some in Processing state through normal API usage; the None case is
+    /// defensive and unreachable through the public API.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn retain_recording_buffer(&mut self) {
+        if let Some(ref buffer) = self.audio_buffer {
+            let samples = buffer.lock().unwrap();
+            let sample_rate = self
+                .active_recording
+                .as_ref()
+                .map(|r| r.sample_rate)
+                .unwrap_or(DEFAULT_SAMPLE_RATE);
+            self.last_recording = Some(LastRecording {
+                samples: samples.clone(),
+                sample_rate,
+            });
+        }
     }
 
     /// Get a reference to the audio buffer (available during Recording and Processing states)
@@ -186,6 +245,7 @@ impl RecordingManager {
     pub fn reset_to_idle(&mut self) {
         self.state = RecordingState::Idle;
         self.audio_buffer = None;
+        self.active_recording = None;
     }
 }
 

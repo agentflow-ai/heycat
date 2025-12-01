@@ -30,6 +30,97 @@ export const TEMPLATES = ["feature", "bug", "task"] as const;
 export type Template = (typeof TEMPLATES)[number];
 
 // ============================================================================
+// Discovery Phase Types and Constants
+// ============================================================================
+
+export const DISCOVERY_PHASES = [
+  "not_started",
+  "persona",
+  "paths",
+  "scope",
+  "synthesize",
+  "complete",
+] as const;
+
+export type DiscoveryPhase = (typeof DISCOVERY_PHASES)[number];
+
+export const DISCOVERY_PHASE_NAMES: Record<DiscoveryPhase, string> = {
+  not_started: "Not Started",
+  persona: "User Persona",
+  paths: "Happy/Failure Paths",
+  scope: "Scope Boundaries",
+  synthesize: "Synthesize",
+  complete: "Complete",
+};
+
+// Phase transitions (sequential only)
+export const DISCOVERY_PHASE_ORDER: DiscoveryPhase[] = [
+  "not_started",
+  "persona",
+  "paths",
+  "scope",
+  "synthesize",
+  "complete",
+];
+
+// ============================================================================
+// BDD Validation Types
+// ============================================================================
+
+export interface BDDFormatError {
+  type: "missing_section" | "missing_scenario" | "invalid_scenario" | "placeholder_text";
+  message: string;
+  line?: number;
+  scenarioName?: string;
+}
+
+export interface BDDCompletenessError {
+  type:
+    | "missing_persona"
+    | "missing_problem"
+    | "missing_scope"
+    | "missing_assumptions"
+    | "few_scenarios";
+  message: string;
+  suggestion: string;
+}
+
+export interface ParsedScenario {
+  name: string;
+  givenSteps: string[];
+  whenSteps: string[];
+  thenSteps: string[];
+  lineNumber: number;
+}
+
+export interface ParsedBackground {
+  givenSteps: string[];
+  lineNumber: number;
+}
+
+export interface ParsedBDDSection {
+  raw: string;
+  userPersona: string | null;
+  problemStatement: string | null;
+  gherkinBlock: string | null;
+  scenarios: ParsedScenario[];
+  background: ParsedBackground | null;
+  outOfScope: string[];
+  assumptions: string[];
+}
+
+export interface BDDValidationResult {
+  valid: boolean;
+  formatErrors: BDDFormatError[];
+  completenessErrors: BDDCompletenessError[];
+  scenarioCount: number;
+  hasUserPersona: boolean;
+  hasProblemStatement: boolean;
+  hasOutOfScope: boolean;
+  hasAssumptions: boolean;
+}
+
+// ============================================================================
 // Spec Types and Constants
 // ============================================================================
 
@@ -164,6 +255,9 @@ export interface IssueAnalysis {
   ownerAssigned: boolean;
   integration: IntegrationAnalysis;
   hasBDDScenarios: boolean;
+  // Discovery phase tracking (features only)
+  discoveryPhase: DiscoveryPhase;
+  bddValidation: BDDValidationResult | null;
 }
 
 // ============================================================================

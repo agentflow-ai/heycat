@@ -10,3 +10,9 @@ export {
   createValidatorChain,
 } from "./validator-chain";
 export { BDDScenariosValidator } from "./bdd-scenarios-validator";
+export {
+  validateBDDScenarios,
+  hasBDDScenarios,
+  parseBDDSection,
+  formatValidationErrors,
+} from "./bdd-validator";
