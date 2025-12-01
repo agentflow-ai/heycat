@@ -27,9 +27,10 @@ pub enum AudioCommand {
 ///
 /// This handle is Send + Sync and can be safely shared across threads.
 /// Commands are sent via channel to the dedicated audio thread.
+/// When dropped, the audio thread is gracefully shutdown.
 pub struct AudioThreadHandle {
     sender: Sender<AudioCommand>,
-    _thread: JoinHandle<()>,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl AudioThreadHandle {
@@ -43,7 +44,7 @@ impl AudioThreadHandle {
 
         Self {
             sender,
-            _thread: thread,
+            thread: Some(thread),
         }
     }
 
@@ -77,6 +78,22 @@ impl AudioThreadHandle {
         self.sender
             .send(AudioCommand::Shutdown)
             .map_err(|_| AudioThreadError::ThreadDisconnected)
+    }
+}
+
+impl Drop for AudioThreadHandle {
+    /// Gracefully shutdown the audio thread when the handle is dropped.
+    ///
+    /// Sends a Shutdown command and waits for the thread to exit.
+    /// This ensures clean resource cleanup when the application closes.
+    fn drop(&mut self) {
+        // Send shutdown command - ignore errors if thread already exited
+        let _ = self.sender.send(AudioCommand::Shutdown);
+
+        // Wait for thread to finish
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -147,6 +164,14 @@ mod tests {
     fn test_spawn_and_shutdown() {
         let handle = AudioThreadHandle::spawn();
         assert!(handle.shutdown().is_ok());
+    }
+
+    #[test]
+    fn test_drop_shuts_down_thread() {
+        // Spawn a thread and immediately drop it
+        let handle = AudioThreadHandle::spawn();
+        drop(handle);
+        // If we get here without hanging, the Drop impl worked correctly
     }
 
     /// Test that start and stop commands work
