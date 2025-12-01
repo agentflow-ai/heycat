@@ -54,19 +54,45 @@ impl RecordingEventEmitter for TauriEventEmitter {
 /// Start recording audio from the microphone
 #[tauri::command]
 pub fn start_recording(
+    app_handle: AppHandle,
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
 ) -> Result<(), String> {
-    start_recording_impl(state.as_ref(), Some(audio_thread.as_ref()))
+    let result = start_recording_impl(state.as_ref(), Some(audio_thread.as_ref()));
+
+    // Emit event on success for frontend state sync
+    if result.is_ok() {
+        let _ = app_handle.emit(
+            event_names::RECORDING_STARTED,
+            RecordingStartedPayload {
+                timestamp: crate::events::current_timestamp(),
+            },
+        );
+    }
+
+    result
 }
 
 /// Stop recording and save the audio to a WAV file
 #[tauri::command]
 pub fn stop_recording(
+    app_handle: AppHandle,
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
 ) -> Result<RecordingMetadata, String> {
-    stop_recording_impl(state.as_ref(), Some(audio_thread.as_ref()))
+    let result = stop_recording_impl(state.as_ref(), Some(audio_thread.as_ref()));
+
+    // Emit event on success for frontend state sync
+    if let Ok(ref metadata) = result {
+        let _ = app_handle.emit(
+            event_names::RECORDING_STOPPED,
+            RecordingStoppedPayload {
+                metadata: metadata.clone(),
+            },
+        );
+    }
+
+    result
 }
 
 /// Get the current recording state

@@ -44,12 +44,14 @@ export function useRecording(): UseRecordingResult {
     null
   );
 
+  // Note: State updates happen via events, not command responses.
+  // This ensures hotkey-triggered recordings update the UI correctly.
   const startRecording = useCallback(async () => {
     setError(null);
     /* v8 ignore start -- @preserve */
     try {
       await invoke("start_recording");
-      setIsRecording(true);
+      // State will be updated by recording_started event
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -60,9 +62,8 @@ export function useRecording(): UseRecordingResult {
     setError(null);
     /* v8 ignore start -- @preserve */
     try {
-      const metadata = await invoke<RecordingMetadata>("stop_recording");
-      setIsRecording(false);
-      setLastRecording(metadata);
+      await invoke("stop_recording");
+      // State will be updated by recording_stopped event
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

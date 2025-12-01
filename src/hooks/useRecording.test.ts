@@ -34,39 +34,99 @@ describe("useRecording", () => {
     expect(result.current.lastRecording).toBeNull();
   });
 
-  it("startRecording() updates isRecording to true on success", async () => {
+  it("startRecording() calls invoke and state updates via event", async () => {
+    let startedCallback: ((event: { payload: { timestamp: string } }) => void) | null = null;
+
+    mockListen.mockImplementation(
+      (
+        eventName: string,
+        callback: (event: { payload: unknown }) => void
+      ) => {
+        if (eventName === "recording_started") {
+          startedCallback = callback;
+        }
+        return Promise.resolve(mockUnlisten);
+      }
+    );
+
     mockInvoke.mockResolvedValueOnce(undefined);
     const { result } = renderHook(() => useRecording());
+
+    await waitFor(() => {
+      expect(startedCallback).not.toBeNull();
+    });
 
     await act(async () => {
       await result.current.startRecording();
     });
 
     expect(mockInvoke).toHaveBeenCalledWith("start_recording");
+    // State doesn't update immediately - needs event
+    expect(result.current.isRecording).toBe(false);
+
+    // Simulate backend emitting the event
+    act(() => {
+      startedCallback!({ payload: { timestamp: "2025-01-01T12:00:00Z" } });
+    });
+
     expect(result.current.isRecording).toBe(true);
     expect(result.current.error).toBeNull();
   });
 
-  it("stopRecording() updates isRecording to false and sets lastRecording", async () => {
+  it("stopRecording() calls invoke and state updates via event", async () => {
     const metadata: RecordingMetadata = {
       duration_secs: 5.5,
       file_path: "/tmp/test.wav",
       sample_count: 88200,
     };
-    mockInvoke.mockResolvedValueOnce(undefined); // start
-    mockInvoke.mockResolvedValueOnce(metadata); // stop
+
+    let startedCallback: ((event: { payload: { timestamp: string } }) => void) | null = null;
+    let stoppedCallback: ((event: { payload: { metadata: RecordingMetadata } }) => void) | null = null;
+
+    mockListen.mockImplementation(
+      (
+        eventName: string,
+        callback: (event: { payload: unknown }) => void
+      ) => {
+        if (eventName === "recording_started") {
+          startedCallback = callback;
+        } else if (eventName === "recording_stopped") {
+          stoppedCallback = callback;
+        }
+        return Promise.resolve(mockUnlisten);
+      }
+    );
+
+    mockInvoke.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useRecording());
 
+    await waitFor(() => {
+      expect(startedCallback).not.toBeNull();
+      expect(stoppedCallback).not.toBeNull();
+    });
+
+    // Start recording
     await act(async () => {
       await result.current.startRecording();
     });
+    act(() => {
+      startedCallback!({ payload: { timestamp: "2025-01-01T12:00:00Z" } });
+    });
+    expect(result.current.isRecording).toBe(true);
 
+    // Stop recording
     await act(async () => {
       await result.current.stopRecording();
     });
 
     expect(mockInvoke).toHaveBeenCalledWith("stop_recording");
+
+    // Simulate backend emitting the stopped event
+    act(() => {
+      stoppedCallback!({ payload: { metadata } });
+    });
+
     expect(result.current.isRecording).toBe(false);
     expect(result.current.lastRecording).toEqual(metadata);
     expect(result.current.error).toBeNull();
@@ -249,22 +309,45 @@ describe("useRecording", () => {
   });
 
   it("clears error on successful startRecording", async () => {
+    let startedCallback: ((event: { payload: { timestamp: string } }) => void) | null = null;
+
+    mockListen.mockImplementation(
+      (
+        eventName: string,
+        callback: (event: { payload: unknown }) => void
+      ) => {
+        if (eventName === "recording_started") {
+          startedCallback = callback;
+        }
+        return Promise.resolve(mockUnlisten);
+      }
+    );
+
     // First set an error
     mockInvoke.mockRejectedValueOnce(new Error("Initial error"));
     const { result } = renderHook(() => useRecording());
+
+    await waitFor(() => {
+      expect(startedCallback).not.toBeNull();
+    });
 
     await act(async () => {
       await result.current.startRecording();
     });
     expect(result.current.error).toBe("Initial error");
 
-    // Now succeed
+    // Now succeed - error clears immediately on calling startRecording
     mockInvoke.mockResolvedValueOnce(undefined);
     await act(async () => {
       await result.current.startRecording();
     });
 
     expect(result.current.error).toBeNull();
+
+    // State updates via event
+    act(() => {
+      startedCallback!({ payload: { timestamp: "2025-01-01T12:00:00Z" } });
+    });
     expect(result.current.isRecording).toBe(true);
   });
 

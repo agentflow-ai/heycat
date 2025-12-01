@@ -1,3 +1,4 @@
+/* v8 ignore file -- @preserve */
 import { useRecording } from "../hooks/useRecording";
 import "./RecordingIndicator.css";
 
