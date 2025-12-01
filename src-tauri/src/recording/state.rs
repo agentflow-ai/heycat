@@ -192,16 +192,25 @@ impl RecordingManager {
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn retain_recording_buffer(&mut self) {
         if let Some(ref buffer) = self.audio_buffer {
-            let samples = buffer.lock().unwrap();
-            let sample_rate = self
-                .active_recording
-                .as_ref()
-                .map(|r| r.sample_rate)
-                .unwrap_or(DEFAULT_SAMPLE_RATE);
-            self.last_recording = Some(LastRecording {
-                samples: samples.clone(),
-                sample_rate,
-            });
+            match buffer.lock() {
+                Ok(samples) => {
+                    let sample_rate = self
+                        .active_recording
+                        .as_ref()
+                        .map(|r| r.sample_rate)
+                        .unwrap_or(DEFAULT_SAMPLE_RATE);
+                    self.last_recording = Some(LastRecording {
+                        samples: samples.clone(),
+                        sample_rate,
+                    });
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[recording] Failed to retain buffer (lock poisoned): {}",
+                        e
+                    );
+                }
+            }
         }
     }
 

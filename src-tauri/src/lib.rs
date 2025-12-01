@@ -69,8 +69,14 @@ pub fn run() {
             service
                 .register_recording_shortcut(Box::new(move || {
                     eprintln!("[app] Hotkey pressed!");
-                    let mut integration_guard = integration_clone.lock().unwrap();
-                    integration_guard.handle_toggle(&state_clone);
+                    match integration_clone.lock() {
+                        Ok(mut guard) => {
+                            guard.handle_toggle(&state_clone);
+                        }
+                        Err(e) => {
+                            eprintln!("[app] Failed to acquire integration lock: {}", e);
+                        }
+                    }
                 }))
                 .expect("Failed to register recording hotkey");
 
