@@ -66,19 +66,20 @@ pub fn run() {
             let backend = hotkey::TauriShortcutBackend::new(app.handle().clone());
             let service = hotkey::HotkeyService::new(backend);
 
-            service
-                .register_recording_shortcut(Box::new(move || {
-                    eprintln!("[app] Hotkey pressed!");
-                    match integration_clone.lock() {
-                        Ok(mut guard) => {
-                            guard.handle_toggle(&state_clone);
-                        }
-                        Err(e) => {
-                            eprintln!("[app] Failed to acquire integration lock: {}", e);
-                        }
+            if let Err(e) = service.register_recording_shortcut(Box::new(move || {
+                eprintln!("[app] Hotkey pressed!");
+                match integration_clone.lock() {
+                    Ok(mut guard) => {
+                        guard.handle_toggle(&state_clone);
                     }
-                }))
-                .expect("Failed to register recording hotkey");
+                    Err(e) => {
+                        eprintln!("[app] Failed to acquire integration lock: {}", e);
+                    }
+                }
+            })) {
+                eprintln!("[app] WARNING: Failed to register recording hotkey: {:?}", e);
+                eprintln!("[app] Application will continue without global hotkey support");
+            }
 
             // Store service in state for cleanup on exit
             app.manage(service);
