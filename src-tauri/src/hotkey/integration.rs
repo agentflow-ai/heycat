@@ -2,6 +2,7 @@
 // Connects global hotkey to recording state with debouncing
 
 use crate::audio::{encode_wav, wav::SystemFileWriter, AudioBuffer, AudioThreadHandle, DEFAULT_SAMPLE_RATE};
+use std::sync::Arc;
 use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload,
@@ -19,7 +20,7 @@ pub struct HotkeyIntegration<E: RecordingEventEmitter> {
     debounce_duration: Duration,
     emitter: E,
     /// Optional audio thread handle - when present, starts/stops capture on toggle
-    audio_thread: Option<AudioThreadHandle>,
+    audio_thread: Option<Arc<AudioThreadHandle>>,
 }
 
 impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
@@ -34,7 +35,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
     }
 
     /// Add an audio thread handle (builder pattern)
-    pub fn with_audio_thread(mut self, handle: AudioThreadHandle) -> Self {
+    pub fn with_audio_thread(mut self, handle: Arc<AudioThreadHandle>) -> Self {
         self.audio_thread = Some(handle);
         self
     }

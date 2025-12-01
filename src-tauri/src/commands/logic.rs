@@ -1,6 +1,6 @@
 // Command implementation logic - testable functions separate from Tauri wrappers
 
-use crate::audio::{encode_wav, SystemFileWriter, DEFAULT_SAMPLE_RATE};
+use crate::audio::{encode_wav, AudioThreadHandle, SystemFileWriter, DEFAULT_SAMPLE_RATE};
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
 use serde::Serialize;
 use std::sync::Mutex;
@@ -14,12 +14,20 @@ pub struct RecordingStateInfo {
 
 /// Implementation of start_recording
 ///
+/// # Arguments
+/// * `state` - The recording manager state
+/// * `audio_thread` - Optional audio thread handle for starting capture
+///
 /// # Errors
 /// Returns an error string if:
 /// - Already recording
 /// - State transition fails
+/// - Audio capture fails to start
 /// - State lock is poisoned
-pub fn start_recording_impl(state: &Mutex<RecordingManager>) -> Result<(), String> {
+pub fn start_recording_impl(
+    state: &Mutex<RecordingManager>,
+    audio_thread: Option<&AudioThreadHandle>,
+) -> Result<(), String> {
     let mut manager = state
         .lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -30,17 +38,33 @@ pub fn start_recording_impl(state: &Mutex<RecordingManager>) -> Result<(), Strin
     }
 
     // Start recording with default sample rate
-    // Note: Currently commands don't start actual audio capture - that's handled
-    // by the hotkey integration. This will be fixed in Phase 2 to add audio
-    // thread integration to commands.
-    manager
+    let buffer = manager
         .start_recording(DEFAULT_SAMPLE_RATE)
         .map_err(|e| e.to_string())?;
+
+    // Start audio capture if audio thread is available
+    if let Some(audio_thread) = audio_thread {
+        match audio_thread.start(buffer) {
+            Ok(sample_rate) => {
+                // Update with actual sample rate from device
+                manager.set_sample_rate(sample_rate);
+            }
+            Err(e) => {
+                // Audio capture failed - rollback state and return error
+                manager.reset_to_idle();
+                return Err(format!("Audio capture failed: {:?}", e));
+            }
+        }
+    }
 
     Ok(())
 }
 
 /// Implementation of stop_recording
+///
+/// # Arguments
+/// * `state` - The recording manager state
+/// * `audio_thread` - Optional audio thread handle for stopping capture
 ///
 /// # Returns
 /// Recording metadata including duration, file path, and sample count
@@ -51,7 +75,10 @@ pub fn start_recording_impl(state: &Mutex<RecordingManager>) -> Result<(), Strin
 /// - State transition fails
 /// - WAV encoding fails
 /// - State lock is poisoned
-pub fn stop_recording_impl(state: &Mutex<RecordingManager>) -> Result<RecordingMetadata, String> {
+pub fn stop_recording_impl(
+    state: &Mutex<RecordingManager>,
+    audio_thread: Option<&AudioThreadHandle>,
+) -> Result<RecordingMetadata, String> {
     let mut manager = state
         .lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -59,6 +86,11 @@ pub fn stop_recording_impl(state: &Mutex<RecordingManager>) -> Result<RecordingM
     // Check current state
     if manager.get_state() != RecordingState::Recording {
         return Err("Not currently recording".to_string());
+    }
+
+    // Stop audio capture if audio thread is available
+    if let Some(audio_thread) = audio_thread {
+        let _ = audio_thread.stop(); // Best effort, ignore errors
     }
 
     // Get the actual sample rate before transitioning

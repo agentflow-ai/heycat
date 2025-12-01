@@ -47,8 +47,11 @@ pub fn run() {
             // Create event emitter, audio thread, and hotkey integration
             eprintln!("[app] Creating audio thread...");
             let emitter = commands::TauriEventEmitter::new(app.handle().clone());
-            let audio_thread = audio::AudioThreadHandle::spawn();
+            let audio_thread = Arc::new(audio::AudioThreadHandle::spawn());
             eprintln!("[app] Audio thread spawned");
+
+            // Manage audio thread state for Tauri commands
+            app.manage(audio_thread.clone());
 
             let integration = Arc::new(Mutex::new(
                 hotkey::HotkeyIntegration::new(emitter).with_audio_thread(audio_thread),

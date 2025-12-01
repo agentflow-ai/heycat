@@ -265,9 +265,10 @@ fn test_toggle_without_audio_thread_still_works() {
 #[test]
 fn test_full_cycle_with_audio_thread() {
     use crate::audio::AudioThreadHandle;
+    use std::sync::Arc;
 
     let emitter = MockEmitter::new();
-    let audio_thread = AudioThreadHandle::spawn();
+    let audio_thread = Arc::new(AudioThreadHandle::spawn());
 
     let mut integration =
         HotkeyIntegration::with_debounce(emitter.clone(), 0).with_audio_thread(audio_thread);
@@ -289,9 +290,10 @@ fn test_full_cycle_with_audio_thread() {
 #[test]
 fn test_audio_thread_disconnection_rolls_back_state() {
     use crate::audio::AudioThreadHandle;
+    use std::sync::Arc;
 
     let emitter = MockEmitter::new();
-    let audio_thread = AudioThreadHandle::spawn();
+    let audio_thread = Arc::new(AudioThreadHandle::spawn());
 
     // Shutdown the audio thread immediately to simulate disconnection
     let _ = audio_thread.shutdown();

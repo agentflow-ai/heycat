@@ -15,9 +15,13 @@ use crate::events::{
     event_names, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload,
 };
+use crate::audio::AudioThreadHandle;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
+
+/// Type alias for audio thread state
+pub type AudioThreadState = Arc<AudioThreadHandle>;
 
 /// Type alias for production state (RecordingManager is Send+Sync)
 pub type ProductionState = Arc<Mutex<RecordingManager>>;
@@ -49,14 +53,20 @@ impl RecordingEventEmitter for TauriEventEmitter {
 
 /// Start recording audio from the microphone
 #[tauri::command]
-pub fn start_recording(state: State<'_, ProductionState>) -> Result<(), String> {
-    start_recording_impl(state.as_ref())
+pub fn start_recording(
+    state: State<'_, ProductionState>,
+    audio_thread: State<'_, AudioThreadState>,
+) -> Result<(), String> {
+    start_recording_impl(state.as_ref(), Some(audio_thread.as_ref()))
 }
 
 /// Stop recording and save the audio to a WAV file
 #[tauri::command]
-pub fn stop_recording(state: State<'_, ProductionState>) -> Result<RecordingMetadata, String> {
-    stop_recording_impl(state.as_ref())
+pub fn stop_recording(
+    state: State<'_, ProductionState>,
+    audio_thread: State<'_, AudioThreadState>,
+) -> Result<RecordingMetadata, String> {
+    stop_recording_impl(state.as_ref(), Some(audio_thread.as_ref()))
 }
 
 /// Get the current recording state

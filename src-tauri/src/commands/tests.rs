@@ -34,7 +34,7 @@ fn test_get_recording_state_returns_idle_initially() {
 #[test]
 fn test_get_recording_state_returns_recording_after_start() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     let result = get_recording_state_impl(&state);
     assert!(result.is_ok());
@@ -57,7 +57,7 @@ fn test_recording_state_info_serializes() {
 #[test]
 fn test_start_recording_returns_ok_from_idle() {
     let state = create_test_state();
-    let result = start_recording_impl(&state);
+    let result = start_recording_impl(&state, None);
 
     assert!(result.is_ok());
 }
@@ -65,7 +65,7 @@ fn test_start_recording_returns_ok_from_idle() {
 #[test]
 fn test_start_recording_transitions_to_recording() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     let manager = state.lock().unwrap();
     assert_eq!(manager.get_state(), RecordingState::Recording);
@@ -74,9 +74,9 @@ fn test_start_recording_transitions_to_recording() {
 #[test]
 fn test_start_recording_returns_error_when_already_recording() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
-    let result = start_recording_impl(&state);
+    let result = start_recording_impl(&state, None);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Already recording"));
@@ -85,7 +85,7 @@ fn test_start_recording_returns_error_when_already_recording() {
 #[test]
 fn test_start_recording_creates_audio_buffer() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     let manager = state.lock().unwrap();
     let buffer_result = manager.get_audio_buffer();
@@ -99,7 +99,7 @@ fn test_start_recording_creates_audio_buffer() {
 #[test]
 fn test_stop_recording_returns_error_when_not_recording() {
     let state = create_test_state();
-    let result = stop_recording_impl(&state);
+    let result = stop_recording_impl(&state, None);
 
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Not currently recording"));
@@ -108,8 +108,8 @@ fn test_stop_recording_returns_error_when_not_recording() {
 #[test]
 fn test_stop_recording_transitions_to_idle() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
-    stop_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     let manager = state.lock().unwrap();
     assert_eq!(manager.get_state(), RecordingState::Idle);
@@ -118,9 +118,9 @@ fn test_stop_recording_transitions_to_idle() {
 #[test]
 fn test_stop_recording_returns_metadata_with_zero_samples() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
-    let result = stop_recording_impl(&state);
+    let result = stop_recording_impl(&state, None);
 
     assert!(result.is_ok());
     let metadata = result.unwrap();
@@ -132,7 +132,7 @@ fn test_stop_recording_returns_metadata_with_zero_samples() {
 #[test]
 fn test_stop_recording_returns_metadata_with_samples() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     // Add samples to the buffer manually
     // DEFAULT_SAMPLE_RATE is 44100, so 44100 samples = 1 second
@@ -143,7 +143,7 @@ fn test_stop_recording_returns_metadata_with_samples() {
         guard.extend_from_slice(&vec![0.5f32; 44100]); // 1 second at 44.1kHz
     }
 
-    let result = stop_recording_impl(&state);
+    let result = stop_recording_impl(&state, None);
 
     // Result should be Ok - the actual file is created in the system recordings dir
     // We don't clean it up here to avoid parallel test conflicts
@@ -157,7 +157,7 @@ fn test_stop_recording_returns_metadata_with_samples() {
 #[test]
 fn test_stop_recording_returns_correct_duration() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     // Add 2 seconds of samples at 44.1kHz
     {
@@ -167,7 +167,7 @@ fn test_stop_recording_returns_correct_duration() {
         guard.extend_from_slice(&vec![0.5f32; 88200]); // 2 seconds
     }
 
-    let result = stop_recording_impl(&state);
+    let result = stop_recording_impl(&state, None);
     assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
     let metadata = result.unwrap();
 
@@ -184,14 +184,14 @@ fn test_full_start_stop_cycle() {
     let state = create_test_state();
 
     // Start
-    assert!(start_recording_impl(&state).is_ok());
+    assert!(start_recording_impl(&state, None).is_ok());
     assert_eq!(
         get_recording_state_impl(&state).unwrap().state,
         RecordingState::Recording
     );
 
     // Stop
-    assert!(stop_recording_impl(&state).is_ok());
+    assert!(stop_recording_impl(&state, None).is_ok());
     assert_eq!(
         get_recording_state_impl(&state).unwrap().state,
         RecordingState::Idle
@@ -203,8 +203,8 @@ fn test_multiple_start_stop_cycles() {
     let state = create_test_state();
 
     for _ in 0..3 {
-        assert!(start_recording_impl(&state).is_ok());
-        assert!(stop_recording_impl(&state).is_ok());
+        assert!(start_recording_impl(&state, None).is_ok());
+        assert!(stop_recording_impl(&state, None).is_ok());
     }
 
     assert_eq!(
@@ -265,7 +265,7 @@ fn test_get_last_recording_buffer_returns_error_when_no_recording() {
 #[test]
 fn test_get_last_recording_buffer_available_after_stop() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     // Add samples to the buffer
     {
@@ -275,7 +275,7 @@ fn test_get_last_recording_buffer_available_after_stop() {
         guard.extend_from_slice(&[0.5f32, -0.5f32, 0.25f32]);
     }
 
-    stop_recording_impl(&state).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     let result = get_last_recording_buffer_impl(&state);
     assert!(result.is_ok());
@@ -291,7 +291,7 @@ fn test_get_last_recording_buffer_available_after_stop() {
 #[test]
 fn test_get_last_recording_buffer_correct_duration() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     // Add 1 second of samples at 44.1kHz
     {
@@ -301,7 +301,7 @@ fn test_get_last_recording_buffer_correct_duration() {
         guard.extend_from_slice(&vec![0.5f32; 44100]);
     }
 
-    stop_recording_impl(&state).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     let audio_data = get_last_recording_buffer_impl(&state).unwrap();
     assert!((audio_data.duration_secs - 1.0).abs() < 0.001);
@@ -310,7 +310,7 @@ fn test_get_last_recording_buffer_correct_duration() {
 #[test]
 fn test_get_last_recording_buffer_persists_in_idle() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     {
         let manager = state.lock().unwrap();
@@ -319,7 +319,7 @@ fn test_get_last_recording_buffer_persists_in_idle() {
         guard.push(0.5);
     }
 
-    stop_recording_impl(&state).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     // Confirm state is Idle
     let state_info = get_recording_state_impl(&state).unwrap();
@@ -335,24 +335,24 @@ fn test_get_last_recording_buffer_updates_on_new_recording() {
     let state = create_test_state();
 
     // First recording
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
     {
         let manager = state.lock().unwrap();
         let buffer = manager.get_audio_buffer().unwrap();
         let mut guard = buffer.lock().unwrap();
         guard.push(0.1);
     }
-    stop_recording_impl(&state).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     // Second recording with different data
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
     {
         let manager = state.lock().unwrap();
         let buffer = manager.get_audio_buffer().unwrap();
         let mut guard = buffer.lock().unwrap();
         guard.extend_from_slice(&[0.9, 0.8, 0.7]);
     }
-    stop_recording_impl(&state).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     // Should have the second recording's data
     let audio_data = get_last_recording_buffer_impl(&state).unwrap();
@@ -374,7 +374,7 @@ fn test_clear_last_recording_buffer_succeeds_when_empty() {
 #[test]
 fn test_clear_last_recording_buffer_clears_data() {
     let state = create_test_state();
-    start_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
 
     {
         let manager = state.lock().unwrap();
@@ -383,7 +383,7 @@ fn test_clear_last_recording_buffer_clears_data() {
         guard.push(0.5);
     }
 
-    stop_recording_impl(&state).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     // Buffer should be available
     assert!(get_last_recording_buffer_impl(&state).is_ok());
@@ -401,13 +401,13 @@ fn test_clear_last_recording_buffer_allows_new_recording() {
     let state = create_test_state();
 
     // Record and stop
-    start_recording_impl(&state).unwrap();
-    stop_recording_impl(&state).unwrap();
+    start_recording_impl(&state, None).unwrap();
+    stop_recording_impl(&state, None).unwrap();
 
     // Clear
     clear_last_recording_buffer_impl(&state).unwrap();
 
     // Should be able to record again
-    assert!(start_recording_impl(&state).is_ok());
-    assert!(stop_recording_impl(&state).is_ok());
+    assert!(start_recording_impl(&state, None).is_ok());
+    assert!(stop_recording_impl(&state, None).is_ok());
 }
