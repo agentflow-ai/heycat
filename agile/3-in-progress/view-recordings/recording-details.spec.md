@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 created: 2025-12-01
 completed: null
 dependencies: ["recordings-list-ui"]

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   RecordingsList,
   RecordingInfo,
   formatDuration,
   formatDate,
+  formatFileSize,
 } from "./RecordingsList";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -155,6 +157,114 @@ describe("RecordingsList", () => {
       });
     });
   });
+
+  describe("expand/collapse", () => {
+    it("clicking entry expands it", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockResolvedValue(mockRecordings);
+
+      render(<RecordingsList />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("recording-2025-12-01-143025.wav")
+        ).toBeDefined();
+      });
+
+      const firstItem = screen.getByRole("button", {
+        name: /recording-2025-12-01-143025\.wav/,
+      });
+      expect(firstItem.getAttribute("aria-expanded")).toBe("false");
+
+      await user.click(firstItem);
+
+      expect(firstItem.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("clicking expanded entry collapses it", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockResolvedValue(mockRecordings);
+
+      render(<RecordingsList />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("recording-2025-12-01-143025.wav")
+        ).toBeDefined();
+      });
+
+      const firstItem = screen.getByRole("button", {
+        name: /recording-2025-12-01-143025\.wav/,
+      });
+
+      // Expand
+      await user.click(firstItem);
+      expect(firstItem.getAttribute("aria-expanded")).toBe("true");
+
+      // Collapse
+      await user.click(firstItem);
+      expect(firstItem.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("expanded entry shows full metadata", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockResolvedValue(mockRecordings);
+
+      render(<RecordingsList />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("recording-2025-12-01-143025.wav")
+        ).toBeDefined();
+      });
+
+      const firstItem = screen.getByRole("button", {
+        name: /recording-2025-12-01-143025\.wav/,
+      });
+
+      await user.click(firstItem);
+
+      // Check metadata is shown (using values unique to this recording)
+      expect(screen.getByText("1000.0 KB")).toBeDefined(); // 1024000 bytes - unique to first recording
+      expect(
+        screen.getByText("/path/to/recording-2025-12-01-143025.wav")
+      ).toBeDefined();
+
+      // Verify metadata labels exist (at least one visible)
+      const fileSizeLabels = screen.getAllByText("File size");
+      expect(fileSizeLabels.length).toBeGreaterThan(0);
+    });
+
+    it("only one entry can be expanded at a time", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockResolvedValue(mockRecordings);
+
+      render(<RecordingsList />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("recording-2025-12-01-143025.wav")
+        ).toBeDefined();
+      });
+
+      const firstItem = screen.getByRole("button", {
+        name: /recording-2025-12-01-143025\.wav/,
+      });
+      const secondItem = screen.getByRole("button", {
+        name: /recording-2025-12-02-091500\.wav/,
+      });
+
+      // Expand first
+      await user.click(firstItem);
+      expect(firstItem.getAttribute("aria-expanded")).toBe("true");
+      expect(secondItem.getAttribute("aria-expanded")).toBe("false");
+
+      // Expand second - first should collapse
+      await user.click(secondItem);
+      expect(firstItem.getAttribute("aria-expanded")).toBe("false");
+      expect(secondItem.getAttribute("aria-expanded")).toBe("true");
+    });
+  });
 });
 
 describe("formatDuration", () => {
@@ -190,5 +300,29 @@ describe("formatDate", () => {
   it("handles different timezones", () => {
     const result = formatDate("2025-06-15T08:00:00Z");
     expect(result).toContain("2025");
+  });
+});
+
+describe("formatFileSize", () => {
+  it('formats 0 bytes as "0 B"', () => {
+    expect(formatFileSize(0)).toBe("0 B");
+  });
+
+  it("formats bytes without decimals", () => {
+    expect(formatFileSize(512)).toBe("512 B");
+  });
+
+  it("formats kilobytes with one decimal", () => {
+    expect(formatFileSize(1024)).toBe("1.0 KB");
+    expect(formatFileSize(1536)).toBe("1.5 KB");
+  });
+
+  it("formats megabytes with one decimal", () => {
+    expect(formatFileSize(1024 * 1024)).toBe("1.0 MB");
+    expect(formatFileSize(1024000)).toBe("1000.0 KB");
+  });
+
+  it("formats gigabytes with one decimal", () => {
+    expect(formatFileSize(1024 * 1024 * 1024)).toBe("1.0 GB");
   });
 });
