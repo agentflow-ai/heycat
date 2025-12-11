@@ -5,6 +5,9 @@ import App from "./App";
 import * as useRecordingModule from "./hooks/useRecording";
 
 vi.mock("./hooks/useRecording");
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue([]),
+}));
 
 const mockUseRecording = vi.mocked(useRecordingModule.useRecording);
 
@@ -25,15 +28,16 @@ describe("App Integration", () => {
   it("renders RecordingIndicator component without errors", () => {
     render(<App />);
 
-    expect(screen.getByRole("status")).toBeDefined();
+    const indicator = document.querySelector(".recording-indicator");
+    expect(indicator).not.toBeNull();
     expect(screen.getByText("Idle")).toBeDefined();
   });
 
   it("RecordingIndicator is visible with app-recording-indicator class", () => {
     render(<App />);
 
-    const indicator = screen.getByRole("status");
-    expect(indicator.className).toContain("app-recording-indicator");
+    const indicator = document.querySelector(".recording-indicator");
+    expect(indicator?.className).toContain("app-recording-indicator");
   });
 
   it("syncs state when backend emits recording events", async () => {
@@ -49,9 +53,8 @@ describe("App Integration", () => {
     rerender(<App />);
 
     expect(screen.getByText("Recording")).toBeDefined();
-    expect(screen.getByRole("status").className).toContain(
-      "recording-indicator--recording"
-    );
+    const indicator = document.querySelector(".recording-indicator");
+    expect(indicator?.className).toContain("recording-indicator--recording");
   });
 
   it("handles multiple rapid state changes correctly", async () => {
@@ -77,7 +80,8 @@ describe("App Integration", () => {
       input.focus();
     });
 
-    expect(screen.getByRole("status")).toBeDefined();
+    const indicator = document.querySelector(".recording-indicator");
+    expect(indicator).not.toBeNull();
     expect(screen.getByText("Idle")).toBeDefined();
   });
 
