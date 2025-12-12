@@ -12,8 +12,8 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 |-------|----------|------|
 | Architecture | frontend, backend, Tauri, React, Rust, invoke | docs/ARCHITECTURE.md |
 | Development | commands, dev, build, run, prerequisites | docs/DEVELOPMENT.md |
-| Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `agile-tcr:agile` plugin |
-| TCR/Testing | test, TDD, coverage, commit, tcr check | `agile-tcr:tcr` plugin |
+| Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `devloop:agile` plugin |
+| TCR/Testing | test, TDD, coverage, commit, tcr check | `devloop:tcr` plugin |
 | Integration | multi-component, mocks, verification, deferral | docs/INTEGRATION.md |
 
 ## Key Entry Points
@@ -27,10 +27,10 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 **File:** docs/ARCHITECTURE.md
 
 ### Agile Workflow
-**ALWAYS invoke the `agile-tcr:agile` skill** for issue/spec management, code reviews, and workflow tasks.
+**ALWAYS invoke the `devloop:agile` skill** for issue/spec management, code reviews, and workflow tasks.
 
 ### TCR (Test-Commit-Refactor)
-**Invoke the `agile-tcr:tcr` skill** for test discipline and coverage enforcement.
+**Invoke the `devloop:tcr` skill** for test discipline and coverage enforcement.
 
 **Testing Philosophy:** Focus on smoke testing the most valuable paths (60% coverage threshold). Prioritize iteration speed over exhaustive coverage.
 
@@ -61,10 +61,10 @@ tcr reset
 - DO NOT mark acceptance criteria as verified
 - DO NOT update spec status to "completed"
 
-Reviews must be performed by a **fresh subagent** with no implementation context. Use `/agile-tcr:agile:review`.
+Reviews must be performed by a **fresh subagent** with no implementation context. Use `/devloop:agile:review`.
 
 ## Slash Commands
 
 ### TCR & Git
-- `/agile-tcr:tcr:check` - Run TCR check in subagent
-- `/agile-tcr:git:commit` - Git commit in subagent
+- `/devloop:tcr:check` - Run TCR check in subagent
+- `/devloop:git:commit` - Git commit in subagent

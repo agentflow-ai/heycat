@@ -1,4 +1,4 @@
-import { defineConfig } from "agile-tcr/config";
+import { defineConfig } from "devloop/config";
 
 export default defineConfig({
   tcr: {
