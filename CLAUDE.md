@@ -29,6 +29,22 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 ### Agile Workflow
 **ALWAYS invoke the `devloop:agile` skill** for issue/spec management, code reviews, and workflow tasks.
 
+**IMPORTANT:** The `agile` command is NOT a system CLI. Do NOT run `agile ...` directly in bash - it will fail with "command not found".
+
+**Correct approach:**
+1. Use `Skill(devloop:agile)` to get the command documentation
+2. Run commands via bun: `bun <plugin-path>/agile.ts <command> [args]`
+
+**Available slash commands:**
+- `/devloop:agile:feature` - Guided feature creation
+- `/devloop:agile:quick` - Quick feature (bypasses full BDD)
+- `/devloop:agile:discover` - BDD scenario discovery
+- `/devloop:agile:next` - Continue with next spec
+- `/devloop:agile:status` - Show issue status
+- `/devloop:agile:review` - Review spec (independent subagent)
+- `/devloop:agile:fix` - Fix failed review feedback
+- `/devloop:agile:spec-suggest` - AI-assisted spec breakdown
+
 ### TCR (Test-Commit-Refactor)
 **Invoke the `devloop:tcr` skill** for test discipline and coverage enforcement.
 

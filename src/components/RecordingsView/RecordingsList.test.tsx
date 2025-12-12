@@ -443,7 +443,8 @@ describe("formatDate", () => {
     const result = formatDate("2025-12-01T14:30:25Z");
     // The exact format depends on locale, but should contain these parts
     expect(result).toContain("2025");
-    expect(result).toContain("Dec");
+    // Month format varies by locale (Dec, dec., 12, etc.) - check case-insensitively
+    expect(result.toLowerCase()).toMatch(/dec|12/);
   });
 
   it("handles different timezones", () => {

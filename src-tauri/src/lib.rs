@@ -7,6 +7,7 @@ mod audio;
 mod commands;
 mod events;
 mod hotkey;
+mod model;
 mod recording;
 
 use std::sync::{Arc, Mutex};
@@ -136,7 +137,9 @@ pub fn run() {
             commands::get_recording_state,
             commands::get_last_recording_buffer,
             commands::clear_last_recording_buffer,
-            commands::list_recordings
+            commands::list_recordings,
+            model::check_model_status,
+            model::download_model
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

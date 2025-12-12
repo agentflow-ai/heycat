@@ -12,6 +12,18 @@ pub mod event_names {
     pub const RECORDING_ERROR: &str = "recording_error";
 }
 
+/// Model-related event names
+pub mod model_events {
+    pub const MODEL_DOWNLOAD_COMPLETED: &str = "model_download_completed";
+
+    /// Payload for model_download_completed event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    pub struct ModelDownloadCompletedPayload {
+        /// Path to the downloaded model file
+        pub model_path: String,
+    }
+}
+
 /// Payload for recording_started event
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct RecordingStartedPayload {
@@ -224,5 +236,45 @@ mod tests {
         };
         let debug = format!("{:?}", error);
         assert!(debug.contains("RecordingErrorPayload"));
+    }
+
+    #[test]
+    fn test_model_event_name_constant() {
+        use super::model_events;
+        assert_eq!(
+            model_events::MODEL_DOWNLOAD_COMPLETED,
+            "model_download_completed"
+        );
+    }
+
+    #[test]
+    fn test_model_download_completed_payload_serialization() {
+        use super::model_events::ModelDownloadCompletedPayload;
+        let payload = ModelDownloadCompletedPayload {
+            model_path: "/path/to/model.bin".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("model_path"));
+        assert!(json.contains("/path/to/model.bin"));
+    }
+
+    #[test]
+    fn test_model_download_completed_payload_clone() {
+        use super::model_events::ModelDownloadCompletedPayload;
+        let payload = ModelDownloadCompletedPayload {
+            model_path: "/path/to/model.bin".to_string(),
+        };
+        let cloned = payload.clone();
+        assert_eq!(payload, cloned);
+    }
+
+    #[test]
+    fn test_model_download_completed_payload_debug() {
+        use super::model_events::ModelDownloadCompletedPayload;
+        let payload = ModelDownloadCompletedPayload {
+            model_path: "/path/to/model.bin".to_string(),
+        };
+        let debug = format!("{:?}", payload);
+        assert!(debug.contains("ModelDownloadCompletedPayload"));
     }
 }

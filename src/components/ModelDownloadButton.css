@@ -1,0 +1,94 @@
+.model-download-button {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-download-button__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+
+.model-download-button__button:disabled {
+  cursor: not-allowed;
+}
+
+.model-download-button--idle {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.model-download-button--idle:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.model-download-button--downloading {
+  background-color: #6b7280;
+  color: white;
+  opacity: 0.8;
+}
+
+.model-download-button--ready {
+  background-color: #10b981;
+  color: white;
+}
+
+.model-download-button--error {
+  background-color: #ef4444;
+  color: white;
+}
+
+.model-download-button--error:hover:not(:disabled) {
+  background-color: #dc2626;
+}
+
+.model-download-button__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.model-download-button__error {
+  color: #ef4444;
+  font-size: 12px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .model-download-button--idle {
+    background-color: #2563eb;
+  }
+
+  .model-download-button--idle:hover:not(:disabled) {
+    background-color: #1d4ed8;
+  }
+
+  .model-download-button--ready {
+    background-color: #059669;
+  }
+
+  .model-download-button--error {
+    background-color: #dc2626;
+  }
+
+  .model-download-button__error {
+    color: #f87171;
+  }
+}
