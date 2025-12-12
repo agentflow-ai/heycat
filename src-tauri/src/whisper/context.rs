@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 /// Transcription state machine states
+/// State flow: Unloaded -> (load model) -> Idle -> Transcribing -> Completed/Error -> Idle
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptionState {
     /// No model loaded, cannot transcribe
@@ -14,6 +15,10 @@ pub enum TranscriptionState {
     Idle,
     /// Currently processing audio
     Transcribing,
+    /// Transcription completed successfully
+    Completed,
+    /// Transcription failed with error
+    Error,
 }
 
 /// Errors that can occur during transcription operations
@@ -64,6 +69,10 @@ pub trait TranscriptionService: Send + Sync {
 
     /// Get the current transcription state
     fn state(&self) -> TranscriptionState;
+
+    /// Reset state from Completed/Error back to Idle
+    /// This should be called after handling the transcription result
+    fn reset_to_idle(&self) -> TranscriptionResult<()>;
 }
 
 /// Thread-safe wrapper around WhisperContext
@@ -178,16 +187,16 @@ impl TranscriptionService for WhisperManager {
             Ok(text.trim().to_string())
         };
 
-        // Reset state back to idle (or error state)
+        // Update state to Completed or Error based on result
         {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| TranscriptionError::LockPoisoned)?;
             *state = if result.is_ok() {
-                TranscriptionState::Idle
+                TranscriptionState::Completed
             } else {
-                TranscriptionState::Idle // Reset to idle even on error
+                TranscriptionState::Error
             };
         }
 
@@ -206,6 +215,19 @@ impl TranscriptionService for WhisperManager {
             .lock()
             .map(|guard| *guard)
             .unwrap_or(TranscriptionState::Unloaded)
+    }
+
+    fn reset_to_idle(&self) -> TranscriptionResult<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| TranscriptionError::LockPoisoned)?;
+
+        // Only reset from Completed or Error states
+        if *state == TranscriptionState::Completed || *state == TranscriptionState::Error {
+            *state = TranscriptionState::Idle;
+        }
+        Ok(())
     }
 }
 
@@ -306,5 +328,78 @@ mod tests {
         let error = TranscriptionError::ModelNotLoaded;
         let cloned = error.clone();
         assert_eq!(error, cloned);
+    }
+
+    #[test]
+    fn test_transcription_state_completed_and_error_exist() {
+        // Verify Completed and Error states exist and are distinct
+        assert_ne!(TranscriptionState::Completed, TranscriptionState::Error);
+        assert_ne!(TranscriptionState::Completed, TranscriptionState::Idle);
+        assert_ne!(TranscriptionState::Error, TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_transcription_state_completed_debug() {
+        let state = TranscriptionState::Completed;
+        let debug = format!("{:?}", state);
+        assert!(debug.contains("Completed"));
+    }
+
+    #[test]
+    fn test_transcription_state_error_debug() {
+        let state = TranscriptionState::Error;
+        let debug = format!("{:?}", state);
+        assert!(debug.contains("Error"));
+    }
+
+    #[test]
+    fn test_reset_to_idle_from_completed() {
+        let manager = WhisperManager::new();
+        // Manually set state to Completed for testing
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Completed;
+        }
+        assert_eq!(manager.state(), TranscriptionState::Completed);
+
+        manager.reset_to_idle().unwrap();
+        assert_eq!(manager.state(), TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_reset_to_idle_from_error() {
+        let manager = WhisperManager::new();
+        // Manually set state to Error for testing
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Error;
+        }
+        assert_eq!(manager.state(), TranscriptionState::Error);
+
+        manager.reset_to_idle().unwrap();
+        assert_eq!(manager.state(), TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_reset_to_idle_noop_from_idle() {
+        let manager = WhisperManager::new();
+        // Set to Idle first
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Idle;
+        }
+
+        manager.reset_to_idle().unwrap();
+        assert_eq!(manager.state(), TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_reset_to_idle_noop_from_unloaded() {
+        let manager = WhisperManager::new();
+        assert_eq!(manager.state(), TranscriptionState::Unloaded);
+
+        manager.reset_to_idle().unwrap();
+        // Should remain Unloaded, not reset
+        assert_eq!(manager.state(), TranscriptionState::Unloaded);
     }
 }

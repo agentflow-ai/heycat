@@ -75,6 +75,27 @@ pub fn run() {
             // Manage audio thread state for Tauri commands
             app.manage(audio_thread.clone());
 
+            // Create and manage WhisperManager for transcription
+            debug!("Creating WhisperManager...");
+            let whisper_manager = Arc::new(whisper::WhisperManager::new());
+            app.manage(whisper_manager.clone());
+
+            // Eager model loading at startup (if model exists)
+            if let Ok(true) = model::check_model_exists() {
+                if let Ok(model_path) = model::download::get_model_path() {
+                    info!("Loading whisper model from {:?}...", model_path);
+                    match whisper::TranscriptionService::load_model(
+                        whisper_manager.as_ref(),
+                        &model_path,
+                    ) {
+                        Ok(()) => info!("Whisper model loaded successfully"),
+                        Err(e) => warn!("Failed to load whisper model: {}", e),
+                    }
+                }
+            } else {
+                info!("Whisper model not found, transcription will require download first");
+            }
+
             let integration = Arc::new(Mutex::new(
                 hotkey::HotkeyIntegration::new(emitter).with_audio_thread(audio_thread),
             ));
