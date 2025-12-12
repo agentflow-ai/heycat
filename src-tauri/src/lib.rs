@@ -97,7 +97,11 @@ pub fn run() {
             }
 
             let integration = Arc::new(Mutex::new(
-                hotkey::HotkeyIntegration::new(emitter).with_audio_thread(audio_thread),
+                hotkey::HotkeyIntegration::new(emitter)
+                    .with_audio_thread(audio_thread)
+                    .with_whisper_manager(whisper_manager)
+                    .with_app_handle(app.handle().clone())
+                    .with_recording_state(recording_state.clone()),
             ));
 
             // Clone for callback

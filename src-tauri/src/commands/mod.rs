@@ -13,7 +13,8 @@ use logic::{
 
 use crate::events::{
     event_names, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
-    RecordingStoppedPayload,
+    RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
+    TranscriptionEventEmitter, TranscriptionStartedPayload,
 };
 use crate::audio::AudioThreadHandle;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata};
@@ -48,6 +49,26 @@ impl RecordingEventEmitter for TauriEventEmitter {
 
     fn emit_recording_error(&self, payload: RecordingErrorPayload) {
         let _ = self.app_handle.emit(event_names::RECORDING_ERROR, payload);
+    }
+}
+
+impl TranscriptionEventEmitter for TauriEventEmitter {
+    fn emit_transcription_started(&self, payload: TranscriptionStartedPayload) {
+        let _ = self
+            .app_handle
+            .emit(event_names::TRANSCRIPTION_STARTED, payload);
+    }
+
+    fn emit_transcription_completed(&self, payload: TranscriptionCompletedPayload) {
+        let _ = self
+            .app_handle
+            .emit(event_names::TRANSCRIPTION_COMPLETED, payload);
+    }
+
+    fn emit_transcription_error(&self, payload: TranscriptionErrorPayload) {
+        let _ = self
+            .app_handle
+            .emit(event_names::TRANSCRIPTION_ERROR, payload);
     }
 }
 

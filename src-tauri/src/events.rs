@@ -10,6 +10,9 @@ pub mod event_names {
     pub const RECORDING_STARTED: &str = "recording_started";
     pub const RECORDING_STOPPED: &str = "recording_stopped";
     pub const RECORDING_ERROR: &str = "recording_error";
+    pub const TRANSCRIPTION_STARTED: &str = "transcription_started";
+    pub const TRANSCRIPTION_COMPLETED: &str = "transcription_completed";
+    pub const TRANSCRIPTION_ERROR: &str = "transcription_error";
 }
 
 /// Model-related event names
@@ -45,6 +48,29 @@ pub struct RecordingErrorPayload {
     pub message: String,
 }
 
+/// Payload for transcription_started event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TranscriptionStartedPayload {
+    /// ISO 8601 timestamp when transcription started
+    pub timestamp: String,
+}
+
+/// Payload for transcription_completed event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TranscriptionCompletedPayload {
+    /// The transcribed text
+    pub text: String,
+    /// Duration of transcription in milliseconds
+    pub duration_ms: u64,
+}
+
+/// Payload for transcription_error event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TranscriptionErrorPayload {
+    /// Descriptive error message
+    pub error: String,
+}
+
 /// Trait for emitting recording events
 /// Allows mocking in tests while using real Tauri AppHandle in production
 pub trait RecordingEventEmitter: Send + Sync {
@@ -56,6 +82,19 @@ pub trait RecordingEventEmitter: Send + Sync {
 
     /// Emit recording_error event
     fn emit_recording_error(&self, payload: RecordingErrorPayload);
+}
+
+/// Trait for emitting transcription events
+/// Allows mocking in tests while using real Tauri AppHandle in production
+pub trait TranscriptionEventEmitter: Send + Sync {
+    /// Emit transcription_started event
+    fn emit_transcription_started(&self, payload: TranscriptionStartedPayload);
+
+    /// Emit transcription_completed event
+    fn emit_transcription_completed(&self, payload: TranscriptionCompletedPayload);
+
+    /// Emit transcription_error event
+    fn emit_transcription_error(&self, payload: TranscriptionErrorPayload);
 }
 
 /// Get the current timestamp in ISO 8601 format
@@ -276,5 +315,94 @@ mod tests {
         };
         let debug = format!("{:?}", payload);
         assert!(debug.contains("ModelDownloadCompletedPayload"));
+    }
+
+    // Transcription event tests
+
+    #[test]
+    fn test_transcription_event_name_constants() {
+        assert_eq!(event_names::TRANSCRIPTION_STARTED, "transcription_started");
+        assert_eq!(
+            event_names::TRANSCRIPTION_COMPLETED,
+            "transcription_completed"
+        );
+        assert_eq!(event_names::TRANSCRIPTION_ERROR, "transcription_error");
+    }
+
+    #[test]
+    fn test_transcription_started_payload_serialization() {
+        let payload = TranscriptionStartedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("timestamp"));
+        assert!(json.contains("2025-01-01T12:00:00Z"));
+    }
+
+    #[test]
+    fn test_transcription_completed_payload_serialization() {
+        let payload = TranscriptionCompletedPayload {
+            text: "Hello, world!".to_string(),
+            duration_ms: 1234,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("text"));
+        assert!(json.contains("Hello, world!"));
+        assert!(json.contains("duration_ms"));
+        assert!(json.contains("1234"));
+    }
+
+    #[test]
+    fn test_transcription_error_payload_serialization() {
+        let payload = TranscriptionErrorPayload {
+            error: "Model not loaded".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("error"));
+        assert!(json.contains("Model not loaded"));
+    }
+
+    #[test]
+    fn test_transcription_payloads_are_clone() {
+        let started = TranscriptionStartedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        let cloned = started.clone();
+        assert_eq!(started, cloned);
+
+        let completed = TranscriptionCompletedPayload {
+            text: "Hello".to_string(),
+            duration_ms: 100,
+        };
+        let cloned = completed.clone();
+        assert_eq!(completed, cloned);
+
+        let error = TranscriptionErrorPayload {
+            error: "Error".to_string(),
+        };
+        let cloned = error.clone();
+        assert_eq!(error, cloned);
+    }
+
+    #[test]
+    fn test_transcription_payloads_have_debug() {
+        let started = TranscriptionStartedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        let debug = format!("{:?}", started);
+        assert!(debug.contains("TranscriptionStartedPayload"));
+
+        let completed = TranscriptionCompletedPayload {
+            text: "Hello".to_string(),
+            duration_ms: 100,
+        };
+        let debug = format!("{:?}", completed);
+        assert!(debug.contains("TranscriptionCompletedPayload"));
+
+        let error = TranscriptionErrorPayload {
+            error: "Error".to_string(),
+        };
+        let debug = format!("{:?}", error);
+        assert!(debug.contains("TranscriptionErrorPayload"));
     }
 }

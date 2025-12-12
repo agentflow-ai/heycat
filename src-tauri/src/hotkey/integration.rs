@@ -3,15 +3,19 @@
 // Uses unified command implementations for start/stop logic
 
 use crate::audio::AudioThreadHandle;
-use crate::commands::logic::{start_recording_impl, stop_recording_impl};
+use crate::commands::logic::{get_last_recording_buffer_impl, start_recording_impl, stop_recording_impl};
 use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
-    RecordingStoppedPayload,
+    RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
+    TranscriptionStartedPayload,
 };
 use crate::recording::{RecordingManager, RecordingState};
-use crate::{debug, error, info, trace};
+use crate::whisper::{TranscriptionService, WhisperManager};
+use crate::{debug, error, info, trace, warn};
+use arboard::Clipboard;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
 
 /// Debounce duration for hotkey presses (200ms)
 pub const DEBOUNCE_DURATION_MS: u64 = 200;
@@ -23,6 +27,12 @@ pub struct HotkeyIntegration<E: RecordingEventEmitter> {
     emitter: E,
     /// Optional audio thread handle - when present, starts/stops capture on toggle
     audio_thread: Option<Arc<AudioThreadHandle>>,
+    /// Optional WhisperManager for auto-transcription after recording stops
+    whisper_manager: Option<Arc<WhisperManager>>,
+    /// Optional AppHandle for emitting transcription events from spawned thread
+    app_handle: Option<AppHandle>,
+    /// Reference to recording state for getting audio buffer in transcription thread
+    recording_state: Option<Arc<Mutex<RecordingManager>>>,
 }
 
 impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
@@ -33,12 +43,33 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
             debounce_duration: Duration::from_millis(DEBOUNCE_DURATION_MS),
             emitter,
             audio_thread: None,
+            whisper_manager: None,
+            app_handle: None,
+            recording_state: None,
         }
     }
 
     /// Add an audio thread handle (builder pattern)
     pub fn with_audio_thread(mut self, handle: Arc<AudioThreadHandle>) -> Self {
         self.audio_thread = Some(handle);
+        self
+    }
+
+    /// Add WhisperManager for auto-transcription (builder pattern)
+    pub fn with_whisper_manager(mut self, manager: Arc<WhisperManager>) -> Self {
+        self.whisper_manager = Some(manager);
+        self
+    }
+
+    /// Add AppHandle for emitting transcription events (builder pattern)
+    pub fn with_app_handle(mut self, handle: AppHandle) -> Self {
+        self.app_handle = Some(handle);
+        self
+    }
+
+    /// Add recording state reference for transcription thread (builder pattern)
+    pub fn with_recording_state(mut self, state: Arc<Mutex<RecordingManager>>) -> Self {
+        self.recording_state = Some(state);
         self
     }
 
@@ -50,6 +81,9 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
             debounce_duration: Duration::from_millis(debounce_ms),
             emitter,
             audio_thread: None,
+            whisper_manager: None,
+            app_handle: None,
+            recording_state: None,
         }
     }
 
@@ -125,6 +159,10 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                         self.emitter
                             .emit_recording_stopped(RecordingStoppedPayload { metadata });
                         debug!("Emitted recording_stopped event");
+
+                        // Auto-transcribe if whisper manager is configured
+                        self.spawn_transcription();
+
                         true
                     }
                     Err(e) => {
@@ -142,6 +180,127 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                 false
             }
         }
+    }
+
+    /// Spawn transcription in a separate thread
+    ///
+    /// Gets audio buffer, transcribes, copies to clipboard, and emits events.
+    /// No-op if whisper manager, app handle, or recording state is not configured.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn spawn_transcription(&self) {
+        // Check all required components are present
+        let whisper_manager = match &self.whisper_manager {
+            Some(wm) => wm.clone(),
+            None => {
+                debug!("Transcription skipped: no whisper manager configured");
+                return;
+            }
+        };
+
+        let app_handle = match &self.app_handle {
+            Some(ah) => ah.clone(),
+            None => {
+                debug!("Transcription skipped: no app handle configured");
+                return;
+            }
+        };
+
+        let recording_state = match &self.recording_state {
+            Some(rs) => rs.clone(),
+            None => {
+                debug!("Transcription skipped: no recording state configured");
+                return;
+            }
+        };
+
+        // Check if model is loaded
+        if !whisper_manager.is_loaded() {
+            info!("Transcription skipped: whisper model not loaded");
+            return;
+        }
+
+        info!("Spawning transcription thread...");
+
+        std::thread::spawn(move || {
+            use crate::events::event_names;
+
+            // Emit transcription_started event
+            let start_time = Instant::now();
+            let _ = app_handle.emit(
+                event_names::TRANSCRIPTION_STARTED,
+                TranscriptionStartedPayload {
+                    timestamp: current_timestamp(),
+                },
+            );
+
+            // Get audio buffer
+            let samples = match get_last_recording_buffer_impl(&recording_state) {
+                Ok(audio_data) => audio_data.samples,
+                Err(e) => {
+                    error!("Failed to get recording buffer: {}", e);
+                    let _ = app_handle.emit(
+                        event_names::TRANSCRIPTION_ERROR,
+                        TranscriptionErrorPayload {
+                            error: format!("Failed to get recording buffer: {}", e),
+                        },
+                    );
+                    return;
+                }
+            };
+
+            debug!("Transcribing {} samples...", samples.len());
+
+            // Perform transcription
+            match whisper_manager.transcribe(&samples) {
+                Ok(text) => {
+                    let duration_ms = start_time.elapsed().as_millis() as u64;
+                    info!(
+                        "Transcription completed in {}ms: {} chars",
+                        duration_ms,
+                        text.len()
+                    );
+
+                    // Copy to clipboard
+                    match Clipboard::new() {
+                        Ok(mut clipboard) => {
+                            if let Err(e) = clipboard.set_text(&text) {
+                                warn!("Failed to copy to clipboard: {}", e);
+                            } else {
+                                debug!("Transcribed text copied to clipboard");
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to access clipboard: {}", e);
+                        }
+                    }
+
+                    // Emit transcription_completed event
+                    let _ = app_handle.emit(
+                        event_names::TRANSCRIPTION_COMPLETED,
+                        TranscriptionCompletedPayload { text, duration_ms },
+                    );
+
+                    // Reset whisper state to idle
+                    if let Err(e) = whisper_manager.reset_to_idle() {
+                        warn!("Failed to reset whisper state: {}", e);
+                    }
+                }
+                Err(e) => {
+                    error!("Transcription failed: {}", e);
+                    let _ = app_handle.emit(
+                        event_names::TRANSCRIPTION_ERROR,
+                        TranscriptionErrorPayload {
+                            error: e.to_string(),
+                        },
+                    );
+
+                    // Reset whisper state to idle on error
+                    if let Err(reset_err) = whisper_manager.reset_to_idle() {
+                        warn!("Failed to reset whisper state: {}", reset_err);
+                    }
+                }
+            }
+        });
     }
 
     /// Check if currently in debounce window (for testing)
