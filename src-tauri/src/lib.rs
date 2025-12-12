@@ -9,6 +9,7 @@ mod events;
 mod hotkey;
 mod model;
 mod recording;
+mod whisper;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
