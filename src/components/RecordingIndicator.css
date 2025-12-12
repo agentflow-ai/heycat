@@ -32,6 +32,14 @@
   color: #ef4444;
 }
 
+.recording-indicator--blocked .recording-indicator__dot {
+  background-color: #f59e0b;
+}
+
+.recording-indicator--blocked .recording-indicator__label {
+  color: #f59e0b;
+}
+
 .recording-indicator__error {
   color: #ef4444;
   font-size: 12px;
@@ -67,5 +75,13 @@
 
   .recording-indicator__error {
     color: #f87171;
+  }
+
+  .recording-indicator--blocked .recording-indicator__dot {
+    background-color: #fbbf24;
+  }
+
+  .recording-indicator--blocked .recording-indicator__label {
+    color: #fbbf24;
   }
 }

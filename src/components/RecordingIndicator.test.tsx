@@ -97,4 +97,35 @@ describe("RecordingIndicator", () => {
     const dot = document.querySelector(".recording-indicator__dot");
     expect(dot?.getAttribute("aria-hidden")).toBe("true");
   });
+
+  it("shows blocked state when isBlocked is true", () => {
+    render(<RecordingIndicator isBlocked={true} />);
+
+    expect(screen.getByText("Recording blocked")).toBeDefined();
+    expect(screen.getByRole("status").className).toContain(
+      "recording-indicator--blocked"
+    );
+  });
+
+  it("updates aria-label when blocked", () => {
+    render(<RecordingIndicator isBlocked={true} />);
+
+    expect(screen.getByRole("status").getAttribute("aria-label")).toBe(
+      "Recording status: Recording blocked"
+    );
+  });
+
+  it("blocked state takes priority over recording state", () => {
+    mockUseRecording.mockReturnValue({
+      ...defaultMock,
+      isRecording: true,
+    });
+
+    render(<RecordingIndicator isBlocked={true} />);
+
+    expect(screen.getByText("Recording blocked")).toBeDefined();
+    expect(screen.getByRole("status").className).toContain(
+      "recording-indicator--blocked"
+    );
+  });
 });

@@ -4,17 +4,22 @@ import "./RecordingIndicator.css";
 
 export interface RecordingIndicatorProps {
   className?: string;
+  /** When true, recording is blocked (e.g., during transcription) */
+  isBlocked?: boolean;
 }
 
 export function RecordingIndicator({
   className = "",
+  isBlocked = false,
 }: RecordingIndicatorProps) {
   const { isRecording, error } = useRecording();
 
-  const stateClass = isRecording
-    ? "recording-indicator--recording"
-    : "recording-indicator--idle";
-  const statusText = isRecording ? "Recording" : "Idle";
+  const stateClass = isBlocked
+    ? "recording-indicator--blocked"
+    : isRecording
+      ? "recording-indicator--recording"
+      : "recording-indicator--idle";
+  const statusText = isBlocked ? "Recording blocked" : isRecording ? "Recording" : "Idle";
 
   return (
     <div

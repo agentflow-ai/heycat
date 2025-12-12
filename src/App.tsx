@@ -4,12 +4,16 @@ import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { RecordingIndicator } from "./components/RecordingIndicator";
+import { TranscriptionIndicator } from "./components/TranscriptionIndicator";
+import { TranscriptionNotification } from "./components/TranscriptionNotification";
 import { Sidebar } from "./components/Sidebar";
 import { ModelDownloadButton } from "./components/ModelDownloadButton";
+import { useTranscription } from "./hooks/useTranscription";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
+  const { isTranscribing } = useTranscription();
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -20,7 +24,8 @@ function App() {
     <div className="app-layout">
       <Sidebar className="app-sidebar" />
       <main className="container">
-        <RecordingIndicator className="app-recording-indicator" />
+        <RecordingIndicator className="app-recording-indicator" isBlocked={isTranscribing} />
+        <TranscriptionIndicator className="app-transcription-indicator" />
         <h1>Welcome to Tauri + React</h1>
 
         <div className="row">
@@ -53,6 +58,7 @@ function App() {
         <p>{greetMsg}</p>
 
         <ModelDownloadButton className="app-model-download" />
+        <TranscriptionNotification className="app-transcription-notification" />
       </main>
     </div>
   );
