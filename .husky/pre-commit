@@ -22,8 +22,8 @@ bun run test:coverage
 
 if [ $? -ne 0 ]; then
   echo ""
-  echo "Pre-commit failed: frontend tests failed or coverage < 100%"
-  echo "Fix failing tests and ensure 100% coverage before committing."
+  echo "Pre-commit failed: frontend tests failed or coverage < 60%"
+  echo "Fix failing tests and ensure 60% coverage before committing."
   echo "Use /* v8 ignore ... -- @preserve */ to exclude untestable code."
   exit 1
 fi
@@ -38,14 +38,14 @@ echo ""
 echo "Running backend tests with coverage..."
 cd src-tauri
 # Uses +nightly toolchain for #[coverage(off)] attribute support
-# 100% coverage required - untestable code must be excluded via #[coverage(off)]
+# 60% coverage required for smoke testing - untestable code can be excluded via #[coverage(off)]
 # Exclude *_test.rs files from coverage measurement (they are test code, not production code)
-cargo +nightly llvm-cov --fail-under-lines 100 --fail-under-functions 100 --ignore-filename-regex '_test\.rs$'
+cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'
 
 if [ $? -ne 0 ]; then
   echo ""
-  echo "Pre-commit failed: backend tests failed or coverage < 100%"
-  echo "Fix failing tests and ensure 100% coverage before committing."
+  echo "Pre-commit failed: backend tests failed or coverage < 60%"
+  echo "Fix failing tests and ensure 60% coverage before committing."
   echo "Use #[coverage(off)] to exclude untestable code."
   cd ..
   exit 1

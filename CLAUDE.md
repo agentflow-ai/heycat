@@ -8,12 +8,12 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 
 ## Quick Reference
 
-| Topic | Keywords | File |
+| Topic | Keywords | Info |
 |-------|----------|------|
 | Architecture | frontend, backend, Tauri, React, Rust, invoke | docs/ARCHITECTURE.md |
 | Development | commands, dev, build, run, prerequisites | docs/DEVELOPMENT.md |
-| Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | .claude/skills/agile/SKILL.md |
-| TCR/Testing | test, TDD, coverage, commit, tcr check | .claude/skills/tcr/SKILL.md |
+| Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `agile-tcr:agile` plugin |
+| TCR/Testing | test, TDD, coverage, commit, tcr check | `agile-tcr:tcr` plugin |
 | Integration | multi-component, mocks, verification, deferral | docs/INTEGRATION.md |
 
 ## Key Entry Points
@@ -27,23 +27,28 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 **File:** docs/ARCHITECTURE.md
 
 ### Agile Workflow
-**When:** Creating/managing issues, working on specs, moving through workflow stages, code reviews, creating technical guidance
-**Triggers:** "create feature", "next spec", "issue status", "review", "what's next"
-**File:** .claude/skills/agile/SKILL.md
-
-**ALWAYS invoke the `agile` skill** when the user mentions:
-- Creating features, bugs, or tasks
-- Working on or resuming issues
-- Spec status or progress
-- Moving issues through stages
-- Listing or managing backlog
+**ALWAYS invoke the `agile-tcr:agile` skill** for issue/spec management, code reviews, and workflow tasks.
 
 ### TCR (Test-Commit-Refactor)
-**When:** Writing tests, running coverage, making commits, TDD workflow
-**Triggers:** "tcr check", "run tests", "coverage", "commit"
-**File:** .claude/skills/tcr/SKILL.md
+**Invoke the `agile-tcr:tcr` skill** for test discipline and coverage enforcement.
 
-**Invoke the `tcr` skill** for test discipline and coverage enforcement.
+**Testing Philosophy:** Focus on smoke testing the most valuable paths (60% coverage threshold). Prioritize iteration speed over exhaustive coverage.
+
+**Example commands:**
+```bash
+# Frontend tests
+tcr check "bun run test:coverage"
+
+# Backend tests
+tcr check "cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'"
+
+# Both frontend and backend
+tcr check "bun run test:coverage && cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'"
+
+# Check status / reset after failures
+tcr status
+tcr reset
+```
 
 ### Integration Verification
 **When:** Multi-component features, verifying mocks, deferral tracking, feature completion gates
@@ -56,10 +61,10 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 - DO NOT mark acceptance criteria as verified
 - DO NOT update spec status to "completed"
 
-Reviews must be performed by a **fresh subagent** with no implementation context. Use `/agile:review`.
+Reviews must be performed by a **fresh subagent** with no implementation context. Use `/agile-tcr:agile:review`.
 
 ## Slash Commands
 
-- `/agile:next` - Auto-find and implement the next spec in the in-progress issue
-- `/agile:status` - Show current issue status and progress
-- `/agile:review` - Run independent code review using a fresh subagent
+### TCR & Git
+- `/agile-tcr:tcr:check` - Run TCR check in subagent
+- `/agile-tcr:git:commit` - Git commit in subagent

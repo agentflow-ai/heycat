@@ -215,42 +215,6 @@ fn test_multiple_start_stop_cycles() {
 }
 
 // =============================================================================
-// RecordingStateInfo Tests
-// =============================================================================
-
-#[test]
-fn test_recording_state_info_clone() {
-    let state_info = RecordingStateInfo {
-        state: RecordingState::Processing,
-    };
-    let cloned = state_info.clone();
-    assert_eq!(cloned.state, RecordingState::Processing);
-}
-
-#[test]
-fn test_recording_state_info_debug() {
-    let state_info = RecordingStateInfo {
-        state: RecordingState::Idle,
-    };
-    let debug = format!("{:?}", state_info);
-    assert!(debug.contains("state"));
-    assert!(debug.contains("Idle"));
-}
-
-#[test]
-fn test_recording_state_info_all_states_serialize() {
-    for state in [
-        RecordingState::Idle,
-        RecordingState::Recording,
-        RecordingState::Processing,
-    ] {
-        let info = RecordingStateInfo { state };
-        let json = serde_json::to_string(&info);
-        assert!(json.is_ok());
-    }
-}
-
-// =============================================================================
 // get_last_recording_buffer_impl Tests
 // =============================================================================
 
@@ -463,58 +427,6 @@ fn test_recording_info_struct_serializes() {
 }
 
 #[test]
-fn test_recording_info_clone() {
-    let info = RecordingInfo {
-        filename: "test.wav".to_string(),
-        file_path: "/path/to/test.wav".to_string(),
-        duration_secs: 2.0,
-        created_at: "2025-01-01T00:00:00Z".to_string(),
-        file_size_bytes: 2048,
-        error: None,
-    };
-    let cloned = info.clone();
-    assert_eq!(cloned.filename, "test.wav");
-    assert_eq!(cloned.duration_secs, 2.0);
-    assert_eq!(cloned.file_size_bytes, 2048);
-}
-
-#[test]
-fn test_recording_info_debug() {
-    let info = RecordingInfo {
-        filename: "debug-test.wav".to_string(),
-        file_path: "/debug/path.wav".to_string(),
-        duration_secs: 3.0,
-        created_at: "2025-01-01T00:00:00Z".to_string(),
-        file_size_bytes: 4096,
-        error: None,
-    };
-    let debug = format!("{:?}", info);
-    assert!(debug.contains("debug-test.wav"));
-    assert!(debug.contains("3.0"));
-}
-
-#[test]
-fn test_recording_info_equality() {
-    let info1 = RecordingInfo {
-        filename: "test.wav".to_string(),
-        file_path: "/path/to/test.wav".to_string(),
-        duration_secs: 1.0,
-        created_at: "2025-01-01T00:00:00Z".to_string(),
-        file_size_bytes: 1024,
-        error: None,
-    };
-    let info2 = RecordingInfo {
-        filename: "test.wav".to_string(),
-        file_path: "/path/to/test.wav".to_string(),
-        duration_secs: 1.0,
-        created_at: "2025-01-01T00:00:00Z".to_string(),
-        file_size_bytes: 1024,
-        error: None,
-    };
-    assert_eq!(info1, info2);
-}
-
-#[test]
 fn test_list_recordings_after_stop_recording() {
     // After creating a recording via stop_recording_impl, list_recordings should find it
     let state = create_test_state();
@@ -578,38 +490,3 @@ fn test_recording_info_without_error_omits_field() {
     assert!(!json.contains("error"));
 }
 
-#[test]
-fn test_recording_info_with_error_equality() {
-    let info1 = RecordingInfo {
-        filename: "test.wav".to_string(),
-        file_path: "/path/to/test.wav".to_string(),
-        duration_secs: 0.0,
-        created_at: String::new(),
-        file_size_bytes: 0,
-        error: Some("Error message".to_string()),
-    };
-    let info2 = RecordingInfo {
-        filename: "test.wav".to_string(),
-        file_path: "/path/to/test.wav".to_string(),
-        duration_secs: 0.0,
-        created_at: String::new(),
-        file_size_bytes: 0,
-        error: Some("Error message".to_string()),
-    };
-    assert_eq!(info1, info2);
-}
-
-#[test]
-fn test_recording_info_error_field_in_debug() {
-    let info = RecordingInfo {
-        filename: "error.wav".to_string(),
-        file_path: "/path/to/error.wav".to_string(),
-        duration_secs: 0.0,
-        created_at: String::new(),
-        file_size_bytes: 0,
-        error: Some("File is corrupted".to_string()),
-    };
-    let debug = format!("{:?}", info);
-    assert!(debug.contains("error"));
-    assert!(debug.contains("File is corrupted"));
-}

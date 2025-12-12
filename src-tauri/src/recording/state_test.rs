@@ -343,42 +343,6 @@ fn test_recording_state_error_display() {
 }
 
 #[test]
-fn test_recording_state_serialization() {
-    let idle = RecordingState::Idle;
-    let serialized = serde_json::to_string(&idle).unwrap();
-    assert_eq!(serialized, "\"Idle\"");
-
-    let recording = RecordingState::Recording;
-    let serialized = serde_json::to_string(&recording).unwrap();
-    assert_eq!(serialized, "\"Recording\"");
-
-    let processing = RecordingState::Processing;
-    let serialized = serde_json::to_string(&processing).unwrap();
-    assert_eq!(serialized, "\"Processing\"");
-}
-
-#[test]
-fn test_recording_state_clone() {
-    let state = RecordingState::Recording;
-    let cloned = state.clone();
-    assert_eq!(state, cloned);
-}
-
-#[test]
-fn test_recording_state_copy() {
-    let state = RecordingState::Processing;
-    let copied: RecordingState = state;
-    assert_eq!(state, copied);
-}
-
-#[test]
-fn test_recording_state_debug() {
-    let state = RecordingState::Idle;
-    let debug = format!("{:?}", state);
-    assert_eq!(debug, "Idle");
-}
-
-#[test]
 fn test_error_is_std_error() {
     let error: Box<dyn std::error::Error> = Box::new(RecordingStateError::NoAudioBuffer);
     assert!(error.to_string().contains("Audio buffer"));
@@ -547,60 +511,3 @@ fn test_new_recording_replaces_last_recording_buffer() {
     assert_eq!(audio_data.samples[1], 0.8);
 }
 
-#[test]
-fn test_audio_data_clone() {
-    let mut manager = RecordingManager::new();
-    manager.start_recording(DEFAULT_SAMPLE_RATE).unwrap();
-    {
-        let buffer = manager.get_audio_buffer().unwrap();
-        let mut guard = buffer.lock().unwrap();
-        guard.push(0.5);
-    }
-    manager.transition_to(RecordingState::Processing).unwrap();
-    manager.transition_to(RecordingState::Idle).unwrap();
-
-    let audio_data = manager.get_last_recording_buffer().unwrap();
-    let cloned = audio_data.clone();
-    assert_eq!(audio_data.samples, cloned.samples);
-    assert_eq!(audio_data.sample_rate, cloned.sample_rate);
-    assert_eq!(audio_data.duration_secs, cloned.duration_secs);
-}
-
-#[test]
-fn test_audio_data_debug() {
-    let mut manager = RecordingManager::new();
-    manager.start_recording(DEFAULT_SAMPLE_RATE).unwrap();
-    {
-        let buffer = manager.get_audio_buffer().unwrap();
-        let mut guard = buffer.lock().unwrap();
-        guard.push(0.5);
-    }
-    manager.transition_to(RecordingState::Processing).unwrap();
-    manager.transition_to(RecordingState::Idle).unwrap();
-
-    let audio_data = manager.get_last_recording_buffer().unwrap();
-    let debug = format!("{:?}", audio_data);
-    assert!(debug.contains("AudioData"));
-    assert!(debug.contains("samples"));
-    assert!(debug.contains("sample_rate"));
-    assert!(debug.contains("duration_secs"));
-}
-
-#[test]
-fn test_audio_data_serialization() {
-    let mut manager = RecordingManager::new();
-    manager.start_recording(DEFAULT_SAMPLE_RATE).unwrap();
-    {
-        let buffer = manager.get_audio_buffer().unwrap();
-        let mut guard = buffer.lock().unwrap();
-        guard.extend_from_slice(&[0.1, 0.2]);
-    }
-    manager.transition_to(RecordingState::Processing).unwrap();
-    manager.transition_to(RecordingState::Idle).unwrap();
-
-    let audio_data = manager.get_last_recording_buffer().unwrap();
-    let json = serde_json::to_string(&audio_data).unwrap();
-    assert!(json.contains("samples"));
-    assert!(json.contains("sample_rate"));
-    assert!(json.contains("duration_secs"));
-}
