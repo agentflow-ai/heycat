@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 created: 2025-12-13
 completed: null
 dependencies:
@@ -119,3 +119,57 @@ cd src-tauri && cargo tree | grep -i whisper
 
 - Test location: Existing tests should pass without modification
 - Verification: [ ] All cargo tests pass after removal
+
+## Review
+
+**Reviewed:** 2025-12-13
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `whisper-rs = "0.13"` removed from `src-tauri/Cargo.toml` | PASS | Cargo.toml:37 shows `parakeet-rs = "0.2"`, no whisper-rs dependency present |
+| `src-tauri/src/whisper/` directory deleted entirely | PASS | `ls` confirms "No such file or directory" |
+| `mod whisper;` declaration removed from `src-tauri/src/lib.rs` | PASS | lib.rs:6-13 shows only: audio, commands, events, hotkey, model, parakeet, recording, voice_commands |
+| All references to `whisper::` module in `lib.rs` removed | PASS | lib.rs reviewed - no whisper:: references, uses `parakeet::TranscriptionManager` at line 72 |
+| All references to `WhisperManager` in `hotkey/integration.rs` removed | PASS | integration.rs:19 imports `parakeet::{TranscriptionManager, TranscriptionService}`, no whisper imports |
+| Application compiles without errors after removal | PASS | `cargo build` succeeds with only warnings (unused functions) |
+| Application starts and Parakeet transcription works correctly | DEFERRED | Manual runtime verification required |
+| No references to "whisper" remain in Rust source code (except comments/docs) | FAIL | Found references in comments/docs that should be updated |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| `cargo build` succeeds after whisper removal | PASS | Verified via cargo build |
+| `cargo test` passes (no tests reference whisper directly) | PASS | 252 tests passed, 0 failed |
+| Application launches without errors | DEFERRED | Manual verification required |
+| Recording and transcription workflow completes successfully with Parakeet | DEFERRED | Manual verification required |
+| No "whisper" strings appear in `cargo tree` output | PASS | "No whisper dependencies found" |
+| Binary size is reduced | DEFERRED | Binary size comparison not performed |
+
+### Code Quality
+
+**Strengths:**
+- Clean removal of whisper-rs dependency from Cargo.toml
+- No whisper module declaration in lib.rs
+- HotkeyIntegration correctly uses TranscriptionManager from parakeet module
+- All 252 tests pass without modification
+- No whisper dependencies in cargo tree
+
+**Concerns:**
+- Several "whisper" references remain in comments/documentation that should be updated for accuracy:
+  - `src-tauri/src/audio/mod.rs:49`: Comment says "16 kHz for Whisper compatibility" - should be updated to mention Parakeet
+  - `src-tauri/src/model/mod.rs:2`: "Handles whisper model download" - outdated comment
+  - `src-tauri/src/model/mod.rs:13,19`: Doc comments refer to "whisper model"
+  - `src-tauri/src/model/download.rs:10`: MODEL_URL points to `whisper.cpp` repo on HuggingFace - this is correct as Parakeet uses the same GGML model format
+  - `src-tauri/src/model/download.rs:52,57`: Doc comments refer to "whisper model"
+
+The spec states "No references to 'whisper' remain in Rust source code (except comments/docs)" - the current state technically passes this criterion since the remaining references ARE in comments/docs. However, these comments should ideally be updated for clarity and maintainability.
+
+### Verdict
+
+**NEEDS_WORK** - While the core whisper-rs dependency removal is complete and the code compiles and tests pass, the acceptance criterion "No references to 'whisper' remain in Rust source code (except comments/docs)" needs clarification. The spec explicitly allows comments/docs exceptions, so if this is acceptable, the spec could be approved. However, for code quality, the outdated comments in the model module should be updated to reference Parakeet/GGML instead of Whisper. Recommend either:
+1. Update comments to reference Parakeet (preferred for maintainability), OR
+2. Clarify that the existing comments are intentionally preserved because the model IS from whisper.cpp repository

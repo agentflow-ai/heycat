@@ -49,12 +49,12 @@ pub fn get_models_dir() -> Result<PathBuf, ModelError> {
     Ok(data_dir.join(APP_DIR_NAME).join(MODELS_DIR_NAME))
 }
 
-/// Get the full path to the whisper model file
+/// Get the full path to the transcription model file
 pub fn get_model_path() -> Result<PathBuf, ModelError> {
     Ok(get_models_dir()?.join(MODEL_FILENAME))
 }
 
-/// Check if the whisper model exists on disk
+/// Check if the transcription model exists on disk
 pub fn check_model_exists() -> Result<bool, ModelError> {
     let model_path = get_model_path()?;
     Ok(model_path.exists())

@@ -46,7 +46,7 @@ impl Clone for AudioBuffer {
     }
 }
 
-/// Target sample rate for audio capture (16 kHz for Whisper compatibility)
+/// Target sample rate for audio capture (16 kHz for speech recognition models)
 pub const TARGET_SAMPLE_RATE: u32 = 16000;
 
 /// Maximum buffer size in samples (~10 minutes at 16kHz = 9.6M samples)

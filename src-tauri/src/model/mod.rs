@@ -1,5 +1,5 @@
 // Model management module
-// Handles whisper model download and status checking
+// Handles transcription model download and status checking
 #![cfg_attr(coverage_nightly, coverage(off))]
 
 pub mod download;
@@ -10,13 +10,13 @@ use tauri::{AppHandle, Emitter};
 
 use crate::events::model_events;
 
-/// Check if the whisper model is available
+/// Check if the transcription model is available
 #[tauri::command]
 pub async fn check_model_status() -> Result<bool, String> {
     check_model_exists().map_err(|e| e.to_string())
 }
 
-/// Download the whisper model from HuggingFace
+/// Download the transcription model from HuggingFace
 /// Emits model_download_completed event when done
 #[tauri::command]
 pub async fn download_model(app_handle: AppHandle) -> Result<String, String> {
