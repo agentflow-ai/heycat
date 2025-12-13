@@ -21,18 +21,6 @@ pub use tauri_plugin_log::log::{debug, error, info, trace, warn};
 /// Concrete type for HotkeyService with TauriShortcutBackend
 type HotkeyServiceHandle = hotkey::HotkeyService<hotkey::TauriShortcutBackend>;
 
-/// Greets the user with a personalized message.
-///
-/// # Arguments
-/// * `name` - The name to greet
-///
-/// # Returns
-/// A greeting string
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 /// Application entry point - starts the Tauri event loop.
 /// Note: This function cannot be unit tested as it starts a GUI.
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -157,7 +145,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             commands::start_recording,
             commands::stop_recording,
             commands::get_recording_state,
@@ -171,25 +158,3 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_greet_with_name() {
-        let result = greet("World");
-        assert_eq!(result, "Hello, World! You've been greeted from Rust!");
-    }
-
-    #[test]
-    fn test_greet_with_empty_name() {
-        let result = greet("");
-        assert_eq!(result, "Hello, ! You've been greeted from Rust!");
-    }
-
-    #[test]
-    fn test_greet_with_special_characters() {
-        let result = greet("Test<User>");
-        assert_eq!(result, "Hello, Test<User>! You've been greeted from Rust!");
-    }
-}
