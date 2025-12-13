@@ -1,8 +1,9 @@
 ---
-status: pending
+status: completed
 created: 2025-12-13
-completed: null
+completed: 2025-12-13
 dependencies: ["multi-file-model-download.spec.md"]
+review_round: 1
 ---
 
 # Spec: Frontend model and mode settings UI
@@ -185,3 +186,56 @@ listen<TranscriptionPartialPayload>("transcription_partial", (event) => {
 
 - Test location: `src/components/Settings/TranscriptionSettings.test.tsx`
 - Verification: [ ] Component renders and interacts correctly with mocked invoke/listen
+
+## Review
+
+**Reviewed:** 2025-12-13
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| New `TranscriptionSettings.tsx` component created in `src/components/Settings/` | PASS | Component exists at `src/components/TranscriptionSettings/TranscriptionSettings.tsx:12-106`. Location differs slightly (own directory vs Settings/) but follows existing pattern of CommandSettings having its own directory. |
+| Component displays two model download sections: "Batch (TDT)" and "Streaming (EOU)" | PASS | `TranscriptionSettings.tsx:72-86` renders two `ModelDownloadCard` components with titles "Batch (TDT)" and "Streaming (EOU)" |
+| Each model section shows: download button, status indicator, progress bar during download | PASS | `ModelDownloadCard.tsx:74-105` shows download button, progress bar (lines 91-105) with proper state classes for status indication (lines 54-61) |
+| Mode toggle allows switching between "Batch" and "Streaming" modes | PASS | `ModeToggle.tsx:21-73` implements radio group with batch/streaming options |
+| Mode toggle is disabled if the required model is not downloaded | PASS | `ModeToggle.tsx:18-19` sets `isBatchDisabled` and `isStreamingDisabled` based on model availability; `ModeToggle.tsx:36,59` applies disabled attribute |
+| Download progress events (`model_file_download_progress`) update progress bars in real-time | PASS | `useMultiModelStatus.ts:132-142` listens for `model_file_download_progress` and updates progress state |
+| Model availability is checked on component mount via `check_model_status` command | PASS | `useMultiModelStatus.ts:129` calls `refreshStatus()` which invokes `check_model_status` for both models (lines 74-77) |
+| Selected mode is persisted (via backend command or local storage) | PASS | `TranscriptionSettings.tsx:43` calls `invoke("set_transcription_mode", { mode })` on change; mode loaded from backend on mount (lines 25-26) |
+| Component follows existing CSS patterns from `CommandSettings.css` | PASS | `TranscriptionSettings.css` follows same patterns: BEM naming, consistent spacing (16px padding), similar color values (#3b82f6, #1f2937, etc.), dark mode support via media query |
+| Component is accessible (proper ARIA labels, keyboard navigation) | PASS | `TranscriptionSettings.tsx:62-64` has region role with aria-label; `ModelDownloadCard.tsx:78-79` has aria-label and aria-busy; `ModeToggle.tsx:24-25` has radiogroup role; progress bar has proper ARIA attributes (lines 94-98) |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Component renders with both model sections visible | PASS | `TranscriptionSettings.test.tsx:54-63` |
+| TDT download button triggers `download_model` with model_type="tdt" | PASS | `TranscriptionSettings.test.tsx:84-97` |
+| EOU download button triggers `download_model` with model_type="eou" | PASS | `TranscriptionSettings.test.tsx:99-112` |
+| Progress bar updates when `model_file_download_progress` event is received | PASS | `TranscriptionSettings.test.tsx:114-140` |
+| Download completion updates button to "Model Ready" state | PASS | `TranscriptionSettings.test.tsx:142-163` |
+| Mode toggle is disabled when selected model is not available | PASS | `TranscriptionSettings.test.tsx:225-247` |
+| Mode toggle calls `set_transcription_mode` command on change | PASS | `TranscriptionSettings.test.tsx:269-294` |
+| Error state displays error message below button | PASS | `TranscriptionSettings.test.tsx:165-192` |
+| Retry button appears after download error | PASS | `TranscriptionSettings.test.tsx:194-221` |
+
+### Code Quality
+
+**Strengths:**
+- Clean separation of concerns: main component (`TranscriptionSettings.tsx`), sub-components (`ModelDownloadCard.tsx`, `ModeToggle.tsx`), and custom hook (`useMultiModelStatus.ts`)
+- Comprehensive test coverage for both the component and the hook with proper mocking of Tauri APIs
+- Consistent use of TypeScript types with proper exports for reusability
+- Excellent accessibility implementation with ARIA labels, roles, and keyboard support
+- CSS follows BEM naming convention and includes dark mode support matching existing patterns
+- Proper cleanup of event listeners in hooks (unlisten functions)
+- Good error handling with user-friendly error messages and retry functionality
+- `useTranscription.ts` properly updated with `partialText` state and `transcription_partial` event listener (lines 31, 43, 84-93)
+
+**Concerns:**
+- None identified
+
+### Verdict
+
+**APPROVED** - The implementation fully satisfies all acceptance criteria. The component structure, accessibility features, test coverage, and CSS patterns are well-aligned with existing codebase conventions. The `useTranscription` hook has been properly extended with `partialText` support for streaming mode. All specified test cases have corresponding tests that verify the expected behavior.
