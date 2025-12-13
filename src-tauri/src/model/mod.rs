@@ -4,7 +4,10 @@
 
 pub mod download;
 
-pub use download::check_model_exists;
+pub use download::{
+    check_model_exists, check_model_exists_for_type, download_model_files, get_model_dir,
+    ModelDownloadEventEmitter, ModelFile, ModelManifest, ModelType,
+};
 
 use tauri::{AppHandle, Emitter};
 

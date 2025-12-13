@@ -27,12 +27,30 @@ pub mod command_events {
 /// Model-related event names
 pub mod model_events {
     pub const MODEL_DOWNLOAD_COMPLETED: &str = "model_download_completed";
+    pub const MODEL_FILE_DOWNLOAD_PROGRESS: &str = "model_file_download_progress";
 
     /// Payload for model_download_completed event
     #[derive(Debug, Clone, serde::Serialize, PartialEq)]
     pub struct ModelDownloadCompletedPayload {
         /// Path to the downloaded model file
         pub model_path: String,
+    }
+
+    /// Payload for model_file_download_progress event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    pub struct ModelFileDownloadProgressPayload {
+        /// Type of model being downloaded (e.g., "parakeet-tdt")
+        pub model_type: String,
+        /// Name of the file being downloaded
+        pub file_name: String,
+        /// Bytes downloaded so far for this file
+        pub bytes_downloaded: u64,
+        /// Total bytes for this file
+        pub total_bytes: u64,
+        /// Index of current file (0-based)
+        pub file_index: usize,
+        /// Total number of files to download
+        pub total_files: usize,
     }
 }
 
@@ -732,5 +750,69 @@ mod tests {
             candidates: vec![],
         });
         assert_eq!(emitter.command_ambiguous_events.lock().unwrap().len(), 1);
+    }
+
+    // Model file download progress event tests
+
+    #[test]
+    fn test_model_file_download_progress_event_name_constant() {
+        assert_eq!(
+            model_events::MODEL_FILE_DOWNLOAD_PROGRESS,
+            "model_file_download_progress"
+        );
+    }
+
+    #[test]
+    fn test_model_file_download_progress_payload_serialization() {
+        use super::model_events::ModelFileDownloadProgressPayload;
+        let payload = ModelFileDownloadProgressPayload {
+            model_type: "parakeet-tdt".to_string(),
+            file_name: "encoder.onnx".to_string(),
+            bytes_downloaded: 50_000_000,
+            total_bytes: 100_000_000,
+            file_index: 0,
+            total_files: 4,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("model_type"));
+        assert!(json.contains("parakeet-tdt"));
+        assert!(json.contains("file_name"));
+        assert!(json.contains("encoder.onnx"));
+        assert!(json.contains("bytes_downloaded"));
+        assert!(json.contains("50000000"));
+        assert!(json.contains("total_bytes"));
+        assert!(json.contains("100000000"));
+        assert!(json.contains("file_index"));
+        assert!(json.contains("total_files"));
+    }
+
+    #[test]
+    fn test_model_file_download_progress_payload_clone() {
+        use super::model_events::ModelFileDownloadProgressPayload;
+        let payload = ModelFileDownloadProgressPayload {
+            model_type: "parakeet-tdt".to_string(),
+            file_name: "encoder.onnx".to_string(),
+            bytes_downloaded: 50_000_000,
+            total_bytes: 100_000_000,
+            file_index: 0,
+            total_files: 4,
+        };
+        let cloned = payload.clone();
+        assert_eq!(payload, cloned);
+    }
+
+    #[test]
+    fn test_model_file_download_progress_payload_debug() {
+        use super::model_events::ModelFileDownloadProgressPayload;
+        let payload = ModelFileDownloadProgressPayload {
+            model_type: "parakeet-tdt".to_string(),
+            file_name: "encoder.onnx".to_string(),
+            bytes_downloaded: 50_000_000,
+            total_bytes: 100_000_000,
+            file_index: 0,
+            total_files: 4,
+        };
+        let debug = format!("{:?}", payload);
+        assert!(debug.contains("ModelFileDownloadProgressPayload"));
     }
 }
