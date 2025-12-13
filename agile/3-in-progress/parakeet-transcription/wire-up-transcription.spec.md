@@ -1,7 +1,7 @@
 ---
-status: pending
+status: completed
 created: 2025-12-13
-completed: null
+completed: 2025-12-13
 dependencies:
   - tdt-batch-transcription.spec.md
   - eou-streaming-transcription.spec.md

@@ -97,20 +97,31 @@ pub fn run() {
             };
             debug!("ExecutorState initialized successfully");
 
-            // Eager model loading at startup (if model exists)
-            if let Ok(true) = model::check_model_exists() {
-                if let Ok(model_path) = model::download::get_model_path() {
-                    info!("Loading transcription model from {:?}...", model_path);
-                    match parakeet::TranscriptionService::load_model(
-                        transcription_manager.as_ref(),
-                        &model_path,
-                    ) {
-                        Ok(()) => info!("Transcription model loaded successfully"),
-                        Err(e) => warn!("Failed to load transcription model: {}", e),
+            // Eager model loading at startup (if models exist)
+            // Load TDT model if available
+            if let Ok(true) = model::check_model_exists_for_type(model::download::ModelType::ParakeetTDT) {
+                if let Ok(model_dir) = model::download::get_model_dir(model::download::ModelType::ParakeetTDT) {
+                    info!("Loading Parakeet TDT model from {:?}...", model_dir);
+                    match transcription_manager.load_tdt_model(&model_dir) {
+                        Ok(()) => info!("Parakeet TDT model loaded successfully"),
+                        Err(e) => warn!("Failed to load Parakeet TDT model: {}", e),
                     }
                 }
             } else {
-                info!("Transcription model not found, transcription will require download first");
+                info!("TDT model not found, batch transcription will require download first");
+            }
+
+            // Load EOU model if available
+            if let Ok(true) = model::check_model_exists_for_type(model::download::ModelType::ParakeetEOU) {
+                if let Ok(model_dir) = model::download::get_model_dir(model::download::ModelType::ParakeetEOU) {
+                    info!("Loading Parakeet EOU model from {:?}...", model_dir);
+                    match transcription_manager.load_eou_model(&model_dir) {
+                        Ok(()) => info!("Parakeet EOU model loaded successfully"),
+                        Err(e) => warn!("Failed to load Parakeet EOU model: {}", e),
+                    }
+                }
+            } else {
+                info!("EOU model not found, streaming transcription will require download first");
             }
 
             // Create a wrapper to pass to HotkeyIntegration (it needs owned value, not Arc)
@@ -201,6 +212,8 @@ pub fn run() {
             model::check_model_status,
             model::check_parakeet_model_status,
             model::download_model,
+            parakeet::get_transcription_mode,
+            parakeet::set_transcription_mode,
             voice_commands::get_commands,
             voice_commands::add_command,
             voice_commands::update_command,

@@ -1,8 +1,8 @@
 // TranscriptionManager for Parakeet-based transcription
 // Provides TDT (batch) and EOU (streaming) transcription using NVIDIA Parakeet models
 
-use super::types::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};
-use parakeet_rs::ParakeetTDT;
+use super::types::{TranscriptionError, TranscriptionMode, TranscriptionResult, TranscriptionService, TranscriptionState};
+use parakeet_rs::{ParakeetEOU, ParakeetTDT};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -11,6 +11,10 @@ use std::sync::{Arc, Mutex};
 pub struct TranscriptionManager {
     /// TDT context for batch transcription
     tdt_context: Arc<Mutex<Option<ParakeetTDT>>>,
+    /// EOU context for streaming transcription
+    eou_context: Arc<Mutex<Option<ParakeetEOU>>>,
+    /// Current transcription mode
+    mode: Arc<Mutex<TranscriptionMode>>,
     /// Current transcription state
     state: Arc<Mutex<TranscriptionState>>,
 }
@@ -26,6 +30,8 @@ impl TranscriptionManager {
     pub fn new() -> Self {
         Self {
             tdt_context: Arc::new(Mutex::new(None)),
+            eou_context: Arc::new(Mutex::new(None)),
+            mode: Arc::new(Mutex::new(TranscriptionMode::default())),
             state: Arc::new(Mutex::new(TranscriptionState::Unloaded)),
         }
     }
@@ -36,6 +42,102 @@ impl TranscriptionManager {
             .lock()
             .map(|guard| *guard)
             .unwrap_or(TranscriptionState::Unloaded)
+    }
+
+    /// Load the TDT model from the given directory path
+    pub fn load_tdt_model(&self, model_dir: &Path) -> TranscriptionResult<()> {
+        let path_str = model_dir.to_str().ok_or_else(|| {
+            TranscriptionError::ModelLoadFailed("Invalid path encoding".to_string())
+        })?;
+
+        let tdt = ParakeetTDT::from_pretrained(path_str, None)
+            .map_err(|e| TranscriptionError::ModelLoadFailed(e.to_string()))?;
+
+        {
+            let mut guard = self
+                .tdt_context
+                .lock()
+                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            *guard = Some(tdt);
+        }
+
+        // Update state to Idle if this was the first model loaded
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            if *state == TranscriptionState::Unloaded {
+                *state = TranscriptionState::Idle;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load the EOU model from the given directory path
+    pub fn load_eou_model(&self, model_dir: &Path) -> TranscriptionResult<()> {
+        let path_str = model_dir.to_str().ok_or_else(|| {
+            TranscriptionError::ModelLoadFailed("Invalid path encoding".to_string())
+        })?;
+
+        let eou = ParakeetEOU::from_pretrained(path_str, None)
+            .map_err(|e| TranscriptionError::ModelLoadFailed(e.to_string()))?;
+
+        {
+            let mut guard = self
+                .eou_context
+                .lock()
+                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            *guard = Some(eou);
+        }
+
+        // Update state to Idle if this was the first model loaded
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            if *state == TranscriptionState::Unloaded {
+                *state = TranscriptionState::Idle;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if TDT model is loaded
+    pub fn is_tdt_loaded(&self) -> bool {
+        self.tdt_context
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Check if EOU model is loaded
+    pub fn is_eou_loaded(&self) -> bool {
+        self.eou_context
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Get the current transcription mode
+    pub fn current_mode(&self) -> TranscriptionMode {
+        self.mode
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or(TranscriptionMode::Batch)
+    }
+
+    /// Set the transcription mode
+    pub fn set_mode(&self, mode: TranscriptionMode) -> TranscriptionResult<()> {
+        let mut guard = self
+            .mode
+            .lock()
+            .map_err(|_| TranscriptionError::LockPoisoned)?;
+        *guard = mode;
+        Ok(())
     }
 }
 
@@ -121,10 +223,11 @@ impl TranscriptionService for TranscriptionManager {
     }
 
     fn is_loaded(&self) -> bool {
-        self.tdt_context
-            .lock()
-            .map(|guard| guard.is_some())
-            .unwrap_or(false)
+        // Check if the model for the current mode is loaded
+        match self.current_mode() {
+            TranscriptionMode::Batch => self.is_tdt_loaded(),
+            TranscriptionMode::Streaming => self.is_eou_loaded(),
+        }
     }
 
     fn state(&self) -> TranscriptionState {
@@ -282,5 +385,75 @@ mod tests {
         // Reset from Error to Idle
         manager.reset_to_idle().unwrap();
         assert_eq!(manager.state(), TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_default_mode_is_batch() {
+        let manager = TranscriptionManager::new();
+        assert_eq!(manager.current_mode(), TranscriptionMode::Batch);
+    }
+
+    #[test]
+    fn test_set_mode_to_streaming() {
+        let manager = TranscriptionManager::new();
+        assert_eq!(manager.current_mode(), TranscriptionMode::Batch);
+
+        manager.set_mode(TranscriptionMode::Streaming).unwrap();
+        assert_eq!(manager.current_mode(), TranscriptionMode::Streaming);
+    }
+
+    #[test]
+    fn test_set_mode_back_to_batch() {
+        let manager = TranscriptionManager::new();
+        manager.set_mode(TranscriptionMode::Streaming).unwrap();
+        manager.set_mode(TranscriptionMode::Batch).unwrap();
+        assert_eq!(manager.current_mode(), TranscriptionMode::Batch);
+    }
+
+    #[test]
+    fn test_is_tdt_loaded_false_initially() {
+        let manager = TranscriptionManager::new();
+        assert!(!manager.is_tdt_loaded());
+    }
+
+    #[test]
+    fn test_is_eou_loaded_false_initially() {
+        let manager = TranscriptionManager::new();
+        assert!(!manager.is_eou_loaded());
+    }
+
+    #[test]
+    fn test_is_loaded_checks_mode_batch() {
+        let manager = TranscriptionManager::new();
+        // In batch mode, is_loaded checks TDT
+        assert_eq!(manager.current_mode(), TranscriptionMode::Batch);
+        assert!(!manager.is_loaded());
+        assert!(!manager.is_tdt_loaded());
+    }
+
+    #[test]
+    fn test_is_loaded_checks_mode_streaming() {
+        let manager = TranscriptionManager::new();
+        manager.set_mode(TranscriptionMode::Streaming).unwrap();
+        // In streaming mode, is_loaded checks EOU
+        assert_eq!(manager.current_mode(), TranscriptionMode::Streaming);
+        assert!(!manager.is_loaded());
+        assert!(!manager.is_eou_loaded());
+    }
+
+    #[test]
+    fn test_load_tdt_model_fails_with_invalid_path() {
+        let manager = TranscriptionManager::new();
+        let result = manager.load_tdt_model(Path::new("/nonexistent/path/to/model"));
+        assert!(result.is_err());
+        assert!(matches!(result, Err(TranscriptionError::ModelLoadFailed(_))));
+    }
+
+    #[test]
+    fn test_load_eou_model_fails_with_invalid_path() {
+        let manager = TranscriptionManager::new();
+        let result = manager.load_eou_model(Path::new("/nonexistent/path/to/model"));
+        assert!(result.is_err());
+        assert!(matches!(result, Err(TranscriptionError::ModelLoadFailed(_))));
     }
 }

@@ -19,6 +19,16 @@ pub enum TranscriptionState {
     Error,
 }
 
+/// Transcription mode - determines which model backend to use
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TranscriptionMode {
+    /// Batch transcription using TDT model (default)
+    #[default]
+    Batch,
+    /// Real-time streaming transcription using EOU model
+    Streaming,
+}
+
 /// Errors that can occur during transcription operations
 #[derive(Debug, Clone, PartialEq)]
 pub enum TranscriptionError {

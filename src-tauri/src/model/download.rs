@@ -89,29 +89,24 @@ impl ModelManifest {
     }
 
     /// Create manifest for Parakeet EOU model
-    /// NOTE: EOU ONNX files are not yet available on HuggingFace.
-    /// This manifest uses placeholder values that will need to be updated
-    /// once pre-converted ONNX files are available or after manual export from NeMo.
-    /// See: https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1
+    /// Uses community ONNX conversion from altunenes/parakeet-rs
     pub fn eou() -> Self {
         Self {
             model_type: ModelType::ParakeetEOU,
-            // Placeholder URL - EOU ONNX files need to be exported from NeMo model
-            // or sourced from community conversions when available
             base_url:
-                "https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1/resolve/main/".into(),
+                "https://huggingface.co/altunenes/parakeet-rs/resolve/main/realtime_eou_120m-v1-onnx/".into(),
             files: vec![
                 ModelFile {
                     name: "encoder.onnx".into(),
-                    size_bytes: 0, // Size unknown - will be determined from response
+                    size_bytes: 481_296_384, // ~459 MB
                 },
                 ModelFile {
                     name: "decoder_joint.onnx".into(),
-                    size_bytes: 0,
+                    size_bytes: 22_334_054, // ~21.3 MB
                 },
                 ModelFile {
                     name: "tokenizer.json".into(),
-                    size_bytes: 0,
+                    size_bytes: 20_582, // ~20.1 KB
                 },
             ],
         }
@@ -534,6 +529,10 @@ pub async fn download_model_files<E: ModelDownloadEventEmitter>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that modify the model directories
+    static MODEL_DIR_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_model_constants() {
@@ -719,7 +718,13 @@ mod tests {
 
     #[test]
     fn test_check_model_exists_for_type_returns_false_when_directory_missing() {
-        // Model directories likely don't exist in test environment
+        // Lock to prevent races with other tests that modify model directories
+        let _lock = MODEL_DIR_LOCK.lock().unwrap();
+
+        // Use TDT and ensure the directory doesn't exist
+        let model_dir = get_model_dir(ModelType::ParakeetTDT).unwrap();
+        let _ = std::fs::remove_dir_all(&model_dir);
+
         let result = check_model_exists_for_type(ModelType::ParakeetTDT);
         assert!(result.is_ok());
         assert!(!result.unwrap()); // Should be false when dir doesn't exist
@@ -727,8 +732,11 @@ mod tests {
 
     #[test]
     fn test_check_model_exists_for_type_returns_false_when_files_missing() {
-        // Create the directory but not the files
-        let model_dir = get_model_dir(ModelType::ParakeetTDT).unwrap();
+        // Lock to prevent races with other tests that modify model directories
+        let _lock = MODEL_DIR_LOCK.lock().unwrap();
+
+        // Use EOU to avoid racing with other TDT tests
+        let model_dir = get_model_dir(ModelType::ParakeetEOU).unwrap();
 
         // Clean up before test (in case previous test left state)
         let _ = std::fs::remove_dir_all(&model_dir);
@@ -737,7 +745,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&model_dir);
 
         // Should return false because files are missing
-        let result = check_model_exists_for_type(ModelType::ParakeetTDT);
+        let result = check_model_exists_for_type(ModelType::ParakeetEOU);
         assert!(result.is_ok());
         assert!(!result.unwrap());
 
@@ -749,6 +757,10 @@ mod tests {
     fn test_check_model_exists_for_type_returns_true_when_all_files_present() {
         use std::io::Write;
 
+        // Lock to prevent races with other tests that modify model directories
+        let _lock = MODEL_DIR_LOCK.lock().unwrap();
+
+        // Use TDT model type for this test
         let model_dir = get_model_dir(ModelType::ParakeetTDT).unwrap();
 
         // Clean up before test (in case previous test left state)
