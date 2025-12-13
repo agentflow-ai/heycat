@@ -9,6 +9,7 @@ mod events;
 mod hotkey;
 mod model;
 mod recording;
+mod voice_commands;
 mod whisper;
 
 use std::sync::{Arc, Mutex};
@@ -67,6 +68,18 @@ pub fn run() {
             debug!("Creating WhisperManager...");
             let whisper_manager = Arc::new(whisper::WhisperManager::new());
             app.manage(whisper_manager.clone());
+
+            // Create and manage VoiceCommandsState
+            debug!("Creating VoiceCommandsState...");
+            match voice_commands::VoiceCommandsState::new() {
+                Ok(voice_state) => {
+                    app.manage(voice_state);
+                    debug!("VoiceCommandsState initialized successfully");
+                }
+                Err(e) => {
+                    warn!("Failed to initialize VoiceCommandsState: {}", e);
+                }
+            }
 
             // Eager model loading at startup (if model exists)
             if let Ok(true) = model::check_model_exists() {
@@ -154,7 +167,10 @@ pub fn run() {
             commands::clear_last_recording_buffer,
             commands::list_recordings,
             model::check_model_status,
-            model::download_model
+            model::download_model,
+            voice_commands::get_commands,
+            voice_commands::add_command,
+            voice_commands::remove_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

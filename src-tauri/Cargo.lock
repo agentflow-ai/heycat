@@ -1882,7 +1882,9 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-log",
  "tauri-plugin-opener",
+ "tempfile",
  "tokio",
+ "uuid",
  "whisper-rs",
 ]
 
