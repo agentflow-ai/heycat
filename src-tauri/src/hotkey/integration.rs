@@ -16,7 +16,7 @@ use crate::recording::{RecordingManager, RecordingState};
 use crate::voice_commands::executor::ActionDispatcher;
 use crate::voice_commands::matcher::{CommandMatcher, MatchResult};
 use crate::voice_commands::registry::CommandRegistry;
-use crate::whisper::{TranscriptionService, WhisperManager};
+use crate::parakeet::{TranscriptionManager, TranscriptionService};
 use crate::{debug, error, info, trace, warn};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -37,8 +37,8 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     recording_emitter: R,
     /// Optional audio thread handle - when present, starts/stops capture on toggle
     audio_thread: Option<Arc<AudioThreadHandle>>,
-    /// Optional WhisperManager for auto-transcription after recording stops
-    whisper_manager: Option<Arc<WhisperManager>>,
+    /// Optional TranscriptionManager for auto-transcription after recording stops
+    transcription_manager: Option<Arc<TranscriptionManager>>,
     /// Transcription event emitter for emitting events from spawned thread
     transcription_emitter: Option<Arc<T>>,
     /// Reference to recording state for getting audio buffer in transcription thread
@@ -65,7 +65,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             debounce_duration: Duration::from_millis(DEBOUNCE_DURATION_MS),
             recording_emitter,
             audio_thread: None,
-            whisper_manager: None,
+            transcription_manager: None,
             transcription_emitter: None,
             recording_state: None,
             command_registry: None,
@@ -89,9 +89,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         self
     }
 
-    /// Add WhisperManager for auto-transcription (builder pattern)
-    pub fn with_whisper_manager(mut self, manager: Arc<WhisperManager>) -> Self {
-        self.whisper_manager = Some(manager);
+    /// Add TranscriptionManager for auto-transcription (builder pattern)
+    pub fn with_transcription_manager(mut self, manager: Arc<TranscriptionManager>) -> Self {
+        self.transcription_manager = Some(manager);
         self
     }
 
@@ -139,7 +139,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             debounce_duration: Duration::from_millis(debounce_ms),
             recording_emitter,
             audio_thread: None,
-            whisper_manager: None,
+            transcription_manager: None,
             transcription_emitter: None,
             recording_state: None,
             command_registry: None,
@@ -226,7 +226,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                             .emit_recording_stopped(RecordingStoppedPayload { metadata });
                         debug!("Emitted recording_stopped event");
 
-                        // Auto-transcribe if whisper manager is configured
+                        // Auto-transcribe if transcription manager is configured
                         self.spawn_transcription();
 
                         true
@@ -252,14 +252,14 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
     ///
     /// Gets audio buffer, transcribes, tries command matching, then fallback to clipboard.
     /// Uses Tauri's async runtime for bounded async execution.
-    /// No-op if whisper manager, transcription emitter, or recording state is not configured.
+    /// No-op if transcription manager, transcription emitter, or recording state is not configured.
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn spawn_transcription(&self) {
         // Check all required components are present
-        let whisper_manager = match &self.whisper_manager {
-            Some(wm) => wm.clone(),
+        let transcription_manager = match &self.transcription_manager {
+            Some(tm) => tm.clone(),
             None => {
-                debug!("Transcription skipped: no whisper manager configured");
+                debug!("Transcription skipped: no transcription manager configured");
                 return;
             }
         };
@@ -290,8 +290,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         let app_handle = self.app_handle.clone();
 
         // Check if model is loaded
-        if !whisper_manager.is_loaded() {
-            info!("Transcription skipped: whisper model not loaded");
+        if !transcription_manager.is_loaded() {
+            info!("Transcription skipped: transcription model not loaded");
             return;
         }
 
@@ -336,9 +336,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             debug!("Transcribing {} samples...", samples.len());
 
             // Perform transcription on blocking thread pool (CPU-intensive)
-            let whisper_clone = whisper_manager.clone();
+            let transcriber = transcription_manager.clone();
             let transcription_result = tokio::task::spawn_blocking(move || {
-                whisper_clone.transcribe(&samples)
+                transcriber.transcribe(&samples)
             }).await;
 
             let text = match transcription_result {
@@ -348,8 +348,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                     transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
                         error: e.to_string(),
                     });
-                    if let Err(reset_err) = whisper_manager.reset_to_idle() {
-                        warn!("Failed to reset whisper state: {}", reset_err);
+                    if let Err(reset_err) = transcription_manager.reset_to_idle() {
+                        warn!("Failed to reset transcription state: {}", reset_err);
                     }
                     return;
                 }
@@ -358,8 +358,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                     transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
                         error: "Internal transcription error.".to_string(),
                     });
-                    if let Err(reset_err) = whisper_manager.reset_to_idle() {
-                        warn!("Failed to reset whisper state: {}", reset_err);
+                    if let Err(reset_err) = transcription_manager.reset_to_idle() {
+                        warn!("Failed to reset transcription state: {}", reset_err);
                     }
                     return;
                 }
@@ -514,9 +514,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                 });
             }
 
-            // Reset whisper state to idle
-            if let Err(e) = whisper_manager.reset_to_idle() {
-                warn!("Failed to reset whisper state: {}", e);
+            // Reset transcription state to idle
+            if let Err(e) = transcription_manager.reset_to_idle() {
+                warn!("Failed to reset transcription state: {}", e);
             }
         });
     }

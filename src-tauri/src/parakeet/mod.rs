@@ -3,9 +3,8 @@
 
 mod manager;
 mod streaming;
+mod types;
 
 pub use manager::TranscriptionManager;
 pub use streaming::StreamingTranscriber;
-
-// Re-export shared types from whisper module (will be moved in cleanup spec)
-pub use crate::whisper::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};
+pub use types::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};

@@ -11,7 +11,6 @@ mod model;
 mod parakeet;
 mod recording;
 mod voice_commands;
-mod whisper;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -68,10 +67,10 @@ pub fn run() {
             // Manage audio thread state for Tauri commands
             app.manage(audio_thread.clone());
 
-            // Create and manage WhisperManager for transcription
-            debug!("Creating WhisperManager...");
-            let whisper_manager = Arc::new(whisper::WhisperManager::new());
-            app.manage(whisper_manager.clone());
+            // Create and manage TranscriptionManager for transcription
+            debug!("Creating TranscriptionManager...");
+            let transcription_manager = Arc::new(parakeet::TranscriptionManager::new());
+            app.manage(transcription_manager.clone());
 
             // Create and manage VoiceCommandsState
             debug!("Creating VoiceCommandsState...");
@@ -101,17 +100,17 @@ pub fn run() {
             // Eager model loading at startup (if model exists)
             if let Ok(true) = model::check_model_exists() {
                 if let Ok(model_path) = model::download::get_model_path() {
-                    info!("Loading whisper model from {:?}...", model_path);
-                    match whisper::TranscriptionService::load_model(
-                        whisper_manager.as_ref(),
+                    info!("Loading transcription model from {:?}...", model_path);
+                    match parakeet::TranscriptionService::load_model(
+                        transcription_manager.as_ref(),
                         &model_path,
                     ) {
-                        Ok(()) => info!("Whisper model loaded successfully"),
-                        Err(e) => warn!("Failed to load whisper model: {}", e),
+                        Ok(()) => info!("Transcription model loaded successfully"),
+                        Err(e) => warn!("Failed to load transcription model: {}", e),
                     }
                 }
             } else {
-                info!("Whisper model not found, transcription will require download first");
+                info!("Transcription model not found, transcription will require download first");
             }
 
             // Create a wrapper to pass to HotkeyIntegration (it needs owned value, not Arc)
@@ -124,7 +123,7 @@ pub fn run() {
             >::new(recording_emitter)
                 .with_app_handle(app.handle().clone())
                 .with_audio_thread(audio_thread)
-                .with_whisper_manager(whisper_manager)
+                .with_transcription_manager(transcription_manager)
                 .with_transcription_emitter(emitter)
                 .with_recording_state(recording_state.clone())
                 .with_command_emitter(command_emitter);

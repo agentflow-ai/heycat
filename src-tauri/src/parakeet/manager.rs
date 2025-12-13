@@ -1,7 +1,7 @@
 // TranscriptionManager for Parakeet-based transcription
 // Provides TDT (batch) and EOU (streaming) transcription using NVIDIA Parakeet models
 
-use crate::whisper::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};
+use super::types::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};
 use parakeet_rs::ParakeetTDT;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
