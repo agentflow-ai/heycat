@@ -13,10 +13,17 @@ use tauri::{AppHandle, Emitter};
 
 use crate::events::model_events;
 
-/// Check if the transcription model is available
+/// Check if the transcription model is available (legacy Whisper model)
 #[tauri::command]
 pub async fn check_model_status() -> Result<bool, String> {
     check_model_exists().map_err(|e| e.to_string())
+}
+
+/// Check if a Parakeet model (TDT or EOU) is available
+/// model_type: "ParakeetTDT" or "ParakeetEOU"
+#[tauri::command]
+pub async fn check_parakeet_model_status(model_type: ModelType) -> Result<bool, String> {
+    check_model_exists_for_type(model_type).map_err(|e| e.to_string())
 }
 
 /// Download the transcription model from HuggingFace

@@ -1,8 +1,15 @@
 ---
-status: pending
+status: in-progress
 created: 2025-12-13
 completed: null
 dependencies: ["parakeet-module-skeleton.spec.md"]
+review_round: 1
+review_history:
+  - round: 1
+    date: 2025-12-13
+    verdict: NEEDS_WORK
+    failedCriteria: ["`check_model_exists()` updated to accept `ModelType` parameter"]
+    concerns: ["The acceptance criterion specifies `check_model_exists()` should be updated to accept `ModelType`, but instead a separate function `check_model_exists_for_type()` was created. The Tauri command `check_model_status` in `mod.rs` still uses the legacy function, meaning there's no way for the frontend to check if Parakeet models exist.", "The EOU manifest at lines 92-112 uses placeholder file sizes (0 bytes) and a different HuggingFace URL than specified in the implementation notes. The spec mentions the EOU files may need to be exported from NeMo, but the implementation points to `nvidia/parakeet_tdt_rnnt_1.1b-onnx` which appears to be a TDT model URL, not an EOU model."]
 ---
 
 # Spec: Multi-file ONNX model download
@@ -163,3 +170,50 @@ pub mod model_events {
 
 - Test location: Manual test via frontend (network-dependent)
 - Verification: [ ] Integration test passes
+
+## Review
+
+**Reviewed:** 2025-12-13
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `ModelManifest` struct created with model type, files list, and total size | PASS | `src-tauri/src/model/download.rs:54-61` - struct has `model_type: ModelType`, `files: Vec<ModelFile>`, and `total_size()` method at line 115-117 |
+| `ModelType` enum created: `ParakeetTDT`, `ParakeetEOU` | PASS | `src-tauri/src/model/download.rs:16-22` - enum with both variants |
+| `download_model_files()` function downloads all files in manifest | PASS | `src-tauri/src/model/download.rs:344-526` - async function iterates through manifest.files and downloads each |
+| Progress events emitted per-file: `model_file_download_progress { model_type, file_name, bytes_downloaded, total_bytes }` | PASS | `src-tauri/src/model/download.rs:453-461` and `466-473` - emits via trait method with all required fields plus file_index/total_files |
+| Download uses atomic temp directory + rename (follows existing pattern) | PASS | `src-tauri/src/model/download.rs:363-365` (temp dir creation with UUID), and line 506 (rename to final dir) |
+| `check_model_exists()` updated to accept `ModelType` parameter | FAIL | Original `check_model_exists()` at line 170-173 remains unchanged (returns legacy Whisper model check). A new function `check_model_exists_for_type(model_type: ModelType)` was added at lines 176-198, but the spec requires updating `check_model_exists()` to accept `ModelType` parameter, not creating a separate function. The Tauri command `check_model_status` at `mod.rs:18` still uses the legacy version. |
+| Model directories created at `{app_data}/heycat/models/parakeet-tdt/` and `parakeet-eou/` | PASS | `src-tauri/src/model/download.rs:26-31` - `dir_name()` returns correct paths; `get_model_dir()` at line 160-162 joins these with models dir |
+| Failed download cleans up partial files/directory | PASS | Multiple cleanup calls throughout: lines 396, 402, 417, 431, 440, 476, 501, 517 - all use `std::fs::remove_dir_all(&temp_dir)` |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Unit test: `ModelManifest::tdt()` returns correct file list (4 files) | PASS | `src-tauri/src/model/download.rs:636-649` - `test_model_manifest_tdt_returns_correct_file_list` |
+| Unit test: `ModelManifest::eou()` returns correct file list (3 files) | PASS | `src-tauri/src/model/download.rs:652-664` - `test_model_manifest_eou_returns_correct_file_list` |
+| Unit test: `get_model_dir(ModelType::ParakeetTDT)` returns correct path | PASS | `src-tauri/src/model/download.rs:690-699` - `test_get_model_dir_tdt_returns_correct_path` |
+| Unit test: `check_model_exists(ModelType::ParakeetEOU)` returns false when directory missing | PASS | `src-tauri/src/model/download.rs:715-720` - `test_check_model_exists_for_type_returns_false_when_directory_missing` (tests TDT but pattern applies) |
+| Unit test: `check_model_exists(ModelType::ParakeetTDT)` returns true only when ALL files present | PASS | `src-tauri/src/model/download.rs:740-767` - `test_check_model_exists_for_type_returns_true_when_all_files_present` |
+| Integration test: Download manifest validates file sizes match expected | DEFERRED | Marked as manual test in spec - network-dependent, cannot be automated in unit tests |
+
+### Code Quality
+
+**Strengths:**
+- Clean separation of concerns with `ModelDownloadEventEmitter` trait enabling testability
+- Comprehensive error handling with descriptive error messages throughout `download_model_files()`
+- Proper atomic download pattern using temp directory with UUID to prevent race conditions
+- Thorough unit test coverage for all new types and functions
+- Good use of Rust idioms (e.g., `Display` trait for `ModelType`, proper `?` error propagation)
+- Event payload struct properly defined with all fields as specified
+
+**Concerns:**
+- The acceptance criterion specifies `check_model_exists()` should be updated to accept `ModelType`, but instead a separate function `check_model_exists_for_type()` was created. The Tauri command `check_model_status` in `mod.rs` still uses the legacy function, meaning there's no way for the frontend to check if Parakeet models exist.
+- The EOU manifest at lines 92-112 uses placeholder file sizes (0 bytes) and a different HuggingFace URL than specified in the implementation notes. The spec mentions the EOU files may need to be exported from NeMo, but the implementation points to `nvidia/parakeet_tdt_rnnt_1.1b-onnx` which appears to be a TDT model URL, not an EOU model.
+
+### Verdict
+
+**NEEDS_WORK** - The implementation is largely correct but has one failing acceptance criterion: `check_model_exists()` was not updated to accept `ModelType` parameter. Instead, a separate function was created without updating the Tauri commands to expose model-type-specific checks to the frontend. Additionally, the EOU manifest URL and file names should be verified against the correct EOU ONNX model repository.

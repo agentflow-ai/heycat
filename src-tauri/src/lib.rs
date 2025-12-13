@@ -199,6 +199,7 @@ pub fn run() {
             commands::clear_last_recording_buffer,
             commands::list_recordings,
             model::check_model_status,
+            model::check_parakeet_model_status,
             model::download_model,
             voice_commands::get_commands,
             voice_commands::add_command,

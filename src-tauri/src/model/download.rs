@@ -89,11 +89,17 @@ impl ModelManifest {
     }
 
     /// Create manifest for Parakeet EOU model
+    /// NOTE: EOU ONNX files are not yet available on HuggingFace.
+    /// This manifest uses placeholder values that will need to be updated
+    /// once pre-converted ONNX files are available or after manual export from NeMo.
+    /// See: https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1
     pub fn eou() -> Self {
         Self {
             model_type: ModelType::ParakeetEOU,
+            // Placeholder URL - EOU ONNX files need to be exported from NeMo model
+            // or sourced from community conversions when available
             base_url:
-                "https://huggingface.co/nvidia/parakeet_tdt_rnnt_1.1b-onnx/resolve/main/".into(),
+                "https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1/resolve/main/".into(),
             files: vec![
                 ModelFile {
                     name: "encoder.onnx".into(),
