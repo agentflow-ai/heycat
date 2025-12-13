@@ -2,6 +2,7 @@
 
 use super::integration::{HotkeyIntegration, DEBOUNCE_DURATION_MS};
 use crate::events::{
+    CommandAmbiguousPayload, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
     RecordingErrorPayload, RecordingStartedPayload, RecordingStoppedPayload,
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionStartedPayload,
 };
@@ -19,6 +20,10 @@ struct MockEmitter {
     transcription_started: Arc<Mutex<Vec<TranscriptionStartedPayload>>>,
     transcription_completed: Arc<Mutex<Vec<TranscriptionCompletedPayload>>>,
     transcription_errors: Arc<Mutex<Vec<TranscriptionErrorPayload>>>,
+    command_matched: Arc<Mutex<Vec<CommandMatchedPayload>>>,
+    command_executed: Arc<Mutex<Vec<CommandExecutedPayload>>>,
+    command_failed: Arc<Mutex<Vec<CommandFailedPayload>>>,
+    command_ambiguous: Arc<Mutex<Vec<CommandAmbiguousPayload>>>,
 }
 
 impl MockEmitter {
@@ -63,8 +68,26 @@ impl crate::events::TranscriptionEventEmitter for MockEmitter {
     }
 }
 
-/// Type alias for HotkeyIntegration with MockEmitter for both parameters
-type TestIntegration = HotkeyIntegration<MockEmitter, MockEmitter>;
+impl crate::events::CommandEventEmitter for MockEmitter {
+    fn emit_command_matched(&self, payload: CommandMatchedPayload) {
+        self.command_matched.lock().unwrap().push(payload);
+    }
+
+    fn emit_command_executed(&self, payload: CommandExecutedPayload) {
+        self.command_executed.lock().unwrap().push(payload);
+    }
+
+    fn emit_command_failed(&self, payload: CommandFailedPayload) {
+        self.command_failed.lock().unwrap().push(payload);
+    }
+
+    fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
+        self.command_ambiguous.lock().unwrap().push(payload);
+    }
+}
+
+/// Type alias for HotkeyIntegration with MockEmitter for all parameters
+type TestIntegration = HotkeyIntegration<MockEmitter, MockEmitter, MockEmitter>;
 
 #[test]
 fn test_toggle_from_idle_starts_recording() {

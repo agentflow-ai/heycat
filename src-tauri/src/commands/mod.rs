@@ -12,9 +12,11 @@ use logic::{
 };
 
 use crate::events::{
-    event_names, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
-    RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
-    TranscriptionEventEmitter, TranscriptionStartedPayload,
+    command_events, event_names, CommandAmbiguousPayload, CommandEventEmitter,
+    CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, RecordingErrorPayload,
+    RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
+    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
+    TranscriptionStartedPayload,
 };
 use crate::audio::AudioThreadHandle;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata};
@@ -69,6 +71,32 @@ impl TranscriptionEventEmitter for TauriEventEmitter {
         let _ = self
             .app_handle
             .emit(event_names::TRANSCRIPTION_ERROR, payload);
+    }
+}
+
+impl CommandEventEmitter for TauriEventEmitter {
+    fn emit_command_matched(&self, payload: CommandMatchedPayload) {
+        let _ = self
+            .app_handle
+            .emit(command_events::COMMAND_MATCHED, payload);
+    }
+
+    fn emit_command_executed(&self, payload: CommandExecutedPayload) {
+        let _ = self
+            .app_handle
+            .emit(command_events::COMMAND_EXECUTED, payload);
+    }
+
+    fn emit_command_failed(&self, payload: CommandFailedPayload) {
+        let _ = self
+            .app_handle
+            .emit(command_events::COMMAND_FAILED, payload);
+    }
+
+    fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
+        let _ = self
+            .app_handle
+            .emit(command_events::COMMAND_AMBIGUOUS, payload);
     }
 }
 

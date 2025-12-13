@@ -15,6 +15,14 @@ pub mod event_names {
     pub const TRANSCRIPTION_ERROR: &str = "transcription_error";
 }
 
+/// Command-related event names
+pub mod command_events {
+    pub const COMMAND_MATCHED: &str = "command_matched";
+    pub const COMMAND_EXECUTED: &str = "command_executed";
+    pub const COMMAND_FAILED: &str = "command_failed";
+    pub const COMMAND_AMBIGUOUS: &str = "command_ambiguous";
+}
+
 /// Model-related event names
 pub mod model_events {
     pub const MODEL_DOWNLOAD_COMPLETED: &str = "model_download_completed";
@@ -71,6 +79,63 @@ pub struct TranscriptionErrorPayload {
     pub error: String,
 }
 
+/// Payload for command_matched event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CommandMatchedPayload {
+    /// The transcribed text that was matched
+    pub transcription: String,
+    /// ID of the matched command
+    pub command_id: String,
+    /// Trigger phrase of the matched command
+    pub trigger: String,
+    /// Match confidence (0.0 - 1.0)
+    pub confidence: f64,
+}
+
+/// A candidate command for disambiguation
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CommandCandidate {
+    /// Command ID
+    pub id: String,
+    /// Trigger phrase
+    pub trigger: String,
+    /// Match confidence
+    pub confidence: f64,
+}
+
+/// Payload for command_ambiguous event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CommandAmbiguousPayload {
+    /// The transcribed text
+    pub transcription: String,
+    /// List of candidate commands
+    pub candidates: Vec<CommandCandidate>,
+}
+
+/// Payload for command_executed event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CommandExecutedPayload {
+    /// ID of the executed command
+    pub command_id: String,
+    /// Trigger phrase
+    pub trigger: String,
+    /// Result message
+    pub message: String,
+}
+
+/// Payload for command_failed event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct CommandFailedPayload {
+    /// ID of the command that failed
+    pub command_id: String,
+    /// Trigger phrase
+    pub trigger: String,
+    /// Error code
+    pub error_code: String,
+    /// Error message
+    pub error_message: String,
+}
+
 /// Trait for emitting recording events
 /// Allows mocking in tests while using real Tauri AppHandle in production
 pub trait RecordingEventEmitter: Send + Sync {
@@ -97,6 +162,22 @@ pub trait TranscriptionEventEmitter: Send + Sync {
     fn emit_transcription_error(&self, payload: TranscriptionErrorPayload);
 }
 
+/// Trait for emitting command events
+/// Allows mocking in tests while using real Tauri AppHandle in production
+pub trait CommandEventEmitter: Send + Sync {
+    /// Emit command_matched event
+    fn emit_command_matched(&self, payload: CommandMatchedPayload);
+
+    /// Emit command_executed event
+    fn emit_command_executed(&self, payload: CommandExecutedPayload);
+
+    /// Emit command_failed event
+    fn emit_command_failed(&self, payload: CommandFailedPayload);
+
+    /// Emit command_ambiguous event
+    fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload);
+}
+
 /// Get the current timestamp in ISO 8601 format
 pub fn current_timestamp() -> String {
     chrono::Utc::now().to_rfc3339()
@@ -116,6 +197,10 @@ mod tests {
         pub transcription_started_events: Arc<Mutex<Vec<TranscriptionStartedPayload>>>,
         pub transcription_completed_events: Arc<Mutex<Vec<TranscriptionCompletedPayload>>>,
         pub transcription_error_events: Arc<Mutex<Vec<TranscriptionErrorPayload>>>,
+        pub command_matched_events: Arc<Mutex<Vec<CommandMatchedPayload>>>,
+        pub command_executed_events: Arc<Mutex<Vec<CommandExecutedPayload>>>,
+        pub command_failed_events: Arc<Mutex<Vec<CommandFailedPayload>>>,
+        pub command_ambiguous_events: Arc<Mutex<Vec<CommandAmbiguousPayload>>>,
     }
 
     impl MockEventEmitter {
@@ -149,6 +234,24 @@ mod tests {
 
         fn emit_transcription_error(&self, payload: TranscriptionErrorPayload) {
             self.transcription_error_events.lock().unwrap().push(payload);
+        }
+    }
+
+    impl CommandEventEmitter for MockEventEmitter {
+        fn emit_command_matched(&self, payload: CommandMatchedPayload) {
+            self.command_matched_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_command_executed(&self, payload: CommandExecutedPayload) {
+            self.command_executed_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_command_failed(&self, payload: CommandFailedPayload) {
+            self.command_failed_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
+            self.command_ambiguous_events.lock().unwrap().push(payload);
         }
     }
 
@@ -421,5 +524,143 @@ mod tests {
         };
         let debug = format!("{:?}", error);
         assert!(debug.contains("TranscriptionErrorPayload"));
+    }
+
+    // Command event tests
+
+    #[test]
+    fn test_command_event_name_constants() {
+        assert_eq!(command_events::COMMAND_MATCHED, "command_matched");
+        assert_eq!(command_events::COMMAND_EXECUTED, "command_executed");
+        assert_eq!(command_events::COMMAND_FAILED, "command_failed");
+        assert_eq!(command_events::COMMAND_AMBIGUOUS, "command_ambiguous");
+    }
+
+    #[test]
+    fn test_command_matched_payload_serialization() {
+        let payload = CommandMatchedPayload {
+            transcription: "open slack".to_string(),
+            command_id: "123".to_string(),
+            trigger: "open slack".to_string(),
+            confidence: 0.95,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("transcription"));
+        assert!(json.contains("command_id"));
+        assert!(json.contains("0.95"));
+    }
+
+    #[test]
+    fn test_command_ambiguous_payload_serialization() {
+        let payload = CommandAmbiguousPayload {
+            transcription: "open".to_string(),
+            candidates: vec![
+                CommandCandidate {
+                    id: "1".to_string(),
+                    trigger: "open slack".to_string(),
+                    confidence: 0.85,
+                },
+                CommandCandidate {
+                    id: "2".to_string(),
+                    trigger: "open safari".to_string(),
+                    confidence: 0.83,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("candidates"));
+        assert!(json.contains("open slack"));
+        assert!(json.contains("open safari"));
+    }
+
+    #[test]
+    fn test_command_executed_payload_serialization() {
+        let payload = CommandExecutedPayload {
+            command_id: "123".to_string(),
+            trigger: "open slack".to_string(),
+            message: "Opened Slack.app".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("command_id"));
+        assert!(json.contains("message"));
+    }
+
+    #[test]
+    fn test_command_failed_payload_serialization() {
+        let payload = CommandFailedPayload {
+            command_id: "123".to_string(),
+            trigger: "open nonexistent".to_string(),
+            error_code: "NOT_FOUND".to_string(),
+            error_message: "Application not found".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("error_code"));
+        assert!(json.contains("error_message"));
+    }
+
+    #[test]
+    fn test_command_payloads_are_clone() {
+        let matched = CommandMatchedPayload {
+            transcription: "test".to_string(),
+            command_id: "1".to_string(),
+            trigger: "test".to_string(),
+            confidence: 0.9,
+        };
+        assert_eq!(matched, matched.clone());
+
+        let ambiguous = CommandAmbiguousPayload {
+            transcription: "test".to_string(),
+            candidates: vec![],
+        };
+        assert_eq!(ambiguous, ambiguous.clone());
+
+        let executed = CommandExecutedPayload {
+            command_id: "1".to_string(),
+            trigger: "test".to_string(),
+            message: "done".to_string(),
+        };
+        assert_eq!(executed, executed.clone());
+
+        let failed = CommandFailedPayload {
+            command_id: "1".to_string(),
+            trigger: "test".to_string(),
+            error_code: "ERR".to_string(),
+            error_message: "error".to_string(),
+        };
+        assert_eq!(failed, failed.clone());
+    }
+
+    #[test]
+    fn test_mock_emitter_records_command_events() {
+        let emitter = MockEventEmitter::new();
+
+        emitter.emit_command_matched(CommandMatchedPayload {
+            transcription: "open slack".to_string(),
+            command_id: "1".to_string(),
+            trigger: "open slack".to_string(),
+            confidence: 0.95,
+        });
+        assert_eq!(emitter.command_matched_events.lock().unwrap().len(), 1);
+
+        emitter.emit_command_executed(CommandExecutedPayload {
+            command_id: "1".to_string(),
+            trigger: "open slack".to_string(),
+            message: "Opened".to_string(),
+        });
+        assert_eq!(emitter.command_executed_events.lock().unwrap().len(), 1);
+
+        emitter.emit_command_failed(CommandFailedPayload {
+            command_id: "1".to_string(),
+            trigger: "test".to_string(),
+            error_code: "ERR".to_string(),
+            error_message: "error".to_string(),
+        });
+        assert_eq!(emitter.command_failed_events.lock().unwrap().len(), 1);
+
+        emitter.emit_command_ambiguous(CommandAmbiguousPayload {
+            transcription: "open".to_string(),
+            candidates: vec![],
+        });
+        assert_eq!(emitter.command_ambiguous_events.lock().unwrap().len(), 1);
     }
 }

@@ -5,12 +5,17 @@
 use crate::audio::AudioThreadHandle;
 use crate::commands::logic::{get_last_recording_buffer_impl, start_recording_impl, stop_recording_impl};
 use crate::events::{
-    current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
-    RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
-    TranscriptionEventEmitter, TranscriptionStartedPayload,
+    command_events, current_timestamp, CommandAmbiguousPayload, CommandCandidate,
+    CommandEventEmitter, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
+    RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
+    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
+    TranscriptionStartedPayload,
 };
 use crate::model::check_model_exists;
 use crate::recording::{RecordingManager, RecordingState};
+use crate::voice_commands::executor::{ActionDispatcher, ExecutorState};
+use crate::voice_commands::matcher::{CommandMatcher, MatchResult};
+use crate::voice_commands::registry::CommandRegistry;
 use crate::whisper::{TranscriptionService, WhisperManager};
 use crate::{debug, error, info, trace, warn};
 use arboard::Clipboard;
@@ -21,7 +26,7 @@ use std::time::{Duration, Instant};
 pub const DEBOUNCE_DURATION_MS: u64 = 200;
 
 /// Handles hotkey toggle with debouncing and event emission
-pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmitter> {
+pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmitter, C: CommandEventEmitter> {
     last_toggle_time: Option<Instant>,
     debounce_duration: Duration,
     recording_emitter: R,
@@ -33,9 +38,17 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     transcription_emitter: Option<Arc<T>>,
     /// Reference to recording state for getting audio buffer in transcription thread
     recording_state: Option<Arc<Mutex<RecordingManager>>>,
+    /// Optional command registry for voice command matching
+    command_registry: Option<Arc<Mutex<CommandRegistry>>>,
+    /// Optional command matcher for voice command matching
+    command_matcher: Option<Arc<CommandMatcher>>,
+    /// Optional action dispatcher for executing matched commands
+    action_dispatcher: Option<Arc<ActionDispatcher>>,
+    /// Optional command event emitter for voice command events
+    command_emitter: Option<Arc<C>>,
 }
 
-impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyIntegration<R, T> {
+impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
     /// Create a new HotkeyIntegration with default debounce duration
     pub fn new(recording_emitter: R) -> Self {
         Self {
@@ -46,6 +59,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyInt
             whisper_manager: None,
             transcription_emitter: None,
             recording_state: None,
+            command_registry: None,
+            command_matcher: None,
+            action_dispatcher: None,
+            command_emitter: None,
         }
     }
 
@@ -73,6 +90,30 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyInt
         self
     }
 
+    /// Add voice command registry for command matching (builder pattern)
+    pub fn with_command_registry(mut self, registry: Arc<Mutex<CommandRegistry>>) -> Self {
+        self.command_registry = Some(registry);
+        self
+    }
+
+    /// Add command matcher for voice command matching (builder pattern)
+    pub fn with_command_matcher(mut self, matcher: Arc<CommandMatcher>) -> Self {
+        self.command_matcher = Some(matcher);
+        self
+    }
+
+    /// Add action dispatcher for executing matched commands (builder pattern)
+    pub fn with_action_dispatcher(mut self, dispatcher: Arc<ActionDispatcher>) -> Self {
+        self.action_dispatcher = Some(dispatcher);
+        self
+    }
+
+    /// Add command event emitter for voice command events (builder pattern)
+    pub fn with_command_emitter(mut self, emitter: Arc<C>) -> Self {
+        self.command_emitter = Some(emitter);
+        self
+    }
+
     /// Create with custom debounce duration (for testing)
     #[cfg(test)]
     pub fn with_debounce(recording_emitter: R, debounce_ms: u64) -> Self {
@@ -84,6 +125,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyInt
             whisper_manager: None,
             transcription_emitter: None,
             recording_state: None,
+            command_registry: None,
+            command_matcher: None,
+            action_dispatcher: None,
+            command_emitter: None,
         }
     }
 
@@ -186,7 +231,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyInt
 
     /// Spawn transcription in a separate thread
     ///
-    /// Gets audio buffer, transcribes, copies to clipboard, and emits events.
+    /// Gets audio buffer, transcribes, tries command matching, then fallback to clipboard.
     /// No-op if whisper manager, transcription emitter, or recording state is not configured.
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn spawn_transcription(&self) {
@@ -214,6 +259,12 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyInt
                 return;
             }
         };
+
+        // Optional voice command components
+        let command_registry = self.command_registry.clone();
+        let command_matcher = self.command_matcher.clone();
+        let action_dispatcher = self.action_dispatcher.clone();
+        let command_emitter = self.command_emitter.clone();
 
         // Check if model is loaded
         if !whisper_manager.is_loaded() {
@@ -254,25 +305,130 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyInt
                         text.len()
                     );
 
-                    // Copy to clipboard
-                    match Clipboard::new() {
-                        Ok(mut clipboard) => {
-                            if let Err(e) = clipboard.set_text(&text) {
-                                warn!("Failed to copy to clipboard: {}", e);
-                            } else {
-                                debug!("Transcribed text copied to clipboard");
+                    // Try voice command matching if configured
+                    let command_handled = if let (Some(registry), Some(matcher), Some(dispatcher), Some(emitter)) =
+                        (&command_registry, &command_matcher, &action_dispatcher, &command_emitter)
+                    {
+                        // Lock registry and try to match
+                        if let Ok(registry_guard) = registry.lock() {
+                            let match_result = matcher.match_input(&text, &registry_guard);
+
+                            match &match_result {
+                                MatchResult::Exact { command: matched_cmd, .. } | MatchResult::Fuzzy { command: matched_cmd, score: _, .. } => {
+                                    let confidence = match &match_result {
+                                        MatchResult::Exact { .. } => 1.0,
+                                        MatchResult::Fuzzy { score, .. } => *score,
+                                        _ => 0.0,
+                                    };
+                                    info!("Command matched: {} (confidence: {:.2})", matched_cmd.trigger, confidence);
+
+                                    // Get full command from registry
+                                    let full_command = registry_guard.get(matched_cmd.id).cloned();
+                                    drop(registry_guard); // Release lock before execution
+
+                                    if let Some(cmd) = full_command {
+                                        // Emit command_matched event
+                                        emitter.emit_command_matched(CommandMatchedPayload {
+                                            transcription: text.clone(),
+                                            command_id: cmd.id.to_string(),
+                                            trigger: matched_cmd.trigger.clone(),
+                                            confidence,
+                                        });
+
+                                        // Execute command using tokio runtime
+                                        let rt = tokio::runtime::Runtime::new();
+                                        match rt {
+                                            Ok(runtime) => {
+                                                let exec_result = runtime.block_on(dispatcher.execute(&cmd));
+                                                match exec_result {
+                                                    Ok(action_result) => {
+                                                        info!("Command executed: {}", action_result.message);
+                                                        emitter.emit_command_executed(CommandExecutedPayload {
+                                                            command_id: cmd.id.to_string(),
+                                                            trigger: matched_cmd.trigger.clone(),
+                                                            message: action_result.message,
+                                                        });
+                                                    }
+                                                    Err(action_error) => {
+                                                        error!("Command execution failed: {}", action_error);
+                                                        emitter.emit_command_failed(CommandFailedPayload {
+                                                            command_id: cmd.id.to_string(),
+                                                            trigger: matched_cmd.trigger.clone(),
+                                                            error_code: action_error.code,
+                                                            error_message: action_error.message,
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to create runtime for command execution: {}", e);
+                                                emitter.emit_command_failed(CommandFailedPayload {
+                                                    command_id: cmd.id.to_string(),
+                                                    trigger: matched_cmd.trigger.clone(),
+                                                    error_code: "RUNTIME_ERROR".to_string(),
+                                                    error_message: format!("Failed to create async runtime: {}", e),
+                                                });
+                                            }
+                                        }
+                                        true // Command was handled
+                                    } else {
+                                        warn!("Command not found in registry after match");
+                                        false
+                                    }
+                                }
+                                MatchResult::Ambiguous { ref candidates } => {
+                                    info!("Ambiguous match: {} candidates", candidates.len());
+
+                                    // Emit command_ambiguous event for disambiguation UI
+                                    emitter.emit_command_ambiguous(CommandAmbiguousPayload {
+                                        transcription: text.clone(),
+                                        candidates: candidates
+                                            .iter()
+                                            .map(|c| CommandCandidate {
+                                                id: c.command.id.to_string(),
+                                                trigger: c.command.trigger.clone(),
+                                                confidence: c.score,
+                                            })
+                                            .collect(),
+                                    });
+                                    true // Command matching was handled (ambiguous)
+                                }
+                                MatchResult::NoMatch => {
+                                    debug!("No command match for: {}", text);
+                                    false // Fall through to clipboard
+                                }
+                            }
+                        } else {
+                            warn!("Failed to lock command registry");
+                            false
+                        }
+                    } else {
+                        debug!("Voice commands not configured, skipping command matching");
+                        false
+                    };
+
+                    // Fallback to clipboard if no command was handled
+                    if !command_handled {
+                        // Copy to clipboard
+                        match Clipboard::new() {
+                            Ok(mut clipboard) => {
+                                if let Err(e) = clipboard.set_text(&text) {
+                                    warn!("Failed to copy to clipboard: {}", e);
+                                } else {
+                                    debug!("Transcribed text copied to clipboard");
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to access clipboard: {}", e);
                             }
                         }
-                        Err(e) => {
-                            warn!("Failed to access clipboard: {}", e);
-                        }
-                    }
 
-                    // Emit transcription_completed event
-                    transcription_emitter.emit_transcription_completed(TranscriptionCompletedPayload {
-                        text,
-                        duration_ms,
-                    });
+                        // Emit transcription_completed event
+                        transcription_emitter.emit_transcription_completed(TranscriptionCompletedPayload {
+                            text,
+                            duration_ms,
+                        });
+                    }
 
                     // Reset whisper state to idle
                     if let Err(e) = whisper_manager.reset_to_idle() {

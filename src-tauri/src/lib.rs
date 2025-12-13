@@ -71,19 +71,30 @@ pub fn run() {
 
             // Create and manage VoiceCommandsState
             debug!("Creating VoiceCommandsState...");
-            match voice_commands::VoiceCommandsState::new() {
+            let (command_registry, command_matcher, action_dispatcher) = match voice_commands::VoiceCommandsState::new() {
                 Ok(voice_state) => {
+                    // Extract registry reference for integration
+                    let registry = Arc::new(Mutex::new(voice_commands::registry::CommandRegistry::with_default_path().unwrap()));
+                    if let Err(e) = registry.lock().unwrap().load() {
+                        warn!("Failed to load commands: {}", e);
+                    }
+                    let matcher = Arc::new(voice_commands::matcher::CommandMatcher::new());
+                    let executor_state = voice_commands::executor::ExecutorState::new();
+                    let dispatcher = executor_state.dispatcher.clone();
+
                     app.manage(voice_state);
+                    app.manage(executor_state);
                     debug!("VoiceCommandsState initialized successfully");
+                    (Some(registry), Some(matcher), Some(dispatcher))
                 }
                 Err(e) => {
                     warn!("Failed to initialize VoiceCommandsState: {}", e);
+                    // Still create executor state even if voice commands failed
+                    let executor_state = voice_commands::executor::ExecutorState::new();
+                    app.manage(executor_state);
+                    (None, None, None)
                 }
-            }
-
-            // Create and manage ExecutorState
-            debug!("Creating ExecutorState...");
-            app.manage(voice_commands::executor::ExecutorState::new());
+            };
             debug!("ExecutorState initialized successfully");
 
             // Eager model loading at startup (if model exists)
@@ -104,13 +115,28 @@ pub fn run() {
 
             // Create a wrapper to pass to HotkeyIntegration (it needs owned value, not Arc)
             let recording_emitter = commands::TauriEventEmitter::new(app.handle().clone());
-            let integration = Arc::new(Mutex::new(
-                hotkey::HotkeyIntegration::new(recording_emitter)
-                    .with_audio_thread(audio_thread)
-                    .with_whisper_manager(whisper_manager)
-                    .with_transcription_emitter(emitter)
-                    .with_recording_state(recording_state.clone()),
-            ));
+            let command_emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
+            let mut integration_builder = hotkey::HotkeyIntegration::<
+                commands::TauriEventEmitter,
+                commands::TauriEventEmitter,
+                commands::TauriEventEmitter,
+            >::new(recording_emitter)
+                .with_audio_thread(audio_thread)
+                .with_whisper_manager(whisper_manager)
+                .with_transcription_emitter(emitter)
+                .with_recording_state(recording_state.clone())
+                .with_command_emitter(command_emitter);
+
+            // Wire up voice command integration if available
+            if let (Some(registry), Some(matcher), Some(dispatcher)) = (command_registry, command_matcher, action_dispatcher) {
+                integration_builder = integration_builder
+                    .with_command_registry(registry)
+                    .with_command_matcher(matcher)
+                    .with_action_dispatcher(dispatcher);
+                debug!("Voice command integration wired up");
+            }
+
+            let integration = Arc::new(Mutex::new(integration_builder));
 
             // Clone for callback
             let integration_clone = integration.clone();
