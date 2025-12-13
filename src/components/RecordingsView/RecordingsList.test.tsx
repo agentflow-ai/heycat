@@ -50,6 +50,10 @@ describe("RecordingsList", () => {
       mockInvoke.mockResolvedValue([]);
 
       expect(() => render(<RecordingsList />)).not.toThrow();
+      // Wait for async useEffect to complete
+      await waitFor(() => {
+        expect(screen.getByText("No recordings yet")).toBeDefined();
+      });
     });
 
     it("displays loading state while fetching", () => {

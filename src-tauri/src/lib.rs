@@ -8,6 +8,7 @@ mod commands;
 mod events;
 mod hotkey;
 mod model;
+mod parakeet;
 mod recording;
 mod voice_commands;
 mod whisper;

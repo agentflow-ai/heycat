@@ -26,6 +26,18 @@ pub enum HotkeyError {
     Conflict(String),
 }
 
+impl std::fmt::Display for HotkeyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HotkeyError::RegistrationFailed(msg) => write!(f, "Registration failed: {}", msg),
+            HotkeyError::AlreadyRegistered => write!(f, "Shortcut already registered"),
+            HotkeyError::Conflict(msg) => write!(f, "Shortcut conflict: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for HotkeyError {}
+
 /// Map backend error messages to HotkeyError variants
 pub fn map_backend_error(msg: &str) -> HotkeyError {
     let lower = msg.to_lowercase();

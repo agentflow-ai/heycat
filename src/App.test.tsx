@@ -1,6 +1,6 @@
 /* v8 ignore file -- @preserve */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import * as useRecordingModule from "./hooks/useRecording";
 import * as useModelStatusModule from "./hooks/useModelStatus";
@@ -48,12 +48,16 @@ describe("App Integration", () => {
     mockUseTranscription.mockReturnValue(defaultTranscriptionMock);
   });
 
-  it("renders RecordingIndicator component without errors", () => {
+  it("renders RecordingIndicator component without errors", async () => {
     render(<App />);
 
     const indicator = document.querySelector(".recording-indicator");
     expect(indicator).not.toBeNull();
     expect(screen.getByText("Idle")).toBeDefined();
+    // Wait for RecordingsList async effect to complete
+    await waitFor(() => {
+      expect(screen.getByText("No recordings yet")).toBeDefined();
+    });
   });
 
   it("syncs state when backend emits recording events", async () => {
@@ -69,12 +73,21 @@ describe("App Integration", () => {
     rerender(<App />);
 
     expect(screen.getByText("Recording")).toBeDefined();
+    // Wait for RecordingsList async effect to complete
+    await waitFor(() => {
+      expect(screen.getByText("No recordings yet")).toBeDefined();
+    });
   });
 
-  it("App renders without console errors", () => {
+  it("App renders without console errors", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     render(<App />);
+
+    // Wait for RecordingsList async effect to complete
+    await waitFor(() => {
+      expect(screen.getByText("No recordings yet")).toBeDefined();
+    });
 
     expect(consoleSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();

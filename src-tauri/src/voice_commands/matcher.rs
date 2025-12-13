@@ -90,7 +90,7 @@ impl CommandMatcher {
 
     /// Normalize input text: lowercase and trim whitespace
     fn normalize(input: &str) -> String {
-        input.to_lowercase().trim().to_string()
+        input.trim().to_lowercase()
     }
 
     /// Try to extract parameters from a parameterized trigger
