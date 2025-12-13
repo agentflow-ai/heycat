@@ -73,11 +73,8 @@ pub fn run() {
             debug!("Creating VoiceCommandsState...");
             let (command_registry, command_matcher, action_dispatcher) = match voice_commands::VoiceCommandsState::new() {
                 Ok(voice_state) => {
-                    // Extract registry reference for integration
-                    let registry = Arc::new(Mutex::new(voice_commands::registry::CommandRegistry::with_default_path().unwrap()));
-                    if let Err(e) = registry.lock().unwrap().load() {
-                        warn!("Failed to load commands: {}", e);
-                    }
+                    // Share the same registry between UI and matcher
+                    let registry = voice_state.registry.clone();
                     let matcher = Arc::new(voice_commands::matcher::CommandMatcher::new());
                     let executor_state = voice_commands::executor::ExecutorState::new();
                     let dispatcher = executor_state.dispatcher.clone();

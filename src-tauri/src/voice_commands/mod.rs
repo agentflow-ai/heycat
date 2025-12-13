@@ -8,12 +8,12 @@ pub mod registry;
 use registry::{ActionType, CommandDefinition, CommandRegistry, RegistryError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 /// State wrapper for the command registry
 pub struct VoiceCommandsState {
-    pub registry: Mutex<CommandRegistry>,
+    pub registry: Arc<Mutex<CommandRegistry>>,
 }
 
 impl VoiceCommandsState {
@@ -21,7 +21,7 @@ impl VoiceCommandsState {
         let mut registry = CommandRegistry::with_default_path()?;
         registry.load()?;
         Ok(Self {
-            registry: Mutex::new(registry),
+            registry: Arc::new(Mutex::new(registry)),
         })
     }
 }
