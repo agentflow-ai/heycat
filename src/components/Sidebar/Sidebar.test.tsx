@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Sidebar } from "./Sidebar";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -23,6 +24,33 @@ describe("Sidebar", () => {
 
       const historyTab = screen.getByRole("tab", { name: "History" });
       expect(historyTab.getAttribute("aria-selected")).toBe("true");
+    });
+  });
+
+  describe("Commands tab", () => {
+    it("Commands tab is present in sidebar", () => {
+      render(<Sidebar />);
+
+      expect(screen.getByRole("tab", { name: "Commands" })).toBeDefined();
+    });
+
+    it("Commands tab switches panel content when clicked", async () => {
+      render(<Sidebar />);
+
+      const commandsTab = screen.getByRole("tab", { name: "Commands" });
+      await userEvent.click(commandsTab);
+
+      expect(commandsTab.getAttribute("aria-selected")).toBe("true");
+      expect(
+        screen.getByRole("tab", { name: "History" }).getAttribute("aria-selected")
+      ).toBe("false");
+    });
+
+    it("can start on Commands tab via defaultTab prop", () => {
+      render(<Sidebar defaultTab="commands" />);
+
+      const commandsTab = screen.getByRole("tab", { name: "Commands" });
+      expect(commandsTab.getAttribute("aria-selected")).toBe("true");
     });
   });
 
