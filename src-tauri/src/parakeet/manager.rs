@@ -239,4 +239,48 @@ mod tests {
         // Should remain Unloaded, not reset
         assert_eq!(manager.state(), TranscriptionState::Unloaded);
     }
+
+    #[test]
+    fn test_transcription_manager_state_transitions() {
+        let manager = TranscriptionManager::new();
+
+        // Initial state: Unloaded
+        assert_eq!(manager.state(), TranscriptionState::Unloaded);
+
+        // After setting to Idle (simulating model load success)
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Idle;
+        }
+        assert_eq!(manager.state(), TranscriptionState::Idle);
+
+        // After setting to Transcribing
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Transcribing;
+        }
+        assert_eq!(manager.state(), TranscriptionState::Transcribing);
+
+        // After setting to Completed
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Completed;
+        }
+        assert_eq!(manager.state(), TranscriptionState::Completed);
+
+        // Reset to Idle
+        manager.reset_to_idle().unwrap();
+        assert_eq!(manager.state(), TranscriptionState::Idle);
+
+        // Can also transition from Idle to Error
+        {
+            let mut state = manager.state.lock().unwrap();
+            *state = TranscriptionState::Error;
+        }
+        assert_eq!(manager.state(), TranscriptionState::Error);
+
+        // Reset from Error to Idle
+        manager.reset_to_idle().unwrap();
+        assert_eq!(manager.state(), TranscriptionState::Idle);
+    }
 }

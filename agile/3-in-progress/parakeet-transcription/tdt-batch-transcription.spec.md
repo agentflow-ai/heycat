@@ -1,8 +1,9 @@
 ---
-status: pending
+status: completed
 created: 2025-12-13
-completed: null
+completed: 2025-12-13
 dependencies: ["parakeet-module-skeleton.spec.md", "multi-file-model-download.spec.md"]
+review_round: 1
 ---
 
 # Spec: Implement TDT batch transcription
@@ -196,3 +197,51 @@ let transcription_manager = Arc::new(TranscriptionManager::new());
 - Test location: `src-tauri/src/parakeet/manager_test.rs`
 - Verification: [ ] Integration test passes
 - Test approach: With downloaded model, verify load_model succeeds and transcribe returns text for sample audio. Mock audio can be generated or use a small test file.
+
+## Review
+
+**Reviewed:** 2025-12-13
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `TranscriptionManager` struct created in `src-tauri/src/parakeet/manager.rs` | PASS | `src-tauri/src/parakeet/manager.rs:11-16` - struct defined with `tdt_context` and `state` fields |
+| Implements `TranscriptionService` trait (same interface as WhisperManager) | PASS | `src-tauri/src/parakeet/manager.rs:42-146` - full implementation of `TranscriptionService` trait |
+| `load_model(path)` loads TDT model from directory (not single file) | PASS | `src-tauri/src/parakeet/manager.rs:43-69` - uses `ParakeetTDT::from_pretrained(path)` which expects directory |
+| `transcribe(samples)` processes 16kHz mono f32 audio and returns text | PASS | `src-tauri/src/parakeet/manager.rs:71-121` - calls `transcribe_samples(samples.to_vec(), 16000, 1, None)` |
+| Supports multilingual transcription with auto-detection (no language parameter needed) | PASS | `src-tauri/src/parakeet/manager.rs:102` - no language parameter passed to `transcribe_samples`, TDT auto-detects |
+| Uses `Arc<Mutex<Option<ParakeetTDT>>>` pattern for thread-safe model access | PASS | `src-tauri/src/parakeet/manager.rs:13` - `tdt_context: Arc<Mutex<Option<ParakeetTDT>>>` |
+| State machine follows same flow: Unloaded -> Idle -> Transcribing -> Completed/Error -> Idle | PASS | `src-tauri/src/parakeet/manager.rs:65,88,113-117,141-143` - state transitions implemented correctly |
+| All existing `TranscriptionError` variants are properly mapped | PASS | `src-tauri/src/parakeet/manager.rs:47,50,57,74-76,84-86,96,104` - all variants used: `ModelLoadFailed`, `LockPoisoned`, `InvalidAudio`, `ModelNotLoaded`, `TranscriptionFailed` |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| `test_transcription_manager_new_is_unloaded` | PASS | `src-tauri/src/parakeet/manager.rs:153-157` |
+| `test_transcription_manager_default_is_unloaded` | PASS | `src-tauri/src/parakeet/manager.rs:159-164` |
+| `test_transcription_manager_load_model_invalid_path` | PASS | `src-tauri/src/parakeet/manager.rs:184-190` (named `test_load_model_fails_with_invalid_path`) |
+| `test_transcription_manager_transcribe_not_loaded` | PASS | `src-tauri/src/parakeet/manager.rs:166-173` (named `test_transcribe_returns_error_when_model_not_loaded`) |
+| `test_transcription_manager_transcribe_empty_audio` | PASS | `src-tauri/src/parakeet/manager.rs:175-182` (named `test_transcribe_returns_error_for_empty_audio`) |
+| `test_transcription_manager_reset_to_idle_from_completed` | PASS | `src-tauri/src/parakeet/manager.rs:192-204` |
+| `test_transcription_manager_reset_to_idle_from_error` | PASS | `src-tauri/src/parakeet/manager.rs:206-218` |
+| `test_transcription_manager_state_transitions` | PASS | `src-tauri/src/parakeet/manager.rs:243-285` (named `test_transcription_manager_state_transitions`) |
+
+### Code Quality
+
+**Strengths:**
+- Clean implementation following the established pattern from WhisperManager
+- Proper thread-safe access using `Arc<Mutex<Option<>>>` pattern
+- Comprehensive error handling with proper mapping to `TranscriptionError` variants
+- Good separation of concerns between state management and model operations
+- All trait methods properly implemented with `Send + Sync` bounds satisfied
+- Additional bonus tests included (`test_reset_to_idle_noop_from_idle`, `test_reset_to_idle_noop_from_unloaded`)
+
+**Concerns:**
+- None identified
+
+### Verdict
+
+**APPROVED** - The implementation correctly satisfies all acceptance criteria. The `TranscriptionManager` is properly integrated into `lib.rs:72` and `hotkey/integration.rs:93` (via `with_transcription_manager`). The `parakeet-rs` dependency is added in `Cargo.toml:37`. All required test cases are present with meaningful assertions, and the code follows project patterns.
