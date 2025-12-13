@@ -56,7 +56,7 @@ pub fn run() {
 
             // Create event emitter, audio thread, and hotkey integration
             debug!("Creating audio thread...");
-            let emitter = commands::TauriEventEmitter::new(app.handle().clone());
+            let emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
             let audio_thread = Arc::new(audio::AudioThreadHandle::spawn());
             debug!("Audio thread spawned");
 
@@ -84,11 +84,13 @@ pub fn run() {
                 info!("Whisper model not found, transcription will require download first");
             }
 
+            // Create a wrapper to pass to HotkeyIntegration (it needs owned value, not Arc)
+            let recording_emitter = commands::TauriEventEmitter::new(app.handle().clone());
             let integration = Arc::new(Mutex::new(
-                hotkey::HotkeyIntegration::new(emitter)
+                hotkey::HotkeyIntegration::new(recording_emitter)
                     .with_audio_thread(audio_thread)
                     .with_whisper_manager(whisper_manager)
-                    .with_app_handle(app.handle().clone())
+                    .with_transcription_emitter(emitter)
                     .with_recording_state(recording_state.clone()),
             ));
 

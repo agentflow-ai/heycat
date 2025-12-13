@@ -7,7 +7,7 @@ use crate::commands::logic::{get_last_recording_buffer_impl, start_recording_imp
 use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
-    TranscriptionStartedPayload,
+    TranscriptionEventEmitter, TranscriptionStartedPayload,
 };
 use crate::model::check_model_exists;
 use crate::recording::{RecordingManager, RecordingState};
@@ -16,36 +16,35 @@ use crate::{debug, error, info, trace, warn};
 use arboard::Clipboard;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
 
 /// Debounce duration for hotkey presses (200ms)
 pub const DEBOUNCE_DURATION_MS: u64 = 200;
 
 /// Handles hotkey toggle with debouncing and event emission
-pub struct HotkeyIntegration<E: RecordingEventEmitter> {
+pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmitter> {
     last_toggle_time: Option<Instant>,
     debounce_duration: Duration,
-    emitter: E,
+    recording_emitter: R,
     /// Optional audio thread handle - when present, starts/stops capture on toggle
     audio_thread: Option<Arc<AudioThreadHandle>>,
     /// Optional WhisperManager for auto-transcription after recording stops
     whisper_manager: Option<Arc<WhisperManager>>,
-    /// Optional AppHandle for emitting transcription events from spawned thread
-    app_handle: Option<AppHandle>,
+    /// Transcription event emitter for emitting events from spawned thread
+    transcription_emitter: Option<Arc<T>>,
     /// Reference to recording state for getting audio buffer in transcription thread
     recording_state: Option<Arc<Mutex<RecordingManager>>>,
 }
 
-impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
+impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static> HotkeyIntegration<R, T> {
     /// Create a new HotkeyIntegration with default debounce duration
-    pub fn new(emitter: E) -> Self {
+    pub fn new(recording_emitter: R) -> Self {
         Self {
             last_toggle_time: None,
             debounce_duration: Duration::from_millis(DEBOUNCE_DURATION_MS),
-            emitter,
+            recording_emitter,
             audio_thread: None,
             whisper_manager: None,
-            app_handle: None,
+            transcription_emitter: None,
             recording_state: None,
         }
     }
@@ -62,9 +61,9 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
         self
     }
 
-    /// Add AppHandle for emitting transcription events (builder pattern)
-    pub fn with_app_handle(mut self, handle: AppHandle) -> Self {
-        self.app_handle = Some(handle);
+    /// Add transcription event emitter for emitting events from spawned thread (builder pattern)
+    pub fn with_transcription_emitter(mut self, emitter: Arc<T>) -> Self {
+        self.transcription_emitter = Some(emitter);
         self
     }
 
@@ -76,14 +75,14 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
 
     /// Create with custom debounce duration (for testing)
     #[cfg(test)]
-    pub fn with_debounce(emitter: E, debounce_ms: u64) -> Self {
+    pub fn with_debounce(recording_emitter: R, debounce_ms: u64) -> Self {
         Self {
             last_toggle_time: None,
             debounce_duration: Duration::from_millis(debounce_ms),
-            emitter,
+            recording_emitter,
             audio_thread: None,
             whisper_manager: None,
-            app_handle: None,
+            transcription_emitter: None,
             recording_state: None,
         }
     }
@@ -117,7 +116,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
             Ok(guard) => guard.get_state(),
             Err(e) => {
                 error!("Failed to acquire lock: {}", e);
-                self.emitter.emit_recording_error(RecordingErrorPayload {
+                self.recording_emitter.emit_recording_error(RecordingErrorPayload {
                     message: "Internal error: state lock poisoned".to_string(),
                 });
                 return false;
@@ -134,7 +133,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                 // Use unified command implementation
                 match start_recording_impl(state, self.audio_thread.as_deref(), model_available) {
                     Ok(()) => {
-                        self.emitter
+                        self.recording_emitter
                             .emit_recording_started(RecordingStartedPayload {
                                 timestamp: current_timestamp(),
                             });
@@ -143,7 +142,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                     }
                     Err(e) => {
                         error!("Failed to start recording: {}", e);
-                        self.emitter.emit_recording_error(RecordingErrorPayload {
+                        self.recording_emitter.emit_recording_error(RecordingErrorPayload {
                             message: e,
                         });
                         false
@@ -159,7 +158,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                             "Recording stopped: {} samples, {:.2}s duration",
                             metadata.sample_count, metadata.duration_secs
                         );
-                        self.emitter
+                        self.recording_emitter
                             .emit_recording_stopped(RecordingStoppedPayload { metadata });
                         debug!("Emitted recording_stopped event");
 
@@ -170,7 +169,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                     }
                     Err(e) => {
                         error!("Failed to stop recording: {}", e);
-                        self.emitter.emit_recording_error(RecordingErrorPayload {
+                        self.recording_emitter.emit_recording_error(RecordingErrorPayload {
                             message: e,
                         });
                         false
@@ -188,7 +187,7 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
     /// Spawn transcription in a separate thread
     ///
     /// Gets audio buffer, transcribes, copies to clipboard, and emits events.
-    /// No-op if whisper manager, app handle, or recording state is not configured.
+    /// No-op if whisper manager, transcription emitter, or recording state is not configured.
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn spawn_transcription(&self) {
         // Check all required components are present
@@ -200,10 +199,10 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
             }
         };
 
-        let app_handle = match &self.app_handle {
-            Some(ah) => ah.clone(),
+        let transcription_emitter = match &self.transcription_emitter {
+            Some(te) => te.clone(),
             None => {
-                debug!("Transcription skipped: no app handle configured");
+                debug!("Transcription skipped: no transcription emitter configured");
                 return;
             }
         };
@@ -225,28 +224,20 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
         info!("Spawning transcription thread...");
 
         std::thread::spawn(move || {
-            use crate::events::event_names;
-
             // Emit transcription_started event
             let start_time = Instant::now();
-            let _ = app_handle.emit(
-                event_names::TRANSCRIPTION_STARTED,
-                TranscriptionStartedPayload {
-                    timestamp: current_timestamp(),
-                },
-            );
+            transcription_emitter.emit_transcription_started(TranscriptionStartedPayload {
+                timestamp: current_timestamp(),
+            });
 
             // Get audio buffer
             let samples = match get_last_recording_buffer_impl(&recording_state) {
                 Ok(audio_data) => audio_data.samples,
                 Err(e) => {
                     error!("Failed to get recording buffer: {}", e);
-                    let _ = app_handle.emit(
-                        event_names::TRANSCRIPTION_ERROR,
-                        TranscriptionErrorPayload {
-                            error: format!("Failed to get recording buffer: {}", e),
-                        },
-                    );
+                    transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
+                        error: format!("Failed to get recording buffer: {}", e),
+                    });
                     return;
                 }
             };
@@ -278,10 +269,10 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                     }
 
                     // Emit transcription_completed event
-                    let _ = app_handle.emit(
-                        event_names::TRANSCRIPTION_COMPLETED,
-                        TranscriptionCompletedPayload { text, duration_ms },
-                    );
+                    transcription_emitter.emit_transcription_completed(TranscriptionCompletedPayload {
+                        text,
+                        duration_ms,
+                    });
 
                     // Reset whisper state to idle
                     if let Err(e) = whisper_manager.reset_to_idle() {
@@ -290,12 +281,9 @@ impl<E: RecordingEventEmitter> HotkeyIntegration<E> {
                 }
                 Err(e) => {
                     error!("Transcription failed: {}", e);
-                    let _ = app_handle.emit(
-                        event_names::TRANSCRIPTION_ERROR,
-                        TranscriptionErrorPayload {
-                            error: e.to_string(),
-                        },
-                    );
+                    transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
+                        error: e.to_string(),
+                    });
 
                     // Reset whisper state to idle on error
                     if let Err(reset_err) = whisper_manager.reset_to_idle() {

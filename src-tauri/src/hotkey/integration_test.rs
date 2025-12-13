@@ -1,7 +1,10 @@
 // Tests for hotkey-to-recording integration
 
 use super::integration::{HotkeyIntegration, DEBOUNCE_DURATION_MS};
-use crate::events::{RecordingErrorPayload, RecordingStartedPayload, RecordingStoppedPayload};
+use crate::events::{
+    RecordingErrorPayload, RecordingStartedPayload, RecordingStoppedPayload,
+    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionStartedPayload,
+};
 use crate::recording::{RecordingManager, RecordingState};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -13,6 +16,9 @@ struct MockEmitter {
     started: Arc<Mutex<Vec<RecordingStartedPayload>>>,
     stopped: Arc<Mutex<Vec<RecordingStoppedPayload>>>,
     errors: Arc<Mutex<Vec<RecordingErrorPayload>>>,
+    transcription_started: Arc<Mutex<Vec<TranscriptionStartedPayload>>>,
+    transcription_completed: Arc<Mutex<Vec<TranscriptionCompletedPayload>>>,
+    transcription_errors: Arc<Mutex<Vec<TranscriptionErrorPayload>>>,
 }
 
 impl MockEmitter {
@@ -43,10 +49,27 @@ impl crate::events::RecordingEventEmitter for MockEmitter {
     }
 }
 
+impl crate::events::TranscriptionEventEmitter for MockEmitter {
+    fn emit_transcription_started(&self, payload: TranscriptionStartedPayload) {
+        self.transcription_started.lock().unwrap().push(payload);
+    }
+
+    fn emit_transcription_completed(&self, payload: TranscriptionCompletedPayload) {
+        self.transcription_completed.lock().unwrap().push(payload);
+    }
+
+    fn emit_transcription_error(&self, payload: TranscriptionErrorPayload) {
+        self.transcription_errors.lock().unwrap().push(payload);
+    }
+}
+
+/// Type alias for HotkeyIntegration with MockEmitter for both parameters
+type TestIntegration = HotkeyIntegration<MockEmitter, MockEmitter>;
+
 #[test]
 fn test_toggle_from_idle_starts_recording() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::new(emitter.clone());
+    let mut integration: TestIntegration = HotkeyIntegration::new(emitter.clone());
     let state = Mutex::new(RecordingManager::new());
 
     let accepted = integration.handle_toggle(&state);
@@ -63,7 +86,7 @@ fn test_toggle_from_idle_starts_recording() {
 #[test]
 fn test_toggle_from_recording_stops() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 0); // No debounce for test
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0); // No debounce for test
     let state = Mutex::new(RecordingManager::new());
 
     // Start recording
@@ -85,7 +108,7 @@ fn test_toggle_from_recording_stops() {
 #[test]
 fn test_rapid_toggle_debounced() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 100);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 100);
     let state = Mutex::new(RecordingManager::new());
 
     // First toggle accepted
@@ -108,7 +131,7 @@ fn test_rapid_toggle_debounced() {
 #[test]
 fn test_toggle_after_debounce_window() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 50);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 50);
     let state = Mutex::new(RecordingManager::new());
 
     // First toggle
@@ -126,7 +149,7 @@ fn test_toggle_after_debounce_window() {
 #[test]
 fn test_events_emitted_on_each_toggle() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
     let state = Mutex::new(RecordingManager::new());
 
     // Toggle to Recording
@@ -147,7 +170,7 @@ fn test_toggle_from_processing_ignored() {
     use crate::audio::TARGET_SAMPLE_RATE;
 
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
     let state = Mutex::new(RecordingManager::new());
 
     // Manually put into Processing state
@@ -169,7 +192,7 @@ fn test_toggle_from_processing_ignored() {
 #[test]
 fn test_is_debouncing() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter, 100);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter, 100);
     let state = Mutex::new(RecordingManager::new());
 
     assert!(!integration.is_debouncing(), "Should not be debouncing initially");
@@ -192,7 +215,7 @@ fn test_default_debounce_duration() {
 #[test]
 fn test_multiple_rapid_toggles_only_first_accepted() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 50);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 50);
     let state = Mutex::new(RecordingManager::new());
 
     // Rapid fire toggles
@@ -210,7 +233,7 @@ fn test_multiple_rapid_toggles_only_first_accepted() {
 #[test]
 fn test_started_payload_has_timestamp() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::new(emitter.clone());
+    let mut integration: TestIntegration = HotkeyIntegration::new(emitter.clone());
     let state = Mutex::new(RecordingManager::new());
 
     integration.handle_toggle(&state);
@@ -224,7 +247,7 @@ fn test_started_payload_has_timestamp() {
 #[test]
 fn test_stopped_payload_has_metadata() {
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
     let state = Mutex::new(RecordingManager::new());
 
     // Start then stop
@@ -245,7 +268,7 @@ fn test_stopped_payload_has_metadata() {
 fn test_toggle_without_audio_thread_still_works() {
     // Regression test: integration without audio thread should still manage state
     let emitter = MockEmitter::new();
-    let mut integration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
+    let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0);
     let state = Mutex::new(RecordingManager::new());
 
     // Start recording
@@ -270,7 +293,7 @@ fn test_full_cycle_with_audio_thread() {
     let emitter = MockEmitter::new();
     let audio_thread = Arc::new(AudioThreadHandle::spawn());
 
-    let mut integration =
+    let mut integration: TestIntegration =
         HotkeyIntegration::with_debounce(emitter.clone(), 0).with_audio_thread(audio_thread);
     let state = Mutex::new(RecordingManager::new());
 
@@ -300,7 +323,7 @@ fn test_audio_thread_disconnection_rolls_back_state() {
     // Give the thread time to actually shut down
     thread::sleep(Duration::from_millis(10));
 
-    let mut integration =
+    let mut integration: TestIntegration =
         HotkeyIntegration::with_debounce(emitter.clone(), 0).with_audio_thread(audio_thread);
     let state = Mutex::new(RecordingManager::new());
 

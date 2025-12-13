@@ -113,6 +113,9 @@ mod tests {
         pub started_events: Arc<Mutex<Vec<RecordingStartedPayload>>>,
         pub stopped_events: Arc<Mutex<Vec<RecordingStoppedPayload>>>,
         pub error_events: Arc<Mutex<Vec<RecordingErrorPayload>>>,
+        pub transcription_started_events: Arc<Mutex<Vec<TranscriptionStartedPayload>>>,
+        pub transcription_completed_events: Arc<Mutex<Vec<TranscriptionCompletedPayload>>>,
+        pub transcription_error_events: Arc<Mutex<Vec<TranscriptionErrorPayload>>>,
     }
 
     impl MockEventEmitter {
@@ -132,6 +135,20 @@ mod tests {
 
         fn emit_recording_error(&self, payload: RecordingErrorPayload) {
             self.error_events.lock().unwrap().push(payload);
+        }
+    }
+
+    impl TranscriptionEventEmitter for MockEventEmitter {
+        fn emit_transcription_started(&self, payload: TranscriptionStartedPayload) {
+            self.transcription_started_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_transcription_completed(&self, payload: TranscriptionCompletedPayload) {
+            self.transcription_completed_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_transcription_error(&self, payload: TranscriptionErrorPayload) {
+            self.transcription_error_events.lock().unwrap().push(payload);
         }
     }
 
