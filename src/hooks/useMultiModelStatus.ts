@@ -72,8 +72,8 @@ export function useMultiModelStatus(): UseMultiModelStatusResult {
     /* v8 ignore start -- @preserve */
     try {
       const [tdtAvailable, eouAvailable] = await Promise.all([
-        invoke<boolean>("check_parakeet_model_status", { model_type: "ParakeetTDT" }),
-        invoke<boolean>("check_parakeet_model_status", { model_type: "ParakeetEOU" }),
+        invoke<boolean>("check_parakeet_model_status", { modelType: "ParakeetTDT" }),
+        invoke<boolean>("check_parakeet_model_status", { modelType: "ParakeetEOU" }),
       ]);
 
       setModels((prev) => ({

@@ -107,14 +107,15 @@ pub fn start_recording(
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
 ) -> Result<(), String> {
-    // Check model availability before starting recording
-    let model_available = match crate::model::check_model_exists() {
-        Ok(available) => available,
-        Err(e) => {
-            warn!("Failed to check model status: {}", e);
-            false
-        }
-    };
+    // Check model availability before starting recording (check TDT model for batch transcription)
+    let model_available =
+        match crate::model::check_model_exists_for_type(crate::model::ModelType::ParakeetTDT) {
+            Ok(available) => available,
+            Err(e) => {
+                warn!("Failed to check model status: {}", e);
+                false
+            }
+        };
     // Note: This Tauri command always uses batch mode (no streaming sender)
     // Streaming mode is only triggered via hotkey with streaming_transcriber configured
     let result = start_recording_impl(state.as_ref(), Some(audio_thread.as_ref()), model_available, None);

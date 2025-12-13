@@ -32,7 +32,9 @@ pub mod model_events {
     /// Payload for model_download_completed event
     #[derive(Debug, Clone, serde::Serialize, PartialEq)]
     pub struct ModelDownloadCompletedPayload {
-        /// Path to the downloaded model file
+        /// Type of model that was downloaded (e.g., "tdt", "eou")
+        pub model_type: String,
+        /// Path to the downloaded model directory
         pub model_path: String,
     }
 
@@ -51,6 +53,8 @@ pub mod model_events {
         pub file_index: usize,
         /// Total number of files to download
         pub total_files: usize,
+        /// Download progress percentage (0-100)
+        pub percent: f64,
     }
 }
 
@@ -446,18 +450,20 @@ mod tests {
     fn test_model_download_completed_payload_serialization() {
         use super::model_events::ModelDownloadCompletedPayload;
         let payload = ModelDownloadCompletedPayload {
-            model_path: "/path/to/model.bin".to_string(),
+            model_type: "tdt".to_string(),
+            model_path: "/path/to/model".to_string(),
         };
         let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("model_type"));
         assert!(json.contains("model_path"));
-        assert!(json.contains("/path/to/model.bin"));
     }
 
     #[test]
     fn test_model_download_completed_payload_clone() {
         use super::model_events::ModelDownloadCompletedPayload;
         let payload = ModelDownloadCompletedPayload {
-            model_path: "/path/to/model.bin".to_string(),
+            model_type: "tdt".to_string(),
+            model_path: "/path/to/model".to_string(),
         };
         let cloned = payload.clone();
         assert_eq!(payload, cloned);
@@ -467,7 +473,8 @@ mod tests {
     fn test_model_download_completed_payload_debug() {
         use super::model_events::ModelDownloadCompletedPayload;
         let payload = ModelDownloadCompletedPayload {
-            model_path: "/path/to/model.bin".to_string(),
+            model_type: "tdt".to_string(),
+            model_path: "/path/to/model".to_string(),
         };
         let debug = format!("{:?}", payload);
         assert!(debug.contains("ModelDownloadCompletedPayload"));
@@ -772,6 +779,7 @@ mod tests {
             total_bytes: 100_000_000,
             file_index: 0,
             total_files: 4,
+            percent: 50.0,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains("model_type"));
@@ -784,6 +792,7 @@ mod tests {
         assert!(json.contains("100000000"));
         assert!(json.contains("file_index"));
         assert!(json.contains("total_files"));
+        assert!(json.contains("percent"));
     }
 
     #[test]
@@ -796,6 +805,7 @@ mod tests {
             total_bytes: 100_000_000,
             file_index: 0,
             total_files: 4,
+            percent: 50.0,
         };
         let cloned = payload.clone();
         assert_eq!(payload, cloned);
@@ -811,6 +821,7 @@ mod tests {
             total_bytes: 100_000_000,
             file_index: 0,
             total_files: 4,
+            percent: 50.0,
         };
         let debug = format!("{:?}", payload);
         assert!(debug.contains("ModelFileDownloadProgressPayload"));
