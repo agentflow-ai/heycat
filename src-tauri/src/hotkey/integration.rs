@@ -2,7 +2,7 @@
 // Connects global hotkey to recording state with debouncing
 // Uses unified command implementations for start/stop logic
 
-use crate::audio::{AudioThreadHandle, StreamingAudioReceiver, StreamingAudioSender};
+use crate::audio::{AudioThreadHandle, StreamingAudioReceiver};
 use crate::commands::logic::{start_recording_impl, stop_recording_impl};
 use crate::events::{
     current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
@@ -59,6 +59,8 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     streaming_transcriber: Option<Arc<Mutex<StreamingTranscriber<T>>>>,
     /// Holds the streaming receiver during recording (wrapped in Option for take semantics)
     streaming_receiver: Arc<Mutex<Option<StreamingAudioReceiver>>>,
+    /// Handle to the streaming consumer thread for proper cleanup
+    streaming_consumer_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
@@ -80,6 +82,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             app_handle: None,
             streaming_transcriber: None,
             streaming_receiver: Arc::new(Mutex::new(None)),
+            streaming_consumer_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -162,6 +165,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             app_handle: None,
             streaming_transcriber: None,
             streaming_receiver: Arc::new(Mutex::new(None)),
+            streaming_consumer_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -206,24 +210,44 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         match current_state {
             RecordingState::Idle => {
                 info!("Starting recording...");
-                // Check model availability before starting (check Parakeet TDT model)
-                let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or(false);
-
                 // Check transcription mode at recording start (not toggle time) for deterministic behavior
                 let mode = self.transcription_manager.as_ref()
                     .map(|tm| tm.current_mode())
                     .unwrap_or(TranscriptionMode::Batch);
 
+                // Check model availability based on current mode
+                let model_type = match mode {
+                    TranscriptionMode::Batch => ModelType::ParakeetTDT,
+                    TranscriptionMode::Streaming => ModelType::ParakeetEOU,
+                };
+                let model_available = check_model_exists_for_type(model_type).unwrap_or(false);
+
                 // Create streaming channel if in streaming mode
+                // Channel capacity of 64 chunks = ~10 seconds of audio buffer at 160ms/chunk
                 let streaming_sender = match mode {
                     TranscriptionMode::Streaming => {
-                        let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<f32>>(10);
+                        let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<f32>>(64);
                         // Store receiver for consumer task
                         if let Ok(mut rx_holder) = self.streaming_receiver.lock() {
                             *rx_holder = Some(receiver);
                         }
+                        // Create ready signal channel - consumer will signal when ready to receive
+                        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
                         // Spawn consumer task to process audio chunks
-                        self.spawn_streaming_consumer();
+                        self.spawn_streaming_consumer(ready_tx);
+                        // Wait for consumer to signal ready before starting audio capture
+                        // This prevents a race condition where audio chunks are sent before
+                        // the consumer thread has taken the receiver
+                        match ready_rx.recv_timeout(Duration::from_millis(500)) {
+                            Ok(()) => {
+                                debug!("Streaming consumer signaled ready");
+                            }
+                            Err(e) => {
+                                error!("Streaming consumer failed to start in time: {}", e);
+                                // Continue anyway - better to try than fail completely
+                                // The increased buffer capacity should help absorb any delay
+                            }
+                        }
                         Some(sender)
                     }
                     TranscriptionMode::Batch => None,
@@ -566,10 +590,15 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
     /// and processes them through the streaming transcriber
     ///
     /// This is called at recording start in streaming mode. The thread will exit
-    /// when the channel is closed (receiver dropped on recording stop).
+    /// when the channel is closed (sender dropped on recording stop).
+    ///
+    /// The `ready_tx` channel is used to signal when the consumer is ready to receive
+    /// audio chunks. This prevents a race condition where audio starts before the
+    /// consumer has taken the receiver.
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn spawn_streaming_consumer(&self) {
+    fn spawn_streaming_consumer(&self, ready_tx: std::sync::mpsc::Sender<()>) {
         let receiver = self.streaming_receiver.clone();
+        let consumer_handle_holder = self.streaming_consumer_handle.clone();
         let transcriber = match &self.streaming_transcriber {
             Some(t) => t.clone(),
             None => {
@@ -580,7 +609,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
 
         debug!("Spawning streaming consumer thread...");
 
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             debug!("Streaming consumer thread started");
             // Take the receiver out of the holder
             let rx = {
@@ -602,23 +631,47 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                 }
             };
 
+            // Signal that we're ready to receive audio chunks
+            // This must happen AFTER we've taken the receiver but BEFORE audio starts
+            debug!("Streaming consumer signaling ready");
+            let _ = ready_tx.send(());
+
             // Process chunks until channel is closed
+            let mut chunk_count = 0u64;
+            let mut total_samples = 0u64;
+            info!("Streaming consumer entering recv loop...");
             while let Ok(chunk) = rx.recv() {
+                chunk_count += 1;
+                total_samples += chunk.len() as u64;
+                debug!("Consumer received chunk {} with {} samples (total: {})", chunk_count, chunk.len(), total_samples);
                 if let Ok(mut t) = transcriber.lock() {
                     if let Err(e) = t.process_samples(&chunk) {
-                        warn!("Streaming transcription error: {}", e);
+                        warn!("Streaming transcription error on chunk {}: {}", chunk_count, e);
                     }
+                } else {
+                    warn!("Consumer failed to lock transcriber for chunk {}", chunk_count);
                 }
             }
 
-            debug!("Streaming consumer thread exiting (channel closed)");
+            info!("Streaming consumer thread exiting (channel closed), processed {} chunks, {} total samples", chunk_count, total_samples);
         });
+
+        // Store the handle for proper cleanup in finalize_streaming
+        // The semicolon after the match ensures temporaries (MutexGuard) are dropped
+        // before consumer_handle_holder goes out of scope
+        match consumer_handle_holder.lock() {
+            Ok(mut handle_holder) => {
+                *handle_holder = Some(handle);
+            }
+            Err(_) => {}
+        };
     }
 
     /// Finalize streaming transcription and handle the result
     ///
-    /// Called when recording stops in streaming mode. Closes the channel to stop
-    /// the consumer thread, then finalizes the transcriber to get the complete text.
+    /// Called when recording stops in streaming mode. The channel is already closed
+    /// because the sender was dropped when stop_recording_impl() stopped the audio stream.
+    /// We wait for the consumer thread to finish, then finalize the transcriber.
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn finalize_streaming(&self) {
         let transcriber = match &self.streaming_transcriber {
@@ -629,16 +682,18 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             }
         };
 
-        // Drop the receiver to signal consumer thread to exit
-        // This closes the channel, causing recv() to return Err
-        {
-            if let Ok(mut rx_holder) = self.streaming_receiver.lock() {
-                *rx_holder = None;
+        // Wait for the consumer thread to finish processing all remaining chunks
+        // The channel was closed when the sender was dropped in stop_recording_impl()
+        // so the consumer thread's recv() loop will exit
+        if let Ok(mut handle_holder) = self.streaming_consumer_handle.lock() {
+            if let Some(handle) = handle_holder.take() {
+                debug!("Waiting for streaming consumer thread to finish...");
+                match handle.join() {
+                    Ok(()) => debug!("Streaming consumer thread joined successfully"),
+                    Err(_) => error!("Streaming consumer thread panicked"),
+                }
             }
         }
-
-        // Give the consumer thread a moment to finish processing
-        std::thread::sleep(std::time::Duration::from_millis(10));
 
         // Finalize transcription and get the complete text
         let result = {

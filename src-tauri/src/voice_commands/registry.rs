@@ -1,6 +1,6 @@
 // Voice command registry - stores and persists command definitions
 
-use crate::{debug, info, warn};
+use crate::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -227,11 +227,13 @@ impl CommandRegistry {
     }
 
     /// Get the number of commands
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.commands.len()
     }
 
     /// Check if registry is empty
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }

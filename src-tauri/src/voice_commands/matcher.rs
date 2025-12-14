@@ -84,6 +84,7 @@ impl CommandMatcher {
     }
 
     /// Create a matcher with custom configuration
+    #[allow(dead_code)]
     pub fn with_config(config: MatcherConfig) -> Self {
         Self { config }
     }

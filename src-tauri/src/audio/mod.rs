@@ -6,7 +6,7 @@ mod cpal_backend;
 pub use cpal_backend::CpalBackend;
 
 pub mod thread;
-pub use thread::{AudioThreadHandle, StopResult};
+pub use thread::AudioThreadHandle;
 
 pub mod wav;
 pub use wav::{encode_wav, parse_duration_from_file, SystemFileWriter};

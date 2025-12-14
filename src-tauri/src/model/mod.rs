@@ -6,14 +6,16 @@ pub mod download;
 
 pub use download::{
     check_model_exists_for_type, download_model_files, get_model_dir, ModelDownloadEventEmitter,
-    ModelFile, ModelManifest, ModelType,
+    ModelManifest, ModelType,
 };
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
+use crate::commands::TauriEventEmitter;
 use crate::events::model_events;
-use crate::parakeet::TranscriptionManager;
+use crate::parakeet::{StreamingTranscriber, TranscriptionManager};
+use crate::{info, warn};
 
 /// Check if a Parakeet model (TDT or EOU) is available
 /// model_type: "ParakeetTDT" or "ParakeetEOU"
@@ -63,6 +65,7 @@ pub async fn download_model(
     app_handle: AppHandle,
     model_type: ModelType,
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    streaming_transcriber: State<'_, Arc<Mutex<StreamingTranscriber<TauriEventEmitter>>>>,
 ) -> Result<String, String> {
     let manifest = match model_type {
         ModelType::ParakeetTDT => ModelManifest::tdt(),
@@ -88,6 +91,14 @@ pub async fn download_model(
             transcription_manager
                 .load_eou_model(&model_dir)
                 .map_err(|e| format!("Model downloaded but failed to load: {}", e))?;
+
+            // Also load into StreamingTranscriber for streaming mode
+            if let Ok(mut transcriber) = streaming_transcriber.lock() {
+                match transcriber.load_model(&model_dir) {
+                    Ok(()) => info!("EOU model loaded into StreamingTranscriber"),
+                    Err(e) => warn!("Failed to load EOU into StreamingTranscriber: {}", e),
+                }
+            }
         }
     }
 

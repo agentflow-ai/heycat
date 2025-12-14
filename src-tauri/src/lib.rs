@@ -136,6 +136,37 @@ pub fn run() {
                 info!("EOU model not found, streaming transcription will require download first");
             }
 
+            // Create streaming transcriber for real-time transcription
+            debug!("Creating StreamingTranscriber...");
+            let streaming_emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
+            let streaming_transcriber = Arc::new(Mutex::new(
+                parakeet::StreamingTranscriber::new(streaming_emitter)
+            ));
+
+            // Load EOU model into streaming transcriber if available
+            match model::check_model_exists_for_type(model::download::ModelType::ParakeetEOU) {
+                Ok(true) => {
+                    if let Ok(model_dir) = model::download::get_model_dir(model::download::ModelType::ParakeetEOU) {
+                        info!("Loading Parakeet EOU model from {:?} into StreamingTranscriber...", model_dir);
+                        match streaming_transcriber.lock().unwrap().load_model(&model_dir) {
+                            Ok(()) => info!("StreamingTranscriber EOU model loaded successfully"),
+                            Err(e) => warn!("Failed to load EOU model into StreamingTranscriber: {}", e),
+                        }
+                    } else {
+                        warn!("EOU model exists but couldn't get model directory");
+                    }
+                }
+                Ok(false) => {
+                    warn!("EOU model not available (check_model_exists_for_type returned false) - streaming transcription will not work!");
+                }
+                Err(e) => {
+                    warn!("Error checking EOU model availability: {} - streaming transcription will not work!", e);
+                }
+            }
+
+            // Register streaming_transcriber as Tauri state so download_model command can access it
+            app.manage(streaming_transcriber.clone());
+
             // Create a wrapper to pass to HotkeyIntegration (it needs owned value, not Arc)
             let recording_emitter = commands::TauriEventEmitter::new(app.handle().clone());
             let command_emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
@@ -149,7 +180,8 @@ pub fn run() {
                 .with_transcription_manager(transcription_manager)
                 .with_transcription_emitter(emitter)
                 .with_recording_state(recording_state.clone())
-                .with_command_emitter(command_emitter);
+                .with_command_emitter(command_emitter)
+                .with_streaming_transcriber(streaming_transcriber);
 
             // Wire up voice command integration if available
             if let (Some(registry), Some(matcher), Some(dispatcher)) = (command_registry, command_matcher, action_dispatcher) {

@@ -42,8 +42,6 @@ pub enum ActionErrorCode {
     EventSourceError,
     /// Nested workflows are not supported
     NestedWorkflow,
-    /// Platform not supported for this action
-    UnsupportedPlatform,
     /// Async task panicked
     TaskPanic,
     /// Character encoding error
@@ -75,7 +73,6 @@ impl std::fmt::Display for ActionErrorCode {
             ActionErrorCode::ExecutionError => "EXECUTION_ERROR",
             ActionErrorCode::EventSourceError => "EVENT_SOURCE_ERROR",
             ActionErrorCode::NestedWorkflow => "NESTED_WORKFLOW",
-            ActionErrorCode::UnsupportedPlatform => "UNSUPPORTED_PLATFORM",
             ActionErrorCode::TaskPanic => "TASK_PANIC",
             ActionErrorCode::EncodingError => "ENCODING_ERROR",
             ActionErrorCode::EventError => "EVENT_ERROR",
@@ -221,6 +218,7 @@ impl ActionDispatcher {
     }
 
     /// Create a dispatcher with custom action implementations (for testing)
+    #[allow(dead_code)]
     pub fn with_actions(
         open_app: Arc<dyn Action>,
         type_text: Arc<dyn Action>,
@@ -253,40 +251,6 @@ impl ActionDispatcher {
         let action = self.get_action(&command.action_type);
         action.execute(&command.parameters).await
     }
-}
-
-/// Execute a command in a spawned task with event emission
-pub fn execute_command_async(
-    app_handle: AppHandle,
-    dispatcher: Arc<ActionDispatcher>,
-    command: CommandDefinition,
-) {
-    let command_id = command.id;
-    let trigger = command.trigger.clone();
-
-    tauri::async_runtime::spawn(async move {
-        let result = dispatcher.execute(&command).await;
-
-        match result {
-            Ok(action_result) => {
-                let payload = CommandExecutedPayload {
-                    command_id: command_id.to_string(),
-                    trigger,
-                    message: action_result.message,
-                };
-                let _ = app_handle.emit(command_events::COMMAND_EXECUTED, payload);
-            }
-            Err(action_error) => {
-                let payload = CommandFailedPayload {
-                    command_id: command_id.to_string(),
-                    trigger,
-                    error_code: action_error.code.to_string(),
-                    error_message: action_error.message,
-                };
-                let _ = app_handle.emit(command_events::COMMAND_FAILED, payload);
-            }
-        }
-    });
 }
 
 /// State for the executor

@@ -5,6 +5,7 @@ use crate::events::{
     TranscriptionCompletedPayload, TranscriptionEventEmitter, TranscriptionPartialPayload,
 };
 use crate::parakeet::types::TranscriptionError;
+use crate::{debug, info, warn};
 use parakeet_rs::ParakeetEOU;
 use std::path::Path;
 use std::sync::Arc;
@@ -70,25 +71,46 @@ impl<E: TranscriptionEventEmitter> StreamingTranscriber<E> {
     }
 
     /// Check if a model is loaded
+    #[allow(dead_code)]
     pub fn is_loaded(&self) -> bool {
         self.eou.is_some()
     }
 
     /// Get the current streaming state
+    #[allow(dead_code)]
     pub fn state(&self) -> StreamingState {
         self.state
     }
 
     /// Get the current buffer size
+    #[allow(dead_code)]
     pub fn buffer_size(&self) -> usize {
         self.sample_buffer.len()
+    }
+
+    /// Normalize audio samples by dividing by max absolute value
+    /// This matches the preprocessing done in parakeet-rs examples
+    fn normalize_samples(samples: &[f32]) -> Vec<f32> {
+        let max_val = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+        let epsilon = 1e-10_f32;
+        if max_val > epsilon {
+            samples.iter().map(|s| s / (max_val + epsilon)).collect()
+        } else {
+            samples.to_vec()
+        }
     }
 
     /// Process incoming audio samples
     /// Buffers samples until CHUNK_SIZE (2560) is reached, then transcribes
     pub fn process_samples(&mut self, samples: &[f32]) -> Result<(), TranscriptionError> {
+        debug!("process_samples called with {} samples, buffer has {}", samples.len(), self.sample_buffer.len());
+
         // Check if model is loaded
-        let eou = self.eou.as_mut().ok_or(TranscriptionError::ModelNotLoaded)?;
+        let eou = self.eou.as_mut().ok_or_else(|| {
+            warn!("process_samples: EOU model not loaded!");
+            TranscriptionError::ModelNotLoaded
+        })?;
+        debug!("EOU model is loaded");
 
         // Track start time on first samples
         if self.start_time.is_none() {
@@ -102,20 +124,30 @@ impl<E: TranscriptionEventEmitter> StreamingTranscriber<E> {
 
         // Add samples to buffer
         self.sample_buffer.extend_from_slice(samples);
+        debug!("Buffer now has {} samples (need {} for chunk)", self.sample_buffer.len(), CHUNK_SIZE);
 
         // Process complete chunks
+        let mut chunks_processed = 0;
         while self.sample_buffer.len() >= CHUNK_SIZE {
             // Extract chunk from buffer
             let chunk: Vec<f32> = self.sample_buffer.drain(..CHUNK_SIZE).collect();
+            chunks_processed += 1;
+
+            // Normalize audio before transcription (matches parakeet-rs example preprocessing)
+            let normalized_chunk = Self::normalize_samples(&chunk);
+            debug!("Calling eou.transcribe with {} samples (chunk {}, normalized)", normalized_chunk.len(), chunks_processed);
 
             // Transcribe with is_final=false (intermediate chunk)
             let text = eou
-                .transcribe(&chunk, false)
+                .transcribe(&normalized_chunk, false)
                 .map_err(|e| TranscriptionError::TranscriptionFailed(e.to_string()))?;
+
+            info!("eou.transcribe returned: '{}' ({} chars)", text, text.len());
 
             // Accumulate partial text
             if !text.is_empty() {
                 self.partial_text.push_str(&text);
+                info!("partial_text now: '{}' ({} chars)", self.partial_text, self.partial_text.len());
             }
 
             // Emit partial event
@@ -125,33 +157,52 @@ impl<E: TranscriptionEventEmitter> StreamingTranscriber<E> {
             });
         }
 
+        if chunks_processed > 0 {
+            debug!("Processed {} chunks, {} samples remaining in buffer", chunks_processed, self.sample_buffer.len());
+        }
+
         Ok(())
     }
 
     /// Finalize transcription - process remaining buffer with is_final=true
     /// Returns the complete transcribed text
     pub fn finalize(&mut self) -> Result<String, TranscriptionError> {
+        info!("finalize called: sample_buffer={} samples, partial_text={} chars",
+              self.sample_buffer.len(), self.partial_text.len());
+
         // Check if model is loaded
-        let eou = self.eou.as_mut().ok_or(TranscriptionError::ModelNotLoaded)?;
+        let eou = self.eou.as_mut().ok_or_else(|| {
+            warn!("finalize: EOU model not loaded!");
+            TranscriptionError::ModelNotLoaded
+        })?;
+        debug!("EOU model is loaded for finalize");
 
         self.state = StreamingState::Finalizing;
 
         // Process remaining samples (even if less than CHUNK_SIZE)
         if !self.sample_buffer.is_empty() {
             let final_chunk: Vec<f32> = self.sample_buffer.drain(..).collect();
+            // Normalize before final transcription
+            let normalized_chunk = Self::normalize_samples(&final_chunk);
+            info!("Calling final eou.transcribe with {} remaining samples (is_final=true, normalized)", normalized_chunk.len());
 
             let text = eou
-                .transcribe(&final_chunk, true)
+                .transcribe(&normalized_chunk, true)
                 .map_err(|e| TranscriptionError::TranscriptionFailed(e.to_string()))?;
+
+            info!("Final transcribe returned: '{}' ({} chars)", text, text.len());
 
             if !text.is_empty() {
                 self.partial_text.push_str(&text);
             }
         } else {
             // Call with empty chunk but is_final=true to finalize
+            info!("Calling eou.transcribe with empty chunk (is_final=true) to flush");
             let text = eou
                 .transcribe(&[], true)
                 .map_err(|e| TranscriptionError::TranscriptionFailed(e.to_string()))?;
+
+            info!("Empty chunk transcribe returned: '{}' ({} chars)", text, text.len());
 
             if !text.is_empty() {
                 self.partial_text.push_str(&text);
@@ -178,6 +229,7 @@ impl<E: TranscriptionEventEmitter> StreamingTranscriber<E> {
             });
 
         let result = self.partial_text.clone();
+        info!("finalize returning: '{}' ({} chars)", result, result.len());
 
         // Reset to Idle state
         self.state = StreamingState::Idle;

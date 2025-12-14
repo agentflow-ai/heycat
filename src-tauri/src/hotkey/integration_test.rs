@@ -7,12 +7,12 @@ use crate::events::{
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionPartialPayload,
     TranscriptionStartedPayload,
 };
-use crate::model::{ModelManifest, ModelType, get_model_dir};
+use crate::model::{ModelManifest, ModelType};
 use crate::recording::{RecordingManager, RecordingState};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Once};
 use std::thread;
 use std::time::Duration;
-use std::io::Write;
 
 /// Global lock for model directory operations to prevent test races
 static MODEL_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -20,21 +20,44 @@ static MODEL_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Ensure model files exist for tests (called once per test run)
 static INIT_MODEL_FILES: Once = Once::new();
 
-/// Setup stub model files for tests
+/// Get the path to models directory in the git repo (for tests)
+fn get_test_models_dir(model_type: ModelType) -> PathBuf {
+    let manifest_dir =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    PathBuf::from(manifest_dir)
+        .parent()
+        .expect("Failed to get parent of manifest dir")
+        .join("models")
+        .join(model_type.dir_name())
+}
+
+/// Ensure model files exist in repo - fails if not present
 fn ensure_test_model_files() {
     INIT_MODEL_FILES.call_once(|| {
         let _lock = MODEL_DIR_LOCK.lock().unwrap();
-        let model_dir = get_model_dir(ModelType::ParakeetTDT).expect("Failed to get model dir");
 
-        // Create directory and stub files if they don't exist
-        if !model_dir.exists() {
-            std::fs::create_dir_all(&model_dir).expect("Failed to create model dir");
-            let manifest = ModelManifest::tdt();
-            for file in &manifest.files {
-                let file_path = model_dir.join(&file.name);
-                let mut f = std::fs::File::create(&file_path).expect("Failed to create stub file");
-                f.write_all(b"test stub").expect("Failed to write stub content");
-            }
+        // Verify TDT model exists in repo
+        let tdt_model_dir = get_test_models_dir(ModelType::ParakeetTDT);
+        let tdt_manifest = ModelManifest::tdt();
+        for file in &tdt_manifest.files {
+            let file_path = tdt_model_dir.join(&file.name);
+            assert!(
+                file_path.exists(),
+                "TDT model file missing from repo: {:?}. Run 'git lfs pull'.",
+                file_path
+            );
+        }
+
+        // Verify EOU model exists in repo
+        let eou_model_dir = get_test_models_dir(ModelType::ParakeetEOU);
+        let eou_manifest = ModelManifest::eou();
+        for file in &eou_manifest.files {
+            let file_path = eou_model_dir.join(&file.name);
+            assert!(
+                file_path.exists(),
+                "EOU model file missing from repo: {:?}. Run 'git lfs pull'.",
+                file_path
+            );
         }
     });
 }

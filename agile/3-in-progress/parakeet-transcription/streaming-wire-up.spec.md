@@ -1,7 +1,8 @@
 ---
 status: completed
 created: 2025-12-13
-completed: 2025-12-13
+reopened: 2025-12-14
+reopen_reason: Production wiring in lib.rs was missing - StreamingTranscriber never instantiated
 dependencies:
   - eou-streaming-transcription.spec.md
   - streaming-audio-integration.spec.md
@@ -26,6 +27,9 @@ Connect the StreamingTranscriber to the hotkey integration so that streaming mod
 - [ ] `transcription_completed` event emitted on streaming finalization
 - [ ] Batch mode continues to work unchanged
 - [ ] Mode is checked at recording start (not toggle time) for deterministic behavior
+- [ ] **[REOPENED]** `StreamingTranscriber` instance created in `lib.rs` setup
+- [ ] **[REOPENED]** EOU model loaded into `StreamingTranscriber` at startup (when available)
+- [ ] **[REOPENED]** `.with_streaming_transcriber()` called on HotkeyIntegration builder
 
 ## Test Cases
 
@@ -279,3 +283,60 @@ audio_thread.start(buffer, streaming_sender)
 ### Verdict
 
 **APPROVED** - All acceptance criteria pass with strong evidence. The implementation correctly wires up streaming transcription to the hotkey integration. The missing integration test is acceptable given it requires model loading, and the concerns noted are minor implementation details that don't affect correctness.
+
+---
+
+## Review (Reopened)
+
+**Reviewed:** 2025-12-14
+**Reviewer:** Claude (Independent Review)
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `HotkeyIntegration` has a `streaming_transcriber` field | PASS | integration.rs:59 - `streaming_transcriber: Option<Arc<Mutex<StreamingTranscriber<T>>>>` |
+| Recording start creates streaming channel when mode is `Streaming` | PASS | integration.rs:218-230 - channel created via `sync_channel::<Vec<f32>>(10)` in Streaming branch |
+| Streaming sender is passed to `audio_thread.start()` when mode is `Streaming` | PASS | integration.rs:235 passes to `start_recording_impl` |
+| Consumer task spawns on recording start in streaming mode | PASS | integration.rs:226 - `self.spawn_streaming_consumer()` called in Streaming branch |
+| Consumer task reads chunks and calls `streaming_transcriber.process_samples()` | PASS | integration.rs:606-612 - `while let Ok(chunk) = rx.recv() { ... t.process_samples(&chunk)` |
+| `transcription_partial` events emitted during recording in streaming mode | PASS | streaming.rs:125-128 - `emit_transcription_partial` called in `process_samples()` |
+| Recording stop in streaming mode calls `finalize()` instead of `spawn_transcription()` | PASS | integration.rs:280-282 - Streaming branch calls `finalize_streaming()` which calls `t.finalize()` at line 653 |
+| `transcription_completed` event emitted on streaming finalization | PASS | streaming.rs:176-181 - `emit_transcription_completed` called in `finalize()` |
+| Batch mode continues to work unchanged | PASS | integration.rs:275-278 - Batch mode still calls `spawn_transcription()` |
+| Mode is checked at recording start (not toggle time) for deterministic behavior | PASS | integration.rs:213-215 - mode checked inside `RecordingState::Idle` match arm |
+| **[REOPENED]** `StreamingTranscriber` instance created in `lib.rs` setup | PASS | lib.rs:139-144 - `Arc::new(Mutex::new(parakeet::StreamingTranscriber::new(streaming_emitter)))` |
+| **[REOPENED]** EOU model loaded into `StreamingTranscriber` at startup (when available) | PASS | lib.rs:146-155 - Checks `check_model_exists_for_type(ModelType::ParakeetEOU)` then calls `streaming_transcriber.lock().unwrap().load_model(&model_dir)` |
+| **[REOPENED]** `.with_streaming_transcriber()` called on HotkeyIntegration builder | PASS | lib.rs:171 - `.with_streaming_transcriber(streaming_transcriber)` on integration builder |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Unit test: HotkeyIntegration accepts streaming_transcriber via builder | PASS | integration_test.rs:414-430 |
+| Unit test: Recording start in Batch mode passes `None` to audio_thread.start() | PASS | integration_test.rs:433-457 |
+| Unit test: Recording start in Streaming mode passes `Some(sender)` to audio_thread.start() | PASS | integration_test.rs:460-490 |
+| Unit test: Recording stop in Batch mode calls spawn_transcription() | PASS | integration_test.rs:493-523 |
+| Unit test: Recording stop in Streaming mode calls finalize() | PASS | integration_test.rs:526-564 |
+| Integration test: Full streaming flow emits partial events then completed event | DEFERRED | Requires actual EOU model to be present - acceptable deferral |
+
+### Code Quality
+
+**Strengths:**
+- Production wiring in lib.rs is now complete with proper StreamingTranscriber instantiation (lines 139-144)
+- EOU model loading follows same pattern as TDT model loading with proper error handling (lines 146-155)
+- Builder pattern `.with_streaming_transcriber()` correctly wires up the transcriber to HotkeyIntegration (line 171)
+- Separate event emitter created for StreamingTranscriber to avoid sharing with other components (line 141)
+- Proper Arc<Mutex<>> wrapping for thread-safe access across async boundaries
+
+**Concerns:**
+- None identified. The REOPENED criteria have been properly addressed. The production wiring in lib.rs now correctly instantiates StreamingTranscriber, loads the EOU model at startup when available, and wires it to HotkeyIntegration via the builder method.
+
+### Verdict
+
+**APPROVED** - All acceptance criteria pass including the REOPENED criteria. The production wiring in lib.rs has been verified:
+1. `StreamingTranscriber` is created at lib.rs:142-144
+2. EOU model is loaded into it at lib.rs:146-155 (when model files exist)
+3. It is passed to HotkeyIntegration via `.with_streaming_transcriber()` at lib.rs:171
+
+The implementation is complete and ready for production use.

@@ -66,6 +66,7 @@ impl std::error::Error for TranscriptionError {}
 pub type TranscriptionResult<T> = Result<T, TranscriptionError>;
 
 /// Trait for transcription services, enabling mockability in tests
+#[allow(dead_code)]
 pub trait TranscriptionService: Send + Sync {
     /// Load a model from the given path
     #[must_use = "this returns a Result that should be handled"]

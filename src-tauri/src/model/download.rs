@@ -109,11 +109,6 @@ impl ModelManifest {
             ],
         }
     }
-
-    /// Get total size of all files in bytes
-    pub fn total_size(&self) -> u64 {
-        self.files.iter().map(|f| f.size_bytes).sum()
-    }
 }
 
 /// Download progress logging interval in bytes (50MB)
@@ -160,29 +155,22 @@ pub fn get_model_dir(model_type: ModelType) -> Result<PathBuf, ModelError> {
     Ok(get_models_dir()?.join(model_type.dir_name()))
 }
 
+/// Check if all model files exist in a given directory
+fn check_model_files_exist_in_dir(dir: &std::path::Path, manifest: &ModelManifest) -> bool {
+    if !dir.exists() {
+        return false;
+    }
+    manifest.files.iter().all(|f| dir.join(&f.name).exists())
+}
+
 /// Check if a multi-file model exists (all files present)
 pub fn check_model_exists_for_type(model_type: ModelType) -> Result<bool, ModelError> {
     let model_dir = get_model_dir(model_type)?;
-
-    if !model_dir.exists() {
-        return Ok(false);
-    }
-
-    // Get the manifest for this model type
     let manifest = match model_type {
         ModelType::ParakeetTDT => ModelManifest::tdt(),
         ModelType::ParakeetEOU => ModelManifest::eou(),
     };
-
-    // Check that ALL files in the manifest exist
-    for file in &manifest.files {
-        let file_path = model_dir.join(&file.name);
-        if !file_path.exists() {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
+    Ok(check_model_files_exist_in_dir(&model_dir, &manifest))
 }
 
 /// Create the models directory if it doesn't exist
@@ -399,10 +387,18 @@ pub async fn download_model_files<E: ModelDownloadEventEmitter>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    // Mutex to serialize tests that modify the model directories
-    static MODEL_DIR_LOCK: Mutex<()> = Mutex::new(());
+    /// Get the path to models directory in the git repo (for tests)
+    /// Returns {CARGO_MANIFEST_DIR}/../models/{model_type}/
+    fn get_test_models_dir(model_type: ModelType) -> PathBuf {
+        let manifest_dir =
+            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        PathBuf::from(manifest_dir)
+            .parent()
+            .expect("Failed to get parent of manifest dir")
+            .join("models")
+            .join(model_type.dir_name())
+    }
 
     #[test]
     fn test_get_models_dir_contains_expected_path() {
@@ -523,13 +519,6 @@ mod tests {
     }
 
     #[test]
-    fn test_model_manifest_total_size() {
-        let manifest = ModelManifest::tdt();
-        let expected = 43_826_176 + 2_620_162_048 + 76_021_760 + 96_154;
-        assert_eq!(manifest.total_size(), expected);
-    }
-
-    #[test]
     fn test_model_manifest_clone() {
         let manifest = ModelManifest::tdt();
         let cloned = manifest.clone();
@@ -569,76 +558,65 @@ mod tests {
         );
     }
 
-    // check_model_exists_for_type tests
+    // check_model_files_exist_in_dir tests (using temp directories, not real model dirs)
 
     #[test]
-    fn test_check_model_exists_for_type_returns_false_when_directory_missing() {
-        // Lock to prevent races with other tests that modify model directories
-        let _lock = MODEL_DIR_LOCK.lock().unwrap();
-
-        // Use TDT and ensure the directory doesn't exist
-        let model_dir = get_model_dir(ModelType::ParakeetTDT).unwrap();
-        let _ = std::fs::remove_dir_all(&model_dir);
-
-        let result = check_model_exists_for_type(ModelType::ParakeetTDT);
-        assert!(result.is_ok());
-        assert!(!result.unwrap()); // Should be false when dir doesn't exist
+    fn test_check_model_files_exist_in_dir_returns_false_when_directory_missing() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("heycat-test-{}", uuid::Uuid::new_v4()));
+        // Don't create it - test missing dir case
+        let manifest = ModelManifest::tdt();
+        assert!(!check_model_files_exist_in_dir(&temp_dir, &manifest));
     }
 
     #[test]
-    fn test_check_model_exists_for_type_returns_false_when_files_missing() {
-        // Lock to prevent races with other tests that modify model directories
-        let _lock = MODEL_DIR_LOCK.lock().unwrap();
+    fn test_check_model_files_exist_in_dir_returns_false_when_files_missing() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("heycat-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let manifest = ModelManifest::tdt();
 
-        // Use EOU to avoid racing with other TDT tests
-        let model_dir = get_model_dir(ModelType::ParakeetEOU).unwrap();
+        let result = check_model_files_exist_in_dir(&temp_dir, &manifest);
 
-        // Clean up before test (in case previous test left state)
-        let _ = std::fs::remove_dir_all(&model_dir);
-
-        // Create the directory if it doesn't exist
-        let _ = std::fs::create_dir_all(&model_dir);
-
-        // Should return false because files are missing
-        let result = check_model_exists_for_type(ModelType::ParakeetEOU);
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
-
-        // Clean up
-        let _ = std::fs::remove_dir_all(&model_dir);
+        // Cleanup temp dir
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        assert!(!result);
     }
 
     #[test]
-    fn test_check_model_exists_for_type_returns_true_when_all_files_present() {
+    fn test_check_model_files_exist_in_dir_returns_true_with_repo_models() {
+        // Use models from the git repo (tracked by Git LFS)
+        let repo_model_dir = get_test_models_dir(ModelType::ParakeetTDT);
+        let manifest = ModelManifest::tdt();
+
+        assert!(
+            check_model_files_exist_in_dir(&repo_model_dir, &manifest),
+            "TDT model not found in repo. Run 'git lfs pull' to fetch models. Dir: {:?}",
+            repo_model_dir
+        );
+    }
+
+    #[test]
+    fn test_check_model_files_exist_in_dir_returns_true_with_stub_files() {
         use std::io::Write;
 
-        // Lock to prevent races with other tests that modify model directories
-        let _lock = MODEL_DIR_LOCK.lock().unwrap();
-
-        // Use TDT model type for this test
-        let model_dir = get_model_dir(ModelType::ParakeetTDT).unwrap();
-
-        // Clean up before test (in case previous test left state)
-        let _ = std::fs::remove_dir_all(&model_dir);
-
-        // Create the directory and all required files
-        std::fs::create_dir_all(&model_dir).unwrap();
+        // Create temp dir with stub files for the test
+        let temp_dir =
+            std::env::temp_dir().join(format!("heycat-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
 
         let manifest = ModelManifest::tdt();
         for file in &manifest.files {
-            let file_path = model_dir.join(&file.name);
+            let file_path = temp_dir.join(&file.name);
             let mut f = std::fs::File::create(&file_path).unwrap();
-            // Write some dummy content
-            f.write_all(b"test").unwrap();
+            f.write_all(b"stub").unwrap();
         }
 
-        // Should return true because all files exist
-        let result = check_model_exists_for_type(ModelType::ParakeetTDT);
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+        let result = check_model_files_exist_in_dir(&temp_dir, &manifest);
 
-        // Clean up
-        let _ = std::fs::remove_dir_all(&model_dir);
+        // Cleanup temp dir (safe - it's a temp dir we created)
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        assert!(result);
     }
 
     // ModelFile tests

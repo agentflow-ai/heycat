@@ -10,8 +10,8 @@ use std::sync::Arc;
 use tauri::State;
 
 pub use manager::TranscriptionManager;
-pub use streaming::{StreamingState, StreamingTranscriber, CHUNK_SIZE};
-pub use types::{TranscriptionError, TranscriptionMode, TranscriptionResult, TranscriptionService, TranscriptionState};
+pub use streaming::StreamingTranscriber;
+pub use types::{TranscriptionMode, TranscriptionService};
 
 /// Get the current transcription mode (batch or streaming)
 #[tauri::command]

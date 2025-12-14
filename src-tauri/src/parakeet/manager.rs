@@ -37,14 +37,6 @@ impl TranscriptionManager {
         }
     }
 
-    /// Get the current transcription state
-    pub fn state(&self) -> TranscriptionState {
-        self.state
-            .lock()
-            .map(|guard| *guard)
-            .unwrap_or(TranscriptionState::Unloaded)
-    }
-
     /// Load the TDT model from the given directory path
     pub fn load_tdt_model(&self, model_dir: &Path) -> TranscriptionResult<()> {
         let path_str = model_dir.to_str().ok_or_else(|| {
@@ -143,6 +135,7 @@ impl TranscriptionManager {
 }
 
 impl TranscriptionService for TranscriptionManager {
+    #[allow(dead_code)]
     fn load_model(&self, path: &Path) -> TranscriptionResult<()> {
         // Load the TDT model from the given path
         let tdt = ParakeetTDT::from_pretrained(
@@ -249,8 +242,12 @@ impl TranscriptionService for TranscriptionManager {
         }
     }
 
+    #[allow(dead_code)]
     fn state(&self) -> TranscriptionState {
-        TranscriptionManager::state(self)
+        self.state
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or(TranscriptionState::Unloaded)
     }
 
     fn reset_to_idle(&self) -> TranscriptionResult<()> {
