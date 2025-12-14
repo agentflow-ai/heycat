@@ -12,9 +12,9 @@ use logic::{
 };
 
 use crate::events::{
-    command_events, event_names, CommandAmbiguousPayload, CommandEventEmitter,
-    CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, RecordingErrorPayload,
-    RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
+    command_events, event_names, listening_events, CommandAmbiguousPayload, CommandEventEmitter,
+    CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, ListeningEventEmitter,
+    RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
     TranscriptionStartedPayload,
 };
@@ -95,6 +95,16 @@ impl CommandEventEmitter for TauriEventEmitter {
 
     fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
         emit_or_warn!(self.app_handle, command_events::COMMAND_AMBIGUOUS, payload);
+    }
+}
+
+impl ListeningEventEmitter for TauriEventEmitter {
+    fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload) {
+        emit_or_warn!(
+            self.app_handle,
+            listening_events::WAKE_WORD_DETECTED,
+            payload
+        );
     }
 }
 

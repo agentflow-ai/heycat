@@ -40,6 +40,13 @@ pub mod listening_events {
     }
 }
 
+/// Trait for emitting listening events
+/// Allows mocking in tests while using real Tauri AppHandle in production
+pub trait ListeningEventEmitter: Send + Sync {
+    /// Emit wake_word_detected event
+    fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload);
+}
+
 /// Model-related event names
 pub mod model_events {
     pub const MODEL_DOWNLOAD_COMPLETED: &str = "model_download_completed";
@@ -242,6 +249,7 @@ mod tests {
         pub command_executed_events: Arc<Mutex<Vec<CommandExecutedPayload>>>,
         pub command_failed_events: Arc<Mutex<Vec<CommandFailedPayload>>>,
         pub command_ambiguous_events: Arc<Mutex<Vec<CommandAmbiguousPayload>>>,
+        pub wake_word_detected_events: Arc<Mutex<Vec<listening_events::WakeWordDetectedPayload>>>,
     }
 
     impl MockEventEmitter {
@@ -293,6 +301,12 @@ mod tests {
 
         fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
             self.command_ambiguous_events.lock().unwrap().push(payload);
+        }
+    }
+
+    impl ListeningEventEmitter for MockEventEmitter {
+        fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload) {
+            self.wake_word_detected_events.lock().unwrap().push(payload);
         }
     }
 
@@ -706,6 +720,22 @@ mod tests {
             candidates: vec![],
         });
         assert_eq!(emitter.command_ambiguous_events.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_mock_emitter_records_wake_word_events() {
+        let emitter = MockEventEmitter::new();
+
+        emitter.emit_wake_word_detected(listening_events::WakeWordDetectedPayload {
+            confidence: 0.95,
+            transcription: "hey cat".to_string(),
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        });
+        assert_eq!(emitter.wake_word_detected_events.lock().unwrap().len(), 1);
+
+        let events = emitter.wake_word_detected_events.lock().unwrap();
+        assert_eq!(events[0].confidence, 0.95);
+        assert_eq!(events[0].transcription, "hey cat");
     }
 
     // Model file download progress event tests
