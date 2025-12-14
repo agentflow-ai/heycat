@@ -673,3 +673,161 @@ fn test_reset_to_idle_from_listening() {
     assert_eq!(manager.get_state(), RecordingState::Idle);
 }
 
+// =============================================================================
+// Abort Recording Tests (Cancel Commands)
+// =============================================================================
+
+#[test]
+fn test_abort_recording_to_listening() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+
+    // Add some samples
+    {
+        let buffer = manager.get_audio_buffer().unwrap();
+        let mut guard = buffer.lock().unwrap();
+        guard.extend_from_slice(&[0.1, 0.2, 0.3]);
+    }
+
+    let result = manager.abort_recording(RecordingState::Listening);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Listening);
+
+    // Buffer should be discarded (not available)
+    assert!(manager.get_audio_buffer().is_err());
+}
+
+#[test]
+fn test_abort_recording_to_idle() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+
+    let result = manager.abort_recording(RecordingState::Idle);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Idle);
+    assert!(manager.get_audio_buffer().is_err());
+}
+
+#[test]
+fn test_abort_recording_discards_buffer() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+
+    // Add samples
+    {
+        let buffer = manager.get_audio_buffer().unwrap();
+        let mut guard = buffer.lock().unwrap();
+        guard.extend_from_slice(&[0.1, 0.2, 0.3, 0.4, 0.5]);
+    }
+
+    // Abort - should discard buffer
+    manager.abort_recording(RecordingState::Idle).unwrap();
+
+    // Last recording buffer should NOT be retained (unlike normal stop)
+    let result = manager.get_last_recording_buffer();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_abort_recording_fails_from_idle() {
+    let mut manager = RecordingManager::new();
+
+    let result = manager.abort_recording(RecordingState::Idle);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Idle,
+            to: RecordingState::Idle
+        }
+    );
+}
+
+#[test]
+fn test_abort_recording_fails_from_listening() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    let result = manager.abort_recording(RecordingState::Idle);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Listening,
+            to: RecordingState::Idle
+        }
+    );
+}
+
+#[test]
+fn test_abort_recording_fails_from_processing() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+    manager.transition_to(RecordingState::Processing).unwrap();
+
+    let result = manager.abort_recording(RecordingState::Idle);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Processing,
+            to: RecordingState::Idle
+        }
+    );
+}
+
+#[test]
+fn test_abort_recording_fails_to_invalid_target() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+
+    // Cannot abort to Recording state
+    let result = manager.abort_recording(RecordingState::Recording);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Recording,
+            to: RecordingState::Recording
+        }
+    );
+
+    // Cannot abort to Processing state
+    let result = manager.abort_recording(RecordingState::Processing);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Recording,
+            to: RecordingState::Processing
+        }
+    );
+}
+
+#[test]
+fn test_abort_recording_clears_active_recording() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(48000).unwrap();
+    assert_eq!(manager.get_sample_rate(), Some(48000));
+
+    manager.abort_recording(RecordingState::Idle).unwrap();
+
+    // Sample rate should be cleared
+    assert_eq!(manager.get_sample_rate(), None);
+}
+
+#[test]
+fn test_can_start_new_recording_after_abort() {
+    let mut manager = RecordingManager::new();
+
+    // First recording
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+    manager.abort_recording(RecordingState::Idle).unwrap();
+
+    // Should be able to start a new recording
+    let result = manager.start_recording(TARGET_SAMPLE_RATE);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Recording);
+}
+

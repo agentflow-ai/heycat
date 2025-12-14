@@ -273,6 +273,50 @@ impl RecordingManager {
         self.audio_buffer = None;
         self.active_recording = None;
     }
+
+    /// Abort the current recording without saving
+    ///
+    /// Transitions from Recording to the target state (Listening or Idle),
+    /// discarding the audio buffer without retaining it.
+    ///
+    /// This is used for cancellation scenarios where the user wants to abort
+    /// a false wake word activation. The partial recording is discarded.
+    ///
+    /// # Arguments
+    /// * `target_state` - Either `RecordingState::Listening` or `RecordingState::Idle`
+    ///
+    /// # Returns
+    /// * `Ok(())` if abort was successful
+    /// * `Err(RecordingStateError::InvalidTransition)` if not in Recording state
+    ///   or if target state is not Listening or Idle
+    #[must_use = "this returns a Result that should be handled"]
+    pub fn abort_recording(
+        &mut self,
+        target_state: RecordingState,
+    ) -> Result<(), RecordingStateError> {
+        // Can only abort from Recording state
+        if self.state != RecordingState::Recording {
+            return Err(RecordingStateError::InvalidTransition {
+                from: self.state,
+                to: target_state,
+            });
+        }
+
+        // Can only abort to Listening or Idle
+        if target_state != RecordingState::Listening && target_state != RecordingState::Idle {
+            return Err(RecordingStateError::InvalidTransition {
+                from: self.state,
+                to: target_state,
+            });
+        }
+
+        // Discard the buffer without retaining - this is the key difference from stop_recording
+        self.audio_buffer = None;
+        self.active_recording = None;
+        self.state = target_state;
+
+        Ok(())
+    }
 }
 
 impl Default for RecordingManager {

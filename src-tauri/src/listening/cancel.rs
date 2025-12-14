@@ -258,6 +258,9 @@ impl CancelPhraseDetector {
     /// 2. If detected, emits a `recording_cancelled` event via the Tauri event system
     /// 3. Ends the session after detection
     ///
+    /// Note: This method only emits the event and clears the detector state.
+    /// Use `analyze_and_abort` for full integration with RecordingManager.
+    ///
     /// Returns the detection result regardless of whether an event was emitted.
     pub fn analyze_and_emit<E: ListeningEventEmitter>(
         &self,
@@ -273,6 +276,63 @@ impl CancelPhraseDetector {
             });
 
             // End the session after successful cancellation
+            self.end_session()?;
+        }
+
+        Ok(result)
+    }
+
+    /// Analyze the buffer, emit event, and abort recording if cancel phrase detected
+    ///
+    /// This is the full integration method that:
+    /// 1. Analyzes the buffer for cancel phrases
+    /// 2. If detected:
+    ///    - Emits a `recording_cancelled` event
+    ///    - Aborts the recording without saving (discards buffer)
+    ///    - Transitions to target state (Listening or Idle)
+    /// 3. Ends the detector session
+    ///
+    /// # Arguments
+    /// * `emitter` - Event emitter for sending recording_cancelled event
+    /// * `recording_manager` - Mutex-wrapped RecordingManager for state transition
+    /// * `return_to_listening` - If true, returns to Listening state; if false, returns to Idle
+    ///
+    /// # Returns
+    /// * `Ok(result)` with detection result
+    /// * `Err(CancelPhraseError)` on detection errors
+    ///
+    /// Note: Recording abort errors are logged but don't fail the operation.
+    pub fn analyze_and_abort<E: ListeningEventEmitter>(
+        &self,
+        emitter: &E,
+        recording_manager: &std::sync::Mutex<crate::recording::RecordingManager>,
+        return_to_listening: bool,
+    ) -> Result<CancelPhraseResult, CancelPhraseError> {
+        let result = self.analyze()?;
+
+        if result.detected {
+            // Emit the recording cancelled event
+            emitter.emit_recording_cancelled(listening_events::RecordingCancelledPayload {
+                cancel_phrase: result.phrase.clone().unwrap_or_default(),
+                timestamp: current_timestamp(),
+            });
+
+            // Abort the recording and transition to target state
+            let target_state = if return_to_listening {
+                crate::recording::RecordingState::Listening
+            } else {
+                crate::recording::RecordingState::Idle
+            };
+
+            if let Ok(mut manager) = recording_manager.lock() {
+                // Abort discards the buffer without saving
+                if let Err(e) = manager.abort_recording(target_state) {
+                    // Log but don't fail - the cancellation event was emitted
+                    eprintln!("Warning: Failed to abort recording: {}", e);
+                }
+            }
+
+            // End the detector session
             self.end_session()?;
         }
 
@@ -629,5 +689,85 @@ mod tests {
 
         // Should not match: part of another word
         assert!(!detector.is_isolated_phrase("cancellation", "cancel"));
+    }
+
+    #[test]
+    fn test_ambient_noise_does_not_crash() {
+        // Test that noisy audio doesn't cause issues
+        let detector = CancelPhraseDetector::new();
+        detector.start_session().unwrap();
+
+        // Simulate ambient noise (random-like sine wave patterns)
+        let noise: Vec<f32> = (0..16000)
+            .map(|i| ((i as f32 * 0.17).sin() * 0.3) + ((i as f32 * 0.31).cos() * 0.2))
+            .collect();
+        detector.push_samples(&noise).unwrap();
+
+        // analyze() will fail because model isn't loaded, but won't crash
+        let result = detector.analyze();
+        assert!(matches!(result, Err(CancelPhraseError::ModelNotLoaded)));
+    }
+
+    #[test]
+    fn test_ambient_noise_with_varying_amplitudes() {
+        // Test with varying amplitude noise (simulating real-world conditions)
+        let detector = CancelPhraseDetector::new();
+        detector.start_session().unwrap();
+
+        // Mix of different frequency components with varying amplitudes
+        let noise: Vec<f32> = (0..32000)
+            .map(|i| {
+                let t = i as f32 / 16000.0;
+                let low_freq = (t * 100.0).sin() * 0.1;
+                let mid_freq = (t * 500.0).sin() * 0.05;
+                let high_freq = (t * 2000.0).sin() * 0.02;
+                // Add some random-like variation
+                let variation = ((i as f32 * 0.7123).sin() * 0.05);
+                (low_freq + mid_freq + high_freq + variation).clamp(-1.0, 1.0)
+            })
+            .collect();
+
+        detector.push_samples(&noise).unwrap();
+
+        // Should not crash, just return model not loaded
+        let result = detector.analyze();
+        assert!(matches!(result, Err(CancelPhraseError::ModelNotLoaded)));
+    }
+
+    #[test]
+    fn test_silence_buffer_does_not_crash() {
+        // Test that a buffer of silence doesn't cause issues
+        let detector = CancelPhraseDetector::new();
+        detector.start_session().unwrap();
+
+        // 1 second of complete silence
+        let silence = vec![0.0f32; 16000];
+        detector.push_samples(&silence).unwrap();
+
+        // Should not crash
+        let result = detector.analyze();
+        assert!(matches!(result, Err(CancelPhraseError::ModelNotLoaded)));
+    }
+
+    // Tests for analyze_and_emit with mock emitter
+    mod emit_tests {
+        use super::*;
+        use crate::events::tests::MockEventEmitter;
+
+        #[test]
+        fn test_analyze_and_emit_no_detection_does_not_emit() {
+            let detector = CancelPhraseDetector::new();
+            let emitter = MockEventEmitter::new();
+            detector.start_session().unwrap();
+            detector.push_samples(&[0.1, 0.2, 0.3]).unwrap();
+
+            // Without model loaded, analyze_and_emit returns ModelNotLoaded
+            let result = detector.analyze_and_emit(&emitter);
+            assert!(result.is_err());
+
+            // No events should be emitted
+            let events = emitter.recording_cancelled_events.lock().unwrap();
+            assert_eq!(events.len(), 0);
+        }
     }
 }
