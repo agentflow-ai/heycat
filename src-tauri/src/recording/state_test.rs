@@ -511,3 +511,165 @@ fn test_new_recording_replaces_last_recording_buffer() {
     assert_eq!(audio_data.samples[1], 0.8);
 }
 
+// =============================================================================
+// Listening State Tests
+// =============================================================================
+
+#[test]
+fn test_valid_transition_idle_to_listening() {
+    let mut manager = RecordingManager::new();
+    let result = manager.transition_to(RecordingState::Listening);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Listening);
+}
+
+#[test]
+fn test_valid_transition_listening_to_idle() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    let result = manager.transition_to(RecordingState::Idle);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Idle);
+}
+
+#[test]
+fn test_start_recording_from_listening() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    let result = manager.start_recording(TARGET_SAMPLE_RATE);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Recording);
+}
+
+#[test]
+fn test_valid_transition_processing_to_listening() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+    manager.transition_to(RecordingState::Processing).unwrap();
+
+    let result = manager.transition_to(RecordingState::Listening);
+    assert!(result.is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Listening);
+}
+
+#[test]
+fn test_full_cycle_with_listening() {
+    let mut manager = RecordingManager::new();
+
+    // Idle -> Listening
+    assert!(manager.transition_to(RecordingState::Listening).is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Listening);
+
+    // Listening -> Recording
+    assert!(manager.start_recording(TARGET_SAMPLE_RATE).is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Recording);
+
+    // Recording -> Processing
+    assert!(manager.transition_to(RecordingState::Processing).is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Processing);
+
+    // Processing -> Listening (return to listening mode)
+    assert!(manager.transition_to(RecordingState::Listening).is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Listening);
+
+    // Listening -> Idle (disable listening)
+    assert!(manager.transition_to(RecordingState::Idle).is_ok());
+    assert_eq!(manager.get_state(), RecordingState::Idle);
+}
+
+#[test]
+fn test_invalid_transition_listening_to_processing() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    let result = manager.transition_to(RecordingState::Processing);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Listening,
+            to: RecordingState::Processing
+        }
+    );
+}
+
+#[test]
+fn test_invalid_transition_listening_to_listening() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    let result = manager.transition_to(RecordingState::Listening);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err(),
+        RecordingStateError::InvalidTransition {
+            from: RecordingState::Listening,
+            to: RecordingState::Listening
+        }
+    );
+}
+
+#[test]
+fn test_audio_buffer_not_available_in_listening() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    let result = manager.get_audio_buffer();
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), RecordingStateError::NoAudioBuffer);
+}
+
+#[test]
+fn test_audio_buffer_cleared_after_processing_to_listening() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+
+    // Add samples
+    {
+        let buffer = manager.get_audio_buffer().unwrap();
+        let mut guard = buffer.lock().unwrap();
+        guard.extend_from_slice(&[0.1, 0.2]);
+    }
+
+    manager.transition_to(RecordingState::Processing).unwrap();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    // Buffer should be cleared
+    let result = manager.get_audio_buffer();
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), RecordingStateError::NoAudioBuffer);
+}
+
+#[test]
+fn test_last_recording_retained_after_processing_to_listening() {
+    let mut manager = RecordingManager::new();
+    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
+
+    // Add samples
+    {
+        let buffer = manager.get_audio_buffer().unwrap();
+        let mut guard = buffer.lock().unwrap();
+        guard.extend_from_slice(&[0.5, 0.6]);
+    }
+
+    manager.transition_to(RecordingState::Processing).unwrap();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    // Last recording buffer should be available
+    let audio_data = manager.get_last_recording_buffer().unwrap();
+    assert_eq!(audio_data.samples.len(), 2);
+    assert_eq!(audio_data.samples[0], 0.5);
+}
+
+#[test]
+fn test_reset_to_idle_from_listening() {
+    let mut manager = RecordingManager::new();
+    manager.transition_to(RecordingState::Listening).unwrap();
+
+    manager.reset_to_idle();
+
+    assert_eq!(manager.get_state(), RecordingState::Idle);
+}
+

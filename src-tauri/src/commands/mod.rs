@@ -7,9 +7,12 @@ pub mod logic;
 
 pub use logic::{RecordingInfo, RecordingStateInfo};
 use logic::{
-    clear_last_recording_buffer_impl, get_last_recording_buffer_impl, get_recording_state_impl,
+    clear_last_recording_buffer_impl, disable_listening_impl, enable_listening_impl,
+    get_last_recording_buffer_impl, get_listening_status_impl, get_recording_state_impl,
     list_recordings_impl, start_recording_impl, stop_recording_impl, transcribe_file_impl,
 };
+
+use crate::listening::{ListeningManager, ListeningStatus};
 
 use crate::events::{
     command_events, event_names, listening_events, CommandAmbiguousPayload, CommandEventEmitter,
@@ -40,6 +43,9 @@ pub type AudioThreadState = Arc<AudioThreadHandle>;
 
 /// Type alias for production state (RecordingManager is Send+Sync)
 pub type ProductionState = Arc<Mutex<RecordingManager>>;
+
+/// Type alias for listening manager state
+pub type ListeningState = Arc<Mutex<ListeningManager>>;
 
 /// Tauri AppHandle-based event emitter for production use
 pub struct TauriEventEmitter {
@@ -106,6 +112,30 @@ impl ListeningEventEmitter for TauriEventEmitter {
             payload
         );
     }
+
+    fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload) {
+        emit_or_warn!(
+            self.app_handle,
+            listening_events::LISTENING_STARTED,
+            payload
+        );
+    }
+
+    fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload) {
+        emit_or_warn!(
+            self.app_handle,
+            listening_events::LISTENING_STOPPED,
+            payload
+        );
+    }
+
+    fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload) {
+        emit_or_warn!(
+            self.app_handle,
+            listening_events::LISTENING_UNAVAILABLE,
+            payload
+        );
+    }
 }
 
 /// Start recording audio from the microphone
@@ -146,8 +176,15 @@ pub fn stop_recording(
     app_handle: AppHandle,
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
+    listening_state: State<'_, ListeningState>,
 ) -> Result<RecordingMetadata, String> {
-    let result = stop_recording_impl(state.as_ref(), Some(audio_thread.as_ref()));
+    // Check if listening mode is enabled to determine return state
+    let return_to_listening = listening_state
+        .lock()
+        .map(|lm| lm.is_enabled())
+        .unwrap_or(false);
+
+    let result = stop_recording_impl(state.as_ref(), Some(audio_thread.as_ref()), return_to_listening);
 
     // Emit event on success for frontend state sync
     if let Ok(ref metadata) = result {
@@ -246,6 +283,67 @@ pub async fn transcribe_file(
             Err(e)
         }
     }
+}
+
+// =============================================================================
+// Listening Commands
+// =============================================================================
+
+/// Enable listening mode (always-on wake word detection)
+#[tauri::command]
+pub fn enable_listening(
+    app_handle: AppHandle,
+    listening_state: State<'_, ListeningState>,
+    recording_state: State<'_, ProductionState>,
+) -> Result<(), String> {
+    let result =
+        enable_listening_impl(listening_state.as_ref(), recording_state.as_ref());
+
+    // Emit event on success
+    if result.is_ok() {
+        emit_or_warn!(
+            app_handle,
+            listening_events::LISTENING_STARTED,
+            listening_events::ListeningStartedPayload {
+                timestamp: crate::events::current_timestamp(),
+            }
+        );
+    }
+
+    result
+}
+
+/// Disable listening mode
+#[tauri::command]
+pub fn disable_listening(
+    app_handle: AppHandle,
+    listening_state: State<'_, ListeningState>,
+    recording_state: State<'_, ProductionState>,
+) -> Result<(), String> {
+    let result =
+        disable_listening_impl(listening_state.as_ref(), recording_state.as_ref());
+
+    // Emit event on success
+    if result.is_ok() {
+        emit_or_warn!(
+            app_handle,
+            listening_events::LISTENING_STOPPED,
+            listening_events::ListeningStoppedPayload {
+                timestamp: crate::events::current_timestamp(),
+            }
+        );
+    }
+
+    result
+}
+
+/// Get the current listening status
+#[tauri::command]
+pub fn get_listening_status(
+    listening_state: State<'_, ListeningState>,
+    recording_state: State<'_, ProductionState>,
+) -> Result<ListeningStatus, String> {
+    get_listening_status_impl(listening_state.as_ref(), recording_state.as_ref())
 }
 
 #[cfg(test)]

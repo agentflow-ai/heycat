@@ -11,6 +11,7 @@ use crate::events::{
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
     TranscriptionStartedPayload,
 };
+use crate::listening::ListeningManager;
 use crate::model::{check_model_exists_for_type, ModelType};
 use crate::recording::{RecordingManager, RecordingState};
 use crate::voice_commands::executor::ActionDispatcher;
@@ -78,6 +79,8 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     transcription_emitter: Option<Arc<T>>,
     /// Reference to recording state for getting audio buffer in transcription thread
     recording_state: Option<Arc<Mutex<RecordingManager>>>,
+    /// Optional listening state for determining return state after recording
+    listening_state: Option<Arc<Mutex<ListeningManager>>>,
     /// Optional command registry for voice command matching
     command_registry: Option<Arc<Mutex<CommandRegistry>>>,
     /// Optional command matcher for voice command matching
@@ -103,6 +106,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             transcription_manager: None,
             transcription_emitter: None,
             recording_state: None,
+            listening_state: None,
             command_registry: None,
             command_matcher: None,
             action_dispatcher: None,
@@ -142,6 +146,12 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         self
     }
 
+    /// Add listening state reference for determining return state after recording (builder pattern)
+    pub fn with_listening_state(mut self, state: Arc<Mutex<ListeningManager>>) -> Self {
+        self.listening_state = Some(state);
+        self
+    }
+
     /// Add voice command registry for command matching (builder pattern)
     pub fn with_command_registry(mut self, registry: Arc<Mutex<CommandRegistry>>) -> Self {
         self.command_registry = Some(registry);
@@ -178,6 +188,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             transcription_manager: None,
             transcription_emitter: None,
             recording_state: None,
+            listening_state: None,
             command_registry: None,
             command_matcher: None,
             action_dispatcher: None,
@@ -226,8 +237,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         debug!("Toggle received, current state: {:?}", current_state);
 
         match current_state {
-            RecordingState::Idle => {
-                info!("Starting recording...");
+            RecordingState::Idle | RecordingState::Listening => {
+                info!("Starting recording from {:?} state...", current_state);
                 // Check model availability (TDT for batch transcription)
                 let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or(false);
 
@@ -253,8 +264,16 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             RecordingState::Recording => {
                 info!("Stopping recording...");
 
+                // Check if listening mode is enabled to determine return state
+                let return_to_listening = self
+                    .listening_state
+                    .as_ref()
+                    .and_then(|ls| ls.lock().ok())
+                    .map(|lm| lm.is_enabled())
+                    .unwrap_or(false);
+
                 // Use unified command implementation
-                match stop_recording_impl(state, self.audio_thread.as_deref()) {
+                match stop_recording_impl(state, self.audio_thread.as_deref(), return_to_listening) {
                     Ok(metadata) => {
                         info!(
                             "Recording stopped: {} samples, {:.2}s duration",

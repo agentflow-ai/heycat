@@ -9,6 +9,8 @@ use serde::Serialize;
 pub enum RecordingState {
     /// Not recording, ready to start
     Idle,
+    /// Always-on listening mode, detecting wake word
+    Listening,
     /// Actively recording audio
     Recording,
     /// Recording stopped, processing audio (encoding, saving)
@@ -115,15 +117,15 @@ impl RecordingManager {
 
     /// Start recording with the given sample rate
     ///
-    /// Transitions from Idle to Recording state and creates the audio buffer.
+    /// Transitions from Idle or Listening to Recording state and creates the audio buffer.
     /// Returns the audio buffer for use with audio capture.
     /// The sample rate is stored for use when the recording completes.
     ///
     /// # Errors
-    /// Returns error if not in Idle state
+    /// Returns error if not in Idle or Listening state
     #[must_use = "this returns a Result that should be handled"]
     pub fn start_recording(&mut self, sample_rate: u32) -> Result<AudioBuffer, RecordingStateError> {
-        if self.state != RecordingState::Idle {
+        if self.state != RecordingState::Idle && self.state != RecordingState::Listening {
             return Err(RecordingStateError::InvalidTransition {
                 from: self.state,
                 to: RecordingState::Recording,
@@ -150,18 +152,24 @@ impl RecordingManager {
     /// Transition to a new state with validation
     ///
     /// Valid transitions:
+    /// - Idle -> Listening (start listening mode)
+    /// - Listening -> Idle (stop listening mode)
     /// - Recording -> Processing (stops recording, keeps buffer)
     /// - Processing -> Idle (clears buffer, retains samples for transcription)
+    /// - Processing -> Listening (clears buffer, returns to listening mode)
     ///
-    /// Note: Use `start_recording(sample_rate)` for Idle -> Recording transition
+    /// Note: Use `start_recording(sample_rate)` for Idle/Listening -> Recording transition
     ///
     /// Returns error for invalid transitions
     #[must_use = "this returns a Result that should be handled"]
     pub fn transition_to(&mut self, new_state: RecordingState) -> Result<(), RecordingStateError> {
         let valid = matches!(
             (self.state, new_state),
-            (RecordingState::Recording, RecordingState::Processing)
+            (RecordingState::Idle, RecordingState::Listening)
+                | (RecordingState::Listening, RecordingState::Idle)
+                | (RecordingState::Recording, RecordingState::Processing)
                 | (RecordingState::Processing, RecordingState::Idle)
+                | (RecordingState::Processing, RecordingState::Listening)
         );
 
         if !valid {
@@ -172,7 +180,9 @@ impl RecordingManager {
         }
 
         // Handle buffer lifecycle during transitions
-        if let (RecordingState::Processing, RecordingState::Idle) = (self.state, new_state) {
+        if self.state == RecordingState::Processing
+            && (new_state == RecordingState::Idle || new_state == RecordingState::Listening)
+        {
             self.retain_recording_buffer();
             self.audio_buffer = None;
             self.active_recording = None;

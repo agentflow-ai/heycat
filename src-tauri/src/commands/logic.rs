@@ -115,6 +115,7 @@ pub fn start_recording_impl(
 /// # Arguments
 /// * `state` - The recording manager state
 /// * `audio_thread` - Optional audio thread handle for stopping capture
+/// * `return_to_listening` - If true, return to Listening state instead of Idle
 ///
 /// # Returns
 /// Recording metadata including duration, file path, and sample count
@@ -128,6 +129,7 @@ pub fn start_recording_impl(
 pub fn stop_recording_impl(
     state: &Mutex<RecordingManager>,
     audio_thread: Option<&AudioThreadHandle>,
+    return_to_listening: bool,
 ) -> Result<RecordingMetadata, String> {
     debug!("stop_recording_impl called");
 
@@ -205,11 +207,16 @@ pub fn stop_recording_impl(
     // Calculate duration using actual sample rate
     let duration_secs = sample_count as f64 / sample_rate as f64;
 
-    // Transition to Idle
+    // Transition to Listening (if enabled) or Idle
+    let target_state = if return_to_listening {
+        RecordingState::Listening
+    } else {
+        RecordingState::Idle
+    };
     manager
-        .transition_to(RecordingState::Idle)
+        .transition_to(target_state)
         .map_err(|e| {
-            error!("Failed to transition to Idle: {:?}", e);
+            error!("Failed to transition to {:?}: {:?}", target_state, e);
             "Failed to complete recording."
         })?;
 
@@ -444,4 +451,108 @@ pub fn transcribe_file_impl(
 
     info!("Transcription complete: {} characters", text.len());
     Ok(text)
+}
+
+// =============================================================================
+// Listening Commands
+// =============================================================================
+
+use crate::listening::{ListeningManager, ListeningStatus};
+
+/// Implementation of enable_listening
+///
+/// Enables listening mode and transitions to Listening state if in Idle.
+///
+/// # Arguments
+/// * `listening_manager` - The listening manager state
+/// * `recording_manager` - The recording manager state
+///
+/// # Errors
+/// Returns an error string if:
+/// - Currently recording
+/// - State transition fails
+/// - State lock is poisoned
+pub fn enable_listening_impl(
+    listening_manager: &Mutex<ListeningManager>,
+    recording_manager: &Mutex<RecordingManager>,
+) -> Result<(), String> {
+    debug!("enable_listening_impl called");
+
+    let mut lm = listening_manager.lock().map_err(|_| {
+        error!("Failed to acquire listening manager lock");
+        "Unable to access listening state. Please try again."
+    })?;
+
+    lm.enable_listening(recording_manager).map_err(|e| {
+        error!("Failed to enable listening: {}", e);
+        match e {
+            crate::listening::ListeningError::RecordingInProgress => {
+                "Cannot enable listening while recording. Stop the recording first.".to_string()
+            }
+            crate::listening::ListeningError::LockError => {
+                "Unable to access recording state. Please try again.".to_string()
+            }
+            _ => format!("Failed to enable listening: {}", e),
+        }
+    })?;
+
+    info!("Listening mode enabled");
+    Ok(())
+}
+
+/// Implementation of disable_listening
+///
+/// Disables listening mode and transitions to Idle state if in Listening.
+///
+/// # Arguments
+/// * `listening_manager` - The listening manager state
+/// * `recording_manager` - The recording manager state
+///
+/// # Errors
+/// Returns an error string if:
+/// - State transition fails
+/// - State lock is poisoned
+pub fn disable_listening_impl(
+    listening_manager: &Mutex<ListeningManager>,
+    recording_manager: &Mutex<RecordingManager>,
+) -> Result<(), String> {
+    debug!("disable_listening_impl called");
+
+    let mut lm = listening_manager.lock().map_err(|_| {
+        error!("Failed to acquire listening manager lock");
+        "Unable to access listening state. Please try again."
+    })?;
+
+    lm.disable_listening(recording_manager).map_err(|e| {
+        error!("Failed to disable listening: {}", e);
+        format!("Failed to disable listening: {}", e)
+    })?;
+
+    info!("Listening mode disabled");
+    Ok(())
+}
+
+/// Implementation of get_listening_status
+///
+/// Returns the current listening status including enabled flag and active state.
+///
+/// # Arguments
+/// * `listening_manager` - The listening manager state
+/// * `recording_manager` - The recording manager state
+///
+/// # Errors
+/// Returns an error string if the state lock is poisoned
+pub fn get_listening_status_impl(
+    listening_manager: &Mutex<ListeningManager>,
+    recording_manager: &Mutex<RecordingManager>,
+) -> Result<ListeningStatus, String> {
+    let lm = listening_manager.lock().map_err(|_| {
+        error!("Failed to acquire listening manager lock");
+        "Unable to access listening state. Please try again."
+    })?;
+
+    lm.get_status(recording_manager).map_err(|e| {
+        error!("Failed to get listening status: {}", e);
+        format!("Failed to get listening status: {}", e)
+    })
 }

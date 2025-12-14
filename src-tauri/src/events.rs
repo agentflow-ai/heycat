@@ -26,6 +26,9 @@ pub mod command_events {
 /// Listening-related event names
 pub mod listening_events {
     pub const WAKE_WORD_DETECTED: &str = "wake_word_detected";
+    pub const LISTENING_STARTED: &str = "listening_started";
+    pub const LISTENING_STOPPED: &str = "listening_stopped";
+    pub const LISTENING_UNAVAILABLE: &str = "listening_unavailable";
 
     /// Payload for wake_word_detected event
     #[derive(Debug, Clone, serde::Serialize, PartialEq)]
@@ -38,6 +41,32 @@ pub mod listening_events {
         /// ISO 8601 timestamp when wake word was detected
         pub timestamp: String,
     }
+
+    /// Payload for listening_started event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ListeningStartedPayload {
+        /// ISO 8601 timestamp when listening started
+        pub timestamp: String,
+    }
+
+    /// Payload for listening_stopped event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ListeningStoppedPayload {
+        /// ISO 8601 timestamp when listening stopped
+        pub timestamp: String,
+    }
+
+    /// Payload for listening_unavailable event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ListeningUnavailablePayload {
+        /// Reason why listening is unavailable
+        pub reason: String,
+        /// ISO 8601 timestamp when listening became unavailable
+        pub timestamp: String,
+    }
 }
 
 /// Trait for emitting listening events
@@ -45,6 +74,15 @@ pub mod listening_events {
 pub trait ListeningEventEmitter: Send + Sync {
     /// Emit wake_word_detected event
     fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload);
+
+    /// Emit listening_started event
+    fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload);
+
+    /// Emit listening_stopped event
+    fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload);
+
+    /// Emit listening_unavailable event
+    fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload);
 }
 
 /// Model-related event names
@@ -250,6 +288,9 @@ mod tests {
         pub command_failed_events: Arc<Mutex<Vec<CommandFailedPayload>>>,
         pub command_ambiguous_events: Arc<Mutex<Vec<CommandAmbiguousPayload>>>,
         pub wake_word_detected_events: Arc<Mutex<Vec<listening_events::WakeWordDetectedPayload>>>,
+        pub listening_started_events: Arc<Mutex<Vec<listening_events::ListeningStartedPayload>>>,
+        pub listening_stopped_events: Arc<Mutex<Vec<listening_events::ListeningStoppedPayload>>>,
+        pub listening_unavailable_events: Arc<Mutex<Vec<listening_events::ListeningUnavailablePayload>>>,
     }
 
     impl MockEventEmitter {
@@ -307,6 +348,18 @@ mod tests {
     impl ListeningEventEmitter for MockEventEmitter {
         fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload) {
             self.wake_word_detected_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload) {
+            self.listening_started_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload) {
+            self.listening_stopped_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload) {
+            self.listening_unavailable_events.lock().unwrap().push(payload);
         }
     }
 
@@ -852,5 +905,110 @@ mod tests {
         };
         let debug = format!("{:?}", payload);
         assert!(debug.contains("WakeWordDetectedPayload"));
+    }
+
+    #[test]
+    fn test_listening_started_event_name_constant() {
+        use super::listening_events;
+        assert_eq!(listening_events::LISTENING_STARTED, "listening_started");
+    }
+
+    #[test]
+    fn test_listening_stopped_event_name_constant() {
+        use super::listening_events;
+        assert_eq!(listening_events::LISTENING_STOPPED, "listening_stopped");
+    }
+
+    #[test]
+    fn test_listening_unavailable_event_name_constant() {
+        use super::listening_events;
+        assert_eq!(listening_events::LISTENING_UNAVAILABLE, "listening_unavailable");
+    }
+
+    #[test]
+    fn test_listening_started_payload_serialization() {
+        use super::listening_events::ListeningStartedPayload;
+        let payload = ListeningStartedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("timestamp"));
+        assert!(json.contains("2025-01-01T12:00:00Z"));
+    }
+
+    #[test]
+    fn test_listening_stopped_payload_serialization() {
+        use super::listening_events::ListeningStoppedPayload;
+        let payload = ListeningStoppedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("timestamp"));
+        assert!(json.contains("2025-01-01T12:00:00Z"));
+    }
+
+    #[test]
+    fn test_listening_unavailable_payload_serialization() {
+        use super::listening_events::ListeningUnavailablePayload;
+        let payload = ListeningUnavailablePayload {
+            reason: "Microphone disconnected".to_string(),
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("reason"));
+        assert!(json.contains("Microphone disconnected"));
+        assert!(json.contains("timestamp"));
+    }
+
+    #[test]
+    fn test_listening_payloads_are_clone() {
+        use super::listening_events::{ListeningStartedPayload, ListeningStoppedPayload, ListeningUnavailablePayload};
+
+        let started = ListeningStartedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        assert_eq!(started, started.clone());
+
+        let stopped = ListeningStoppedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        assert_eq!(stopped, stopped.clone());
+
+        let unavailable = ListeningUnavailablePayload {
+            reason: "test".to_string(),
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        };
+        assert_eq!(unavailable, unavailable.clone());
+    }
+
+    #[test]
+    fn test_mock_emitter_records_listening_started_events() {
+        let emitter = MockEventEmitter::new();
+
+        emitter.emit_listening_started(listening_events::ListeningStartedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        });
+        assert_eq!(emitter.listening_started_events.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_mock_emitter_records_listening_stopped_events() {
+        let emitter = MockEventEmitter::new();
+
+        emitter.emit_listening_stopped(listening_events::ListeningStoppedPayload {
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        });
+        assert_eq!(emitter.listening_stopped_events.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_mock_emitter_records_listening_unavailable_events() {
+        let emitter = MockEventEmitter::new();
+
+        emitter.emit_listening_unavailable(listening_events::ListeningUnavailablePayload {
+            reason: "Microphone disconnected".to_string(),
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        });
+        assert_eq!(emitter.listening_unavailable_events.lock().unwrap().len(), 1);
     }
 }

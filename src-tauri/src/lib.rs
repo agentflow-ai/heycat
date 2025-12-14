@@ -59,6 +59,10 @@ pub fn run() {
             // Manage the state for Tauri commands
             app.manage(recording_state.clone());
 
+            // Create and manage listening state
+            let listening_state = Arc::new(Mutex::new(listening::ListeningManager::new()));
+            app.manage(listening_state.clone());
+
             // Create event emitter, audio thread, and hotkey integration
             debug!("Creating audio thread...");
             let emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
@@ -126,6 +130,7 @@ pub fn run() {
                 .with_transcription_manager(transcription_manager)
                 .with_transcription_emitter(emitter)
                 .with_recording_state(recording_state.clone())
+                .with_listening_state(listening_state)
                 .with_command_emitter(command_emitter);
 
             // Wire up voice command integration if available
@@ -199,6 +204,9 @@ pub fn run() {
             commands::clear_last_recording_buffer,
             commands::list_recordings,
             commands::transcribe_file,
+            commands::enable_listening,
+            commands::disable_listening,
+            commands::get_listening_status,
             model::check_parakeet_model_status,
             model::download_model,
             voice_commands::get_commands,
