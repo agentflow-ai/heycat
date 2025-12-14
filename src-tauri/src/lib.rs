@@ -253,6 +253,7 @@ pub fn run() {
             commands::get_last_recording_buffer,
             commands::clear_last_recording_buffer,
             commands::list_recordings,
+            commands::transcribe_file,
             model::check_parakeet_model_status,
             model::download_model,
             parakeet::get_transcription_mode,

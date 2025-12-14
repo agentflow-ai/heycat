@@ -50,6 +50,8 @@ export function RecordingsList({ className = "" }: RecordingsListProps) {
   const [error, setError] = useState<string | null>(null);
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [transcribingPath, setTranscribingPath] = useState<string | null>(null);
+  const [isTdtAvailable, setIsTdtAvailable] = useState(false);
 
   const toggleExpanded = (filePath: string) => {
     setExpandedPath((current) => (current === filePath ? null : filePath));
@@ -62,6 +64,19 @@ export function RecordingsList({ className = "" }: RecordingsListProps) {
       await openPath(filePath);
     } catch (err) {
       setOpenError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleTranscribe = async (filePath: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setTranscribingPath(filePath);
+    try {
+      await invoke<string>("transcribe_file", { filePath });
+      // Success - text is copied to clipboard, notification shown via events
+    } catch (err) {
+      console.error("Transcription failed:", err);
+    } finally {
+      setTranscribingPath(null);
     }
   };
 
@@ -90,6 +105,20 @@ export function RecordingsList({ className = "" }: RecordingsListProps) {
     }
 
     fetchRecordings();
+  }, []);
+
+  // Check TDT model availability on mount
+  useEffect(() => {
+    async function checkModel() {
+      try {
+        const available = await invoke<boolean>("check_parakeet_model_status", { modelType: "tdt" });
+        setIsTdtAvailable(available);
+      } catch (err) {
+        console.error("Failed to check model status:", err);
+        setIsTdtAvailable(false);
+      }
+    }
+    checkModel();
   }, []);
 
   if (isLoading) {
@@ -193,6 +222,15 @@ export function RecordingsList({ className = "" }: RecordingsListProps) {
                     onClick={(e) => handleOpenRecording(recording.file_path, e)}
                   >
                     Open
+                  </button>
+                  <button
+                    type="button"
+                    className="recordings-list__transcribe-button"
+                    onClick={(e) => handleTranscribe(recording.file_path, e)}
+                    disabled={!isTdtAvailable || transcribingPath === recording.file_path || hasError}
+                    title={!isTdtAvailable ? "Download Batch model first" : undefined}
+                  >
+                    {transcribingPath === recording.file_path ? "Transcribing..." : "Transcribe"}
                   </button>
                 </div>
                 {openError && expandedPath === recording.file_path && (

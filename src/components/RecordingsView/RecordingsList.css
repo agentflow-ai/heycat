@@ -130,6 +130,33 @@
   background-color: #f3f4f6;
 }
 
+.recordings-list__transcribe-button {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.recordings-list__transcribe-button:hover:not(:disabled) {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.recordings-list__transcribe-button:active:not(:disabled) {
+  background-color: #f3f4f6;
+}
+
+.recordings-list__transcribe-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .recordings-list__open-error {
   margin-top: 8px;
   padding: 8px 12px;
@@ -249,6 +276,21 @@
   }
 
   .recordings-list__open-button:active {
+    background-color: #1f2937;
+  }
+
+  .recordings-list__transcribe-button {
+    color: #e5e7eb;
+    background-color: #374151;
+    border-color: #4b5563;
+  }
+
+  .recordings-list__transcribe-button:hover:not(:disabled) {
+    background-color: #4b5563;
+    border-color: #6b7280;
+  }
+
+  .recordings-list__transcribe-button:active:not(:disabled) {
     background-color: #1f2937;
   }
 

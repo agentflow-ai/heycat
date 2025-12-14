@@ -8,7 +8,7 @@ pub mod logic;
 pub use logic::{RecordingInfo, RecordingStateInfo};
 use logic::{
     clear_last_recording_buffer_impl, get_last_recording_buffer_impl, get_recording_state_impl,
-    list_recordings_impl, start_recording_impl, stop_recording_impl,
+    list_recordings_impl, start_recording_impl, stop_recording_impl, transcribe_file_impl,
 };
 
 use crate::events::{
@@ -19,10 +19,12 @@ use crate::events::{
     TranscriptionPartialPayload, TranscriptionStartedPayload,
 };
 use crate::audio::AudioThreadHandle;
+use crate::parakeet::TranscriptionManager;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata};
 use crate::warn;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Helper macro to emit events with error logging
 macro_rules! emit_or_warn {
@@ -179,6 +181,67 @@ pub fn clear_last_recording_buffer(state: State<'_, ProductionState>) -> Result<
 #[tauri::command]
 pub fn list_recordings() -> Result<Vec<RecordingInfo>, String> {
     list_recordings_impl()
+}
+
+/// Transcribe an audio file and copy result to clipboard
+#[tauri::command]
+pub async fn transcribe_file(
+    app_handle: AppHandle,
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
+    file_path: String,
+) -> Result<String, String> {
+    // Emit transcription started event
+    emit_or_warn!(
+        app_handle,
+        event_names::TRANSCRIPTION_STARTED,
+        TranscriptionStartedPayload {
+            timestamp: crate::events::current_timestamp(),
+        }
+    );
+
+    // Clone what we need for the blocking task
+    let manager = transcription_manager.inner().clone();
+    let path = file_path.clone();
+
+    // Run transcription on blocking thread pool
+    let result = tokio::task::spawn_blocking(move || {
+        transcribe_file_impl(&manager, &path)
+    })
+    .await
+    .map_err(|e| format!("Transcription task failed: {}", e))?;
+
+    match result {
+        Ok(text) => {
+            // Copy to clipboard
+            if let Err(e) = app_handle.clipboard().write_text(&text) {
+                warn!("Failed to copy transcription to clipboard: {}", e);
+            }
+
+            // Emit transcription completed event
+            emit_or_warn!(
+                app_handle,
+                event_names::TRANSCRIPTION_COMPLETED,
+                TranscriptionCompletedPayload {
+                    text: text.clone(),
+                    duration_ms: 0, // Duration not tracked for manual transcription
+                }
+            );
+
+            Ok(text)
+        }
+        Err(e) => {
+            // Emit transcription error event
+            emit_or_warn!(
+                app_handle,
+                event_names::TRANSCRIPTION_ERROR,
+                TranscriptionErrorPayload {
+                    error: e.clone(),
+                }
+            );
+
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
