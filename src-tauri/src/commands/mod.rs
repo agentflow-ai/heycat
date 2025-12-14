@@ -136,6 +136,14 @@ impl ListeningEventEmitter for TauriEventEmitter {
             payload
         );
     }
+
+    fn emit_recording_cancelled(&self, payload: listening_events::RecordingCancelledPayload) {
+        emit_or_warn!(
+            self.app_handle,
+            listening_events::RECORDING_CANCELLED,
+            payload
+        );
+    }
 }
 
 /// Start recording audio from the microphone

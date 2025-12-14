@@ -110,6 +110,10 @@ pub enum StopReason {
     StreamError,
     /// Resample buffer overflow (resampling can't keep up)
     ResampleOverflow,
+    /// Silence detected after speech (user finished talking)
+    SilenceAfterSpeech,
+    /// No speech detected after wake word (false activation timeout)
+    NoSpeechTimeout,
 }
 
 /// Trait for audio capture backends (allows mocking in tests)
