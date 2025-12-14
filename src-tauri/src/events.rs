@@ -31,6 +31,7 @@ pub mod model_events {
 
     /// Payload for model_download_completed event
     #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
     pub struct ModelDownloadCompletedPayload {
         /// Type of model that was downloaded (e.g., "tdt", "eou")
         pub model_type: String,
@@ -40,6 +41,7 @@ pub mod model_events {
 
     /// Payload for model_file_download_progress event
     #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
     pub struct ModelFileDownloadProgressPayload {
         /// Type of model being downloaded (e.g., "parakeet-tdt")
         pub model_type: String,
@@ -454,8 +456,8 @@ mod tests {
             model_path: "/path/to/model".to_string(),
         };
         let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains("model_type"));
-        assert!(json.contains("model_path"));
+        assert!(json.contains("modelType"));
+        assert!(json.contains("modelPath"));
     }
 
     #[test]
@@ -782,16 +784,16 @@ mod tests {
             percent: 50.0,
         };
         let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains("model_type"));
+        assert!(json.contains("modelType"));
         assert!(json.contains("parakeet-tdt"));
-        assert!(json.contains("file_name"));
+        assert!(json.contains("fileName"));
         assert!(json.contains("encoder.onnx"));
-        assert!(json.contains("bytes_downloaded"));
+        assert!(json.contains("bytesDownloaded"));
         assert!(json.contains("50000000"));
-        assert!(json.contains("total_bytes"));
+        assert!(json.contains("totalBytes"));
         assert!(json.contains("100000000"));
-        assert!(json.contains("file_index"));
-        assert!(json.contains("total_files"));
+        assert!(json.contains("fileIndex"));
+        assert!(json.contains("totalFiles"));
         assert!(json.contains("percent"));
     }
 

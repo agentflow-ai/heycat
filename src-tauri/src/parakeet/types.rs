@@ -22,6 +22,7 @@ pub enum TranscriptionState {
 
 /// Transcription mode - determines which model backend to use
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TranscriptionMode {
     /// Batch transcription using TDT model (default)
     #[default]

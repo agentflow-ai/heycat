@@ -9,9 +9,11 @@ pub use download::{
     ModelFile, ModelManifest, ModelType,
 };
 
-use tauri::{AppHandle, Emitter};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::events::model_events;
+use crate::parakeet::TranscriptionManager;
 
 /// Check if a Parakeet model (TDT or EOU) is available
 /// model_type: "ParakeetTDT" or "ParakeetEOU"
@@ -55,10 +57,12 @@ impl ModelDownloadEventEmitter for TauriEmitter {
 
 /// Download a Parakeet model (TDT or EOU) from HuggingFace
 /// Emits progress events during download and completion event when done
+/// Automatically loads the model into memory after download
 #[tauri::command]
 pub async fn download_model(
     app_handle: AppHandle,
     model_type: ModelType,
+    transcription_manager: State<'_, Arc<TranscriptionManager>>,
 ) -> Result<String, String> {
     let manifest = match model_type {
         ModelType::ParakeetTDT => ModelManifest::tdt(),
@@ -71,6 +75,21 @@ pub async fn download_model(
     let path = download_model_files(manifest, &emitter)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Load the model into memory
+    let model_dir = get_model_dir(model_type).map_err(|e| e.to_string())?;
+    match model_type {
+        ModelType::ParakeetTDT => {
+            transcription_manager
+                .load_tdt_model(&model_dir)
+                .map_err(|e| format!("Model downloaded but failed to load: {}", e))?;
+        }
+        ModelType::ParakeetEOU => {
+            transcription_manager
+                .load_eou_model(&model_dir)
+                .map_err(|e| format!("Model downloaded but failed to load: {}", e))?;
+        }
+    }
 
     // Emit completion event
     let _ = app_handle.emit(

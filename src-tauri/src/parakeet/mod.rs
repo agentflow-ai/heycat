@@ -2,9 +2,13 @@
 // Provides TDT (batch) and EOU (streaming) transcription using NVIDIA Parakeet models
 
 mod manager;
+mod normalize;
 mod streaming;
 mod types;
 
+pub use normalize::normalize_transcription;
+
+use crate::settings;
 use std::sync::Arc;
 use tauri::State;
 
@@ -24,16 +28,21 @@ pub fn get_transcription_mode(
 }
 
 /// Set the transcription mode (batch or streaming)
+/// Also persists the setting to disk for next startup
 #[tauri::command]
 pub fn set_transcription_mode(
     manager: State<'_, Arc<TranscriptionManager>>,
-    mode: String,
+    mode: TranscriptionMode,
 ) -> Result<(), String> {
-    let transcription_mode = match mode.as_str() {
-        "batch" => TranscriptionMode::Batch,
-        "streaming" => TranscriptionMode::Streaming,
-        _ => return Err(format!("Invalid mode: {}. Expected 'batch' or 'streaming'", mode)),
+    // Apply the mode to the manager
+    manager.set_mode(mode)
+        .map_err(|e| e.to_string())?;
+
+    // Persist to settings file
+    let app_settings = settings::AppSettings {
+        transcription_mode: mode,
     };
-    manager.set_mode(transcription_mode)
-        .map_err(|e| e.to_string())
+    settings::save_settings(&app_settings)?;
+
+    Ok(())
 }

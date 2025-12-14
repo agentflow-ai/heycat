@@ -57,15 +57,15 @@ describe("useMultiModelStatus", () => {
     renderHook(() => useMultiModelStatus());
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "ParakeetTDT" });
-      expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "ParakeetEOU" });
+      expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "tdt" });
+      expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "eou" });
     });
   });
 
   it("updates model availability when status check returns true", async () => {
     mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
       if (cmd === "check_parakeet_model_status") {
-        return Promise.resolve(args?.modelType === "ParakeetTDT");
+        return Promise.resolve(args?.modelType === "tdt");
       }
       return Promise.resolve();
     });
@@ -86,7 +86,7 @@ describe("useMultiModelStatus", () => {
       await result.current.downloadModel("tdt");
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("download_model", { modelType: "ParakeetTDT" });
+    expect(mockInvoke).toHaveBeenCalledWith("download_model", { modelType: "tdt" });
   });
 
   it("sets downloadState to 'downloading' when download starts", async () => {
@@ -121,11 +121,11 @@ describe("useMultiModelStatus", () => {
 
     act(() => {
       emitEvent("model_file_download_progress", {
-        model_type: "tdt",
-        file_name: "model.bin",
+        modelType: "tdt",
+        fileName: "model.bin",
         percent: 50,
-        bytes_downloaded: 500,
-        total_bytes: 1000,
+        bytesDownloaded: 500,
+        totalBytes: 1000,
       });
     });
 
@@ -141,8 +141,8 @@ describe("useMultiModelStatus", () => {
 
     act(() => {
       emitEvent("model_download_completed", {
-        model_type: "eou",
-        model_path: "/path/to/model",
+        modelType: "eou",
+        modelPath: "/path/to/model",
       });
     });
 

@@ -12,8 +12,10 @@ pub const APP_DIR_NAME: &str = "heycat";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelType {
     /// Parakeet TDT model for batch transcription
+    #[serde(rename = "tdt")]
     ParakeetTDT,
     /// Parakeet EOU model for streaming transcription
+    #[serde(rename = "eou")]
     ParakeetEOU,
 }
 
@@ -474,10 +476,18 @@ mod tests {
     fn test_model_type_serde() {
         let model_type = ModelType::ParakeetTDT;
         let json = serde_json::to_string(&model_type).unwrap();
-        assert!(json.contains("ParakeetTDT"));
+        assert_eq!(json, "\"tdt\"");
 
         let deserialized: ModelType = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, ModelType::ParakeetTDT);
+
+        // Test EOU variant
+        let eou_type = ModelType::ParakeetEOU;
+        let eou_json = serde_json::to_string(&eou_type).unwrap();
+        assert_eq!(eou_json, "\"eou\"");
+
+        let eou_deserialized: ModelType = serde_json::from_str(&eou_json).unwrap();
+        assert_eq!(eou_deserialized, ModelType::ParakeetEOU);
     }
 
     // ModelManifest tests

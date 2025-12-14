@@ -93,7 +93,7 @@ describe("TranscriptionSettings", () => {
 
       await userEvent.click(downloadButton!);
 
-      expect(mockInvoke).toHaveBeenCalledWith("download_model", { modelType: "ParakeetTDT" });
+      expect(mockInvoke).toHaveBeenCalledWith("download_model", { modelType: "tdt" });
     });
 
     it("EOU download button triggers download_model with model_type='eou'", async () => {
@@ -108,7 +108,7 @@ describe("TranscriptionSettings", () => {
 
       await userEvent.click(downloadButton!);
 
-      expect(mockInvoke).toHaveBeenCalledWith("download_model", { modelType: "ParakeetEOU" });
+      expect(mockInvoke).toHaveBeenCalledWith("download_model", { modelType: "eou" });
     });
 
     it("progress bar updates when model_file_download_progress event is received", async () => {
@@ -125,11 +125,11 @@ describe("TranscriptionSettings", () => {
 
       // Emit progress event
       emitEvent("model_file_download_progress", {
-        model_type: "tdt",
-        file_name: "model.bin",
+        modelType: "tdt",
+        fileName: "model.bin",
         percent: 50,
-        bytes_downloaded: 500,
-        total_bytes: 1000,
+        bytesDownloaded: 500,
+        totalBytes: 1000,
       });
 
       await waitFor(() => {
@@ -153,8 +153,8 @@ describe("TranscriptionSettings", () => {
 
       // Emit completion event
       emitEvent("model_download_completed", {
-        model_type: "tdt",
-        model_path: "/path/to/model",
+        modelType: "tdt",
+        modelPath: "/path/to/model",
       });
 
       await waitFor(() => {
@@ -250,7 +250,7 @@ describe("TranscriptionSettings", () => {
       mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
         if (cmd === "check_parakeet_model_status") {
           const modelType = args?.modelType;
-          return Promise.resolve(modelType === "ParakeetTDT");
+          return Promise.resolve(modelType === "tdt");
         }
         if (cmd === "get_transcription_mode") {
           return Promise.resolve("batch");
@@ -299,8 +299,8 @@ describe("TranscriptionSettings", () => {
       render(<TranscriptionSettings />);
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "ParakeetTDT" });
-        expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "ParakeetEOU" });
+        expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "tdt" });
+        expect(mockInvoke).toHaveBeenCalledWith("check_parakeet_model_status", { modelType: "eou" });
       });
     });
 

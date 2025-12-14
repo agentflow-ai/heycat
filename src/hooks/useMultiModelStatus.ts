@@ -18,17 +18,17 @@ export interface ModelStatus {
 
 /** Payload for model_file_download_progress event */
 export interface ModelFileDownloadProgressPayload {
-  model_type: string;
-  file_name: string;
+  modelType: string;
+  fileName: string;
   percent: number;
-  bytes_downloaded: number;
-  total_bytes: number;
+  bytesDownloaded: number;
+  totalBytes: number;
 }
 
 /** Payload for model_download_completed event */
 interface ModelDownloadCompletedPayload {
-  model_type: string;
-  model_path: string;
+  modelType: string;
+  modelPath: string;
 }
 
 /** Return type of the useMultiModelStatus hook */
@@ -39,11 +39,6 @@ export interface UseMultiModelStatusResult {
   downloadModel: (modelType: ModelType) => Promise<void>;
   /** Function to refresh status for all models */
   refreshStatus: () => Promise<void>;
-}
-
-/** Map frontend model type to Rust enum variant */
-function toRustModelType(modelType: ModelType): string {
-  return modelType === "tdt" ? "ParakeetTDT" : "ParakeetEOU";
 }
 
 const initialModelStatus: ModelStatus = {
@@ -77,8 +72,8 @@ export function useMultiModelStatus(): UseMultiModelStatusResult {
     /* v8 ignore start -- @preserve */
     try {
       const [tdtAvailable, eouAvailable] = await Promise.all([
-        invoke<boolean>("check_parakeet_model_status", { modelType: "ParakeetTDT" }),
-        invoke<boolean>("check_parakeet_model_status", { modelType: "ParakeetEOU" }),
+        invoke<boolean>("check_parakeet_model_status", { modelType: "tdt" }),
+        invoke<boolean>("check_parakeet_model_status", { modelType: "eou" }),
       ]);
 
       setModels((prev) => ({
@@ -112,7 +107,7 @@ export function useMultiModelStatus(): UseMultiModelStatusResult {
       });
       /* v8 ignore start -- @preserve */
       try {
-        await invoke("download_model", { modelType: toRustModelType(modelType) });
+        await invoke("download_model", { modelType });
         // State will be updated by model_download_completed event
       } catch (e) {
         updateModelStatus(modelType, {
@@ -137,7 +132,7 @@ export function useMultiModelStatus(): UseMultiModelStatusResult {
       const unlistenProgress = await listen<ModelFileDownloadProgressPayload>(
         "model_file_download_progress",
         (event) => {
-          const modelType = event.payload.model_type as ModelType;
+          const modelType = event.payload.modelType as ModelType;
           if (modelType === "tdt" || modelType === "eou") {
             updateModelStatus(modelType, {
               progress: event.payload.percent,
@@ -151,7 +146,7 @@ export function useMultiModelStatus(): UseMultiModelStatusResult {
       const unlistenCompleted = await listen<ModelDownloadCompletedPayload>(
         "model_download_completed",
         (event) => {
-          const modelType = event.payload.model_type as ModelType;
+          const modelType = event.payload.modelType as ModelType;
           if (modelType === "tdt" || modelType === "eou") {
             updateModelStatus(modelType, {
               isAvailable: true,

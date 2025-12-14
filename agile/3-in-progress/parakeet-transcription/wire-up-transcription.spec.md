@@ -1,7 +1,7 @@
 ---
-status: in-progress
+status: completed
 created: 2025-12-13
-completed: null
+completed: 2025-12-13
 dependencies:
   - tdt-batch-transcription.spec.md
   - eou-streaming-transcription.spec.md
@@ -236,50 +236,55 @@ impl TranscriptionService for TranscriptionManager {
 
 **Reviewed:** 2025-12-13
 **Reviewer:** Claude
+**Round:** 2
 
 ### Acceptance Criteria Verification
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| `lib.rs` creates `TranscriptionManager` instead of `WhisperManager` | PASS | `src-tauri/src/lib.rs:72` - `let transcription_manager = Arc::new(parakeet::TranscriptionManager::new());` |
-| `TranscriptionManager` is registered with Tauri state via `app.manage()` | PASS | `src-tauri/src/lib.rs:73` - `app.manage(transcription_manager.clone());` |
-| `HotkeyIntegration` builder uses `.with_transcription_manager()` instead of `.with_whisper_manager()` | PASS | `src-tauri/src/lib.rs:137` - `.with_transcription_manager(transcription_manager)` and `src-tauri/src/hotkey/integration.rs:99-102` defines `with_transcription_manager()` method |
-| Eager model loading at startup loads Parakeet model (if available) instead of Whisper | PASS | `src-tauri/src/lib.rs:102-125` - Loads both TDT and EOU models at startup with proper error handling |
-| Model existence check uses new model path structure (directory-based) | PASS | `src-tauri/src/lib.rs:102,115` - Uses `check_model_exists_for_type(ModelType::ParakeetTDT/EOU)` and `get_model_dir()` |
-| Transcription mode (batch/streaming) is read from settings on startup | FAIL | No settings integration found. Mode defaults to `Batch` in `TranscriptionManager::new()` (`src-tauri/src/parakeet/manager.rs:34`). No settings file is read at startup. |
-| Mode can be changed at runtime via Tauri command | PASS | `src-tauri/src/parakeet/mod.rs:17-39` - `get_transcription_mode` and `set_transcription_mode` commands implemented; registered in `lib.rs:214-215` |
-| `transcription_partial` events are emitted during streaming mode | PASS | `src-tauri/src/parakeet/streaming.rs:122` and `src-tauri/src/parakeet/streaming.rs:162` - `emit_transcription_partial()` called during streaming and finalization |
-| `transcription_completed` events are emitted after batch/streaming completion | PASS | `src-tauri/src/hotkey/integration.rs:563` (batch mode) and `src-tauri/src/parakeet/streaming.rs:175` (streaming mode) |
-| All existing recording workflow continues to work | PASS | Integration tests pass: `src-tauri/src/hotkey/integration_test.rs` includes tests for start/stop recording, debouncing, and full cycles |
+| `lib.rs` creates `TranscriptionManager` instead of `WhisperManager` | PASS | `src-tauri/src/lib.rs:78` - `let transcription_manager = Arc::new(parakeet::TranscriptionManager::new());` |
+| `TranscriptionManager` is registered with Tauri state via `app.manage()` | PASS | `src-tauri/src/lib.rs:85` - `app.manage(transcription_manager.clone());` |
+| `HotkeyIntegration` builder uses `.with_transcription_manager()` instead of `.with_whisper_manager()` | PASS | `src-tauri/src/lib.rs:149` - `.with_transcription_manager(transcription_manager)` and `src-tauri/src/hotkey/integration.rs:99-102` defines `with_transcription_manager()` method |
+| Eager model loading at startup loads Parakeet model (if available) instead of Whisper | PASS | `src-tauri/src/lib.rs:114-137` - Loads both TDT and EOU models at startup with proper error handling |
+| Model existence check uses new model path structure (directory-based) | PASS | `src-tauri/src/lib.rs:114,127` - Uses `check_model_exists_for_type(ModelType::ParakeetTDT/EOU)` and `get_model_dir()` |
+| Transcription mode (batch/streaming) is read from settings on startup | PASS | `src-tauri/src/lib.rs:72-74` - `settings::load_settings()` loads settings from disk, then line 81-83 applies mode via `transcription_manager.set_mode(app_settings.transcription_mode)`. Settings module at `src-tauri/src/settings/mod.rs` handles JSON persistence. |
+| Mode can be changed at runtime via Tauri command | PASS | `src-tauri/src/parakeet/mod.rs:30-51` - `set_transcription_mode` command persists to settings file via `settings::save_settings()` |
+| `transcription_partial` events are emitted during streaming mode | PASS | `src-tauri/src/parakeet/streaming.rs:122` and `streaming.rs:162` - `emit_transcription_partial()` called during chunk processing and finalization |
+| `transcription_completed` events are emitted after batch/streaming completion | PASS | `src-tauri/src/hotkey/integration.rs:563` (batch mode) and `src-tauri/src/parakeet/streaming.rs:174-178` (streaming mode) |
+| All existing recording workflow continues to work | PASS | Integration tests pass; `HotkeyIntegration` properly handles both batch and streaming modes in `handle_toggle()` |
 
 ### Test Coverage Audit
 
 | Test Case | Status | Location |
 |-----------|--------|----------|
-| App starts successfully with TranscriptionManager | PASS | `src-tauri/src/hotkey/integration_test.rs:126-141` - `test_toggle_from_idle_starts_recording` |
-| Recording starts without errors | PASS | `src-tauri/src/hotkey/integration_test.rs:126-141` |
-| Recording stops and triggers transcription | PASS | `src-tauri/src/hotkey/integration_test.rs:143-164` - `test_toggle_from_recording_stops` |
-| Batch mode: transcription_completed event emitted with full text | DEFERRED | Requires model to be loaded; no mock transcription manager. Test at `integration_test.rs:493-523` verifies flow but not event emission. |
-| Streaming mode: transcription_partial events emitted during recording | DEFERRED | `src-tauri/src/parakeet/streaming.rs:326-337` tests mock emitter tracking but requires loaded EOU model for full integration test |
-| Mode switching via command updates TranscriptionManager behavior | PASS | `src-tauri/src/parakeet/manager.rs:397-410` - `test_set_mode_to_streaming` and `test_set_mode_back_to_batch` |
+| App starts successfully with TranscriptionManager | PASS | `src-tauri/src/hotkey/integration_test.rs` - `test_toggle_from_idle_starts_recording` |
+| Recording starts without errors | PASS | `src-tauri/src/hotkey/integration_test.rs` |
+| Recording stops and triggers transcription | PASS | `src-tauri/src/hotkey/integration_test.rs` - `test_toggle_from_recording_stops` |
+| Batch mode: transcription_completed event emitted with full text | DEFERRED | Requires model to be loaded; integration test verifies flow but not event emission |
+| Streaming mode: transcription_partial events emitted during recording | DEFERRED | `src-tauri/src/parakeet/streaming.rs:326-337` tests mock emitter but requires loaded EOU model for full integration |
+| Mode switching via command updates TranscriptionManager behavior | PASS | `src-tauri/src/parakeet/manager.rs` - `test_set_mode_to_streaming` and `test_set_mode_back_to_batch` |
 | Model loading at startup succeeds when model files exist | DEFERRED | Requires actual model files; lib.rs startup code handles this but cannot be unit tested |
-| Model loading gracefully handles missing model files | PASS | `src-tauri/src/lib.rs:110-112,123-125` - Logs info message when model not found instead of failing |
+| Model loading gracefully handles missing model files | PASS | `src-tauri/src/lib.rs:122-124,135-137` - Logs info message when model not found instead of failing |
+| Settings default to batch mode | PASS | `src-tauri/src/settings/mod.rs:72-74` - `test_default_settings_has_batch_mode` |
+| Settings serialization roundtrip | PASS | `src-tauri/src/settings/mod.rs:78-90` - `test_settings_serialization_roundtrip` |
+| Load settings returns default for missing file | PASS | `src-tauri/src/settings/mod.rs:93-99` - `test_load_settings_returns_default_for_missing_file` |
 
 ### Code Quality
 
 **Strengths:**
+- Clean settings module with proper JSON persistence to app config directory
+- Settings loaded at startup and applied to TranscriptionManager before any other initialization
+- Mode changes via Tauri command also persist to settings file for next startup
 - Clean builder pattern for `HotkeyIntegration` allows flexible composition
 - Proper separation between batch and streaming transcription paths in `handle_toggle()`
 - Comprehensive error handling with graceful fallbacks (model not found logs info, doesn't crash)
 - Event system properly separates `transcription_partial` (streaming) and `transcription_completed` (both modes)
 - Thread-safe design using `Arc<Mutex<>>` for shared state
-- Good test coverage for integration scenarios including streaming wire-up tests
 
 **Concerns:**
-- **Settings integration missing**: The acceptance criterion "Transcription mode is read from settings on startup" is not implemented. The mode defaults to `Batch` and is only changeable via runtime Tauri command.
-- Streaming finalization in `integration.rs:634-679` uses `std::thread::sleep(10ms)` which is a workaround for synchronization - could be fragile under load
-- `handle_transcription_result()` in `integration.rs:685-702` has a TODO comment noting it doesn't do full command matching for streaming mode
+- Streaming finalization in `integration.rs:652` uses `std::thread::sleep(10ms)` which is a workaround for synchronization - could be fragile under load
+- `handle_transcription_result()` in `integration.rs:685-702` doesn't do full command matching for streaming mode (comment acknowledges this)
 
 ### Verdict
 
-**NEEDS_WORK** - The implementation is largely complete and well-structured, but the acceptance criterion "Transcription mode (batch/streaming) is read from settings on startup" has not been implemented. The mode currently defaults to `Batch` and can only be changed at runtime via Tauri command. Either implement settings persistence for the transcription mode, or update the spec to remove this requirement if it was deprioritized.
+**APPROVED** - All acceptance criteria now pass. The previously failing criterion "Transcription mode (batch/streaming) is read from settings on startup" has been fully implemented with a new settings module at `src-tauri/src/settings/mod.rs`. Settings are loaded at startup via `settings::load_settings()` and applied to the TranscriptionManager. Mode changes via the Tauri command also persist to the settings file for next startup. The implementation is well-structured with proper error handling and test coverage.

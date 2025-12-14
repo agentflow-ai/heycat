@@ -10,6 +10,7 @@ mod hotkey;
 mod model;
 mod parakeet;
 mod recording;
+mod settings;
 mod voice_commands;
 
 use std::sync::{Arc, Mutex};
@@ -67,9 +68,20 @@ pub fn run() {
             // Manage audio thread state for Tauri commands
             app.manage(audio_thread.clone());
 
+            // Load settings from disk
+            debug!("Loading settings...");
+            let app_settings = settings::load_settings();
+            info!("Loaded transcription mode from settings: {:?}", app_settings.transcription_mode);
+
             // Create and manage TranscriptionManager for transcription
             debug!("Creating TranscriptionManager...");
             let transcription_manager = Arc::new(parakeet::TranscriptionManager::new());
+
+            // Apply saved transcription mode from settings
+            if let Err(e) = transcription_manager.set_mode(app_settings.transcription_mode) {
+                warn!("Failed to apply saved transcription mode: {}", e);
+            }
+
             app.manage(transcription_manager.clone());
 
             // Create and manage VoiceCommandsState

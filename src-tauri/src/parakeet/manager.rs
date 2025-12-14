@@ -202,7 +202,7 @@ impl TranscriptionService for TranscriptionManager {
             // Transcribe samples (16kHz mono)
             // parakeet-rs takes owned Vec, sample rate, channels, and optional timestamp mode
             tdt.transcribe_samples(samples.to_vec(), 16000, 1, None)
-                .map(|result| result.text)
+                .map(|result| super::normalize::normalize_transcription(&result.text))
                 .map_err(|e| TranscriptionError::TranscriptionFailed(e.to_string()))
         };
 
