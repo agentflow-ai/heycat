@@ -2,11 +2,8 @@
 // Provides TDT (batch) and EOU (streaming) transcription using NVIDIA Parakeet models
 
 mod manager;
-mod normalize;
 mod streaming;
 mod types;
-
-pub use normalize::normalize_transcription;
 
 use crate::settings;
 use std::sync::Arc;

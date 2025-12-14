@@ -170,11 +170,11 @@ impl TranscriptionService for TranscriptionManager {
         Ok(())
     }
 
-    fn transcribe(&self, samples: &[f32]) -> TranscriptionResult<String> {
-        // Validate audio input
-        if samples.is_empty() {
+    fn transcribe(&self, file_path: &str) -> TranscriptionResult<String> {
+        // Validate file path
+        if file_path.is_empty() {
             return Err(TranscriptionError::InvalidAudio(
-                "Empty audio buffer".to_string(),
+                "Empty file path".to_string(),
             ));
         }
 
@@ -190,7 +190,7 @@ impl TranscriptionService for TranscriptionManager {
             *state = TranscriptionState::Transcribing;
         }
 
-        // Perform transcription
+        // Perform transcription using transcribe_file
         let result = {
             let mut guard = self
                 .tdt_context
@@ -199,10 +199,9 @@ impl TranscriptionService for TranscriptionManager {
 
             let tdt = guard.as_mut().ok_or(TranscriptionError::ModelNotLoaded)?;
 
-            // Transcribe samples (16kHz mono)
-            // parakeet-rs takes owned Vec, sample rate, channels, and optional timestamp mode
-            tdt.transcribe_samples(samples.to_vec(), 16000, 1, None)
-                .map(|result| super::normalize::normalize_transcription(&result.text))
+            // Use transcribe_file - parakeet-rs handles audio loading and preprocessing
+            tdt.transcribe_file(file_path, None)
+                .map(|result| result.text)
                 .map_err(|e| TranscriptionError::TranscriptionFailed(e.to_string()))
         };
 
@@ -269,17 +268,15 @@ mod tests {
     #[test]
     fn test_transcribe_returns_error_when_model_not_loaded() {
         let manager = TranscriptionManager::new();
-        let samples = vec![0.0f32; 16000]; // 1 second of silence
-        let result = manager.transcribe(&samples);
+        let result = manager.transcribe("/nonexistent/audio.wav");
         assert!(result.is_err());
         assert!(matches!(result, Err(TranscriptionError::ModelNotLoaded)));
     }
 
     #[test]
-    fn test_transcribe_returns_error_for_empty_audio() {
+    fn test_transcribe_returns_error_for_empty_path() {
         let manager = TranscriptionManager::new();
-        let samples: Vec<f32> = vec![];
-        let result = manager.transcribe(&samples);
+        let result = manager.transcribe("");
         assert!(result.is_err());
         assert!(matches!(result, Err(TranscriptionError::InvalidAudio(_))));
     }

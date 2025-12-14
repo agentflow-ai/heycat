@@ -32,8 +32,8 @@ impl ModelType {
 impl std::fmt::Display for ModelType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ModelType::ParakeetTDT => write!(f, "parakeet-tdt"),
-            ModelType::ParakeetEOU => write!(f, "parakeet-eou"),
+            ModelType::ParakeetTDT => write!(f, "tdt"),
+            ModelType::ParakeetEOU => write!(f, "eou"),
         }
     }
 }
@@ -452,8 +452,8 @@ mod tests {
 
     #[test]
     fn test_model_type_display() {
-        assert_eq!(format!("{}", ModelType::ParakeetTDT), "parakeet-tdt");
-        assert_eq!(format!("{}", ModelType::ParakeetEOU), "parakeet-eou");
+        assert_eq!(format!("{}", ModelType::ParakeetTDT), "tdt");
+        assert_eq!(format!("{}", ModelType::ParakeetEOU), "eou");
     }
 
     #[test]

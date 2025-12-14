@@ -3,7 +3,7 @@
 // Uses unified command implementations for start/stop logic
 
 use crate::audio::{AudioThreadHandle, StreamingAudioReceiver, StreamingAudioSender};
-use crate::commands::logic::{get_last_recording_buffer_impl, start_recording_impl, stop_recording_impl};
+use crate::commands::logic::{start_recording_impl, stop_recording_impl};
 use crate::events::{
     current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
     CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, RecordingErrorPayload,
@@ -265,6 +265,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                             "Recording stopped: {} samples, {:.2}s duration",
                             metadata.sample_count, metadata.duration_secs
                         );
+                        // Clone file_path before metadata is moved
+                        let file_path_for_transcription = metadata.file_path.clone();
                         self.recording_emitter
                             .emit_recording_stopped(RecordingStoppedPayload { metadata });
                         debug!("Emitted recording_stopped event");
@@ -273,7 +275,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                         match mode {
                             TranscriptionMode::Batch => {
                                 // Auto-transcribe if transcription manager is configured
-                                self.spawn_transcription();
+                                self.spawn_transcription(file_path_for_transcription);
                             }
                             TranscriptionMode::Streaming => {
                                 // Finalize streaming transcription
@@ -302,11 +304,11 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
 
     /// Spawn transcription as an async task
     ///
-    /// Gets audio buffer, transcribes, tries command matching, then fallback to clipboard.
+    /// Transcribes the WAV file, tries command matching, then fallback to clipboard.
     /// Uses Tauri's async runtime for bounded async execution.
-    /// No-op if transcription manager, transcription emitter, or recording state is not configured.
+    /// No-op if transcription manager or transcription emitter is not configured.
     #[cfg_attr(coverage_nightly, coverage(off))]
-    fn spawn_transcription(&self) {
+    fn spawn_transcription(&self, file_path: String) {
         // Check all required components are present
         let transcription_manager = match &self.transcription_manager {
             Some(tm) => tm.clone(),
@@ -320,14 +322,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             Some(te) => te.clone(),
             None => {
                 debug!("Transcription skipped: no transcription emitter configured");
-                return;
-            }
-        };
-
-        let recording_state = match &self.recording_state {
-            Some(rs) => rs.clone(),
-            None => {
-                debug!("Transcription skipped: no recording state configured");
                 return;
             }
         };
@@ -373,24 +367,12 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                 timestamp: current_timestamp(),
             });
 
-            // Get audio buffer (sync operation, fast)
-            let samples = match get_last_recording_buffer_impl(&recording_state) {
-                Ok(audio_data) => audio_data.samples,
-                Err(e) => {
-                    error!("Failed to get recording buffer: {}", e);
-                    transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
-                        error: format!("Failed to get recording buffer: {}", e),
-                    });
-                    return;
-                }
-            };
-
-            debug!("Transcribing {} samples...", samples.len());
+            debug!("Transcribing file: {}", file_path);
 
             // Perform transcription on blocking thread pool (CPU-intensive)
             let transcriber = transcription_manager.clone();
             let transcription_result = tokio::task::spawn_blocking(move || {
-                transcriber.transcribe(&samples)
+                transcriber.transcribe(&file_path)
             }).await;
 
             let text = match transcription_result {

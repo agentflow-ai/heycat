@@ -71,10 +71,9 @@ pub trait TranscriptionService: Send + Sync {
     #[must_use = "this returns a Result that should be handled"]
     fn load_model(&self, path: &Path) -> TranscriptionResult<()>;
 
-    /// Transcribe audio samples to text
-    /// Audio must be 16kHz mono f32 samples
+    /// Transcribe audio from a WAV file to text
     #[must_use = "this returns a Result that should be handled"]
-    fn transcribe(&self, samples: &[f32]) -> TranscriptionResult<String>;
+    fn transcribe(&self, file_path: &str) -> TranscriptionResult<String>;
 
     /// Check if a model is loaded
     fn is_loaded(&self) -> bool;
