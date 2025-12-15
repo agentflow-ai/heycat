@@ -8,6 +8,11 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use voice_activity_detector::VoiceActivityDetector;
 
+/// Default transcription timeout for wake word detection in seconds
+/// This is much shorter than the hotkey timeout since wake word detection
+/// only processes ~2 second audio windows
+pub const DEFAULT_WAKE_WORD_TRANSCRIPTION_TIMEOUT_SECS: u64 = 10;
+
 /// Configuration for wake word detection
 #[derive(Debug, Clone)]
 pub struct WakeWordDetectorConfig {
@@ -32,6 +37,10 @@ pub struct WakeWordDetectorConfig {
     /// Minimum speech frames required in VAD check
     /// Default: 2 frames (early return at 3 for performance)
     pub min_speech_frames: usize,
+    /// Transcription timeout in seconds
+    /// If transcription takes longer than this, a warning is logged (default: 10s)
+    /// Note: The wake word window is only ~2s, so transcription should be fast
+    pub transcription_timeout_secs: u64,
 }
 
 impl Default for WakeWordDetectorConfig {
@@ -54,6 +63,8 @@ impl Default for WakeWordDetectorConfig {
             // Minimum speech frames - require 2+ frames above threshold
             // Reduced from 10% ratio to catch short utterances like "hello"
             min_speech_frames: 2,
+            // Transcription timeout - 10s is generous for ~2s audio window
+            transcription_timeout_secs: DEFAULT_WAKE_WORD_TRANSCRIPTION_TIMEOUT_SECS,
         }
     }
 }
@@ -114,6 +125,8 @@ pub enum WakeWordError {
     ModelLoadFailed(String),
     /// Failed during transcription
     TranscriptionFailed(String),
+    /// Transcription took too long (exceeded timeout)
+    TranscriptionTimeout { duration_secs: u64, timeout_secs: u64 },
     /// Lock was poisoned
     LockPoisoned,
     /// Buffer is empty
@@ -134,6 +147,9 @@ impl std::fmt::Display for WakeWordError {
             WakeWordError::ModelNotLoaded => write!(f, "Wake word model not loaded"),
             WakeWordError::ModelLoadFailed(msg) => write!(f, "Failed to load model: {}", msg),
             WakeWordError::TranscriptionFailed(msg) => write!(f, "Transcription failed: {}", msg),
+            WakeWordError::TranscriptionTimeout { duration_secs, timeout_secs } => {
+                write!(f, "Transcription timed out after {}s (limit: {}s)", duration_secs, timeout_secs)
+            }
             WakeWordError::LockPoisoned => write!(f, "Internal lock error"),
             WakeWordError::EmptyBuffer => write!(f, "Audio buffer is empty"),
             WakeWordError::InsufficientNewSamples => {
@@ -361,6 +377,22 @@ impl WakeWordDetector {
             .transcribe_samples(samples, self.config.sample_rate, 1)
             .map_err(|e| WakeWordError::TranscriptionFailed(e.to_string()))?;
         let transcribe_duration = transcribe_start.elapsed();
+
+        // Check if transcription exceeded the timeout threshold
+        // Note: Since transcription is synchronous, we can only detect this after completion
+        // This provides visibility into slow transcriptions for debugging
+        let timeout_duration = std::time::Duration::from_secs(self.config.transcription_timeout_secs);
+        if transcribe_duration > timeout_duration {
+            crate::warn!(
+                "[wake-word] Transcription exceeded timeout: {:?} > {:?}",
+                transcribe_duration,
+                timeout_duration
+            );
+            return Err(WakeWordError::TranscriptionTimeout {
+                duration_secs: transcribe_duration.as_secs(),
+                timeout_secs: self.config.transcription_timeout_secs,
+            });
+        }
 
         // Update sample count and store fingerprint after successful transcription
         {
@@ -641,6 +673,8 @@ mod tests {
         assert_eq!(config.vad_speech_threshold, 0.3);
         // Minimum 2 speech frames required
         assert_eq!(config.min_speech_frames, 2);
+        // 10 second transcription timeout (generous for ~2s audio window)
+        assert_eq!(config.transcription_timeout_secs, DEFAULT_WAKE_WORD_TRANSCRIPTION_TIMEOUT_SECS);
     }
 
     #[test]
@@ -660,10 +694,12 @@ mod tests {
             vad_speech_threshold: 0.6,
             vad_enabled: false, // Disable VAD in tests without real audio
             min_speech_frames: 3,
+            transcription_timeout_secs: 5, // Custom timeout
         };
         let detector = WakeWordDetector::with_config(config.clone());
         assert_eq!(detector.config().wake_phrase, "hello world");
         assert_eq!(detector.config().sample_rate, 44100);
+        assert_eq!(detector.config().transcription_timeout_secs, 5);
     }
 
     #[test]
@@ -796,6 +832,10 @@ mod tests {
         assert!(
             format!("{}", WakeWordError::TranscriptionFailed("test".to_string())).contains("test")
         );
+        let timeout_err = WakeWordError::TranscriptionTimeout { duration_secs: 15, timeout_secs: 10 };
+        assert!(format!("{}", timeout_err).contains("timed out"));
+        assert!(format!("{}", timeout_err).contains("15"));
+        assert!(format!("{}", timeout_err).contains("10"));
         assert!(format!("{}", WakeWordError::LockPoisoned).contains("lock"));
         assert!(format!("{}", WakeWordError::EmptyBuffer).contains("empty"));
         assert!(format!("{}", WakeWordError::InsufficientNewSamples).contains("new"));

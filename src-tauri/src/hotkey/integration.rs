@@ -28,6 +28,10 @@ use tokio::sync::Semaphore;
 /// Maximum concurrent transcriptions allowed
 const MAX_CONCURRENT_TRANSCRIPTIONS: usize = 2;
 
+/// Default transcription timeout in seconds
+/// If transcription takes longer than this, it will be cancelled and an error emitted
+pub const DEFAULT_TRANSCRIPTION_TIMEOUT_SECS: u64 = 60;
+
 /// Debounce duration for hotkey presses (200ms)
 pub const DEBOUNCE_DURATION_MS: u64 = 200;
 
@@ -95,6 +99,8 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     app_handle: Option<AppHandle>,
     /// Optional listening pipeline for restarting wake word detection after recording
     listening_pipeline: Option<Arc<Mutex<ListeningPipeline>>>,
+    /// Transcription timeout duration (defaults to 60 seconds)
+    transcription_timeout: Duration,
 }
 
 impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
@@ -116,6 +122,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             transcription_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_TRANSCRIPTIONS)),
             app_handle: None,
             listening_pipeline: None,
+            transcription_timeout: Duration::from_secs(DEFAULT_TRANSCRIPTION_TIMEOUT_SECS),
         }
     }
 
@@ -185,6 +192,15 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         self
     }
 
+    /// Set custom transcription timeout duration (builder pattern)
+    ///
+    /// Default is 60 seconds. If transcription takes longer than this, it will be
+    /// cancelled and a timeout error will be emitted to the frontend.
+    pub fn with_transcription_timeout(mut self, timeout: Duration) -> Self {
+        self.transcription_timeout = timeout;
+        self
+    }
+
     /// Create with custom debounce duration (for testing)
     #[cfg(test)]
     pub fn with_debounce(recording_emitter: R, debounce_ms: u64) -> Self {
@@ -204,6 +220,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             transcription_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_TRANSCRIPTIONS)),
             app_handle: None,
             listening_pipeline: None,
+            transcription_timeout: Duration::from_secs(DEFAULT_TRANSCRIPTION_TIMEOUT_SECS),
         }
     }
 
@@ -376,6 +393,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         // Clone semaphore for the async task
         let semaphore = self.transcription_semaphore.clone();
 
+        // Clone timeout for the async task
+        let timeout_duration = self.transcription_timeout;
+
         info!("Spawning transcription task...");
 
         // Spawn async task using Tauri's async runtime
@@ -412,15 +432,17 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
 
             debug!("Transcribing file: {}", file_path);
 
-            // Perform transcription on blocking thread pool (CPU-intensive)
+            // Perform transcription on blocking thread pool (CPU-intensive) with timeout
             let transcriber = transcription_manager.clone();
-            let transcription_result = tokio::task::spawn_blocking(move || {
+            let transcription_future = tokio::task::spawn_blocking(move || {
                 transcriber.transcribe(&file_path)
-            }).await;
+            });
+
+            let transcription_result = tokio::time::timeout(timeout_duration, transcription_future).await;
 
             let text = match transcription_result {
-                Ok(Ok(text)) => text,
-                Ok(Err(e)) => {
+                Ok(Ok(Ok(text))) => text,
+                Ok(Ok(Err(e))) => {
                     error!("Transcription failed: {}", e);
                     transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
                         error: e.to_string(),
@@ -431,10 +453,22 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                     clear_recording_buffer();
                     return;
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     error!("Transcription task panicked: {}", e);
                     transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
                         error: "Internal transcription error.".to_string(),
+                    });
+                    if let Err(reset_err) = transcription_manager.reset_to_idle() {
+                        warn!("Failed to reset transcription state: {}", reset_err);
+                    }
+                    clear_recording_buffer();
+                    return;
+                }
+                Err(_) => {
+                    // Timeout error
+                    error!("Transcription timed out after {:?}", timeout_duration);
+                    transcription_emitter.emit_transcription_error(TranscriptionErrorPayload {
+                        error: format!("Transcription timed out after {} seconds. The audio may be too long or the model may be stuck.", timeout_duration.as_secs()),
                     });
                     if let Err(reset_err) = transcription_manager.reset_to_idle() {
                         warn!("Failed to reset transcription state: {}", reset_err);
