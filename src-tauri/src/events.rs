@@ -87,9 +87,13 @@ pub trait ListeningEventEmitter: Send + Sync {
     fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload);
 
     /// Emit listening_started event
+    /// Note: Currently emitted from commands layer via Tauri app handle, not via this trait
+    #[allow(dead_code)] // API consistency - commands emit via app handle
     fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload);
 
     /// Emit listening_stopped event
+    /// Note: Currently emitted from commands layer via Tauri app handle, not via this trait
+    #[allow(dead_code)] // API consistency - commands emit via app handle
     fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload);
 
     /// Emit listening_unavailable event

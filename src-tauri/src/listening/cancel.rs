@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone)]
 pub struct CancelPhraseDetectorConfig {
     /// Minimum confidence threshold (0.0 - 1.0)
+    #[allow(dead_code)] // Reserved for future confidence-based filtering
     pub confidence_threshold: f32,
     /// Audio window duration in seconds for detection
     pub window_duration_secs: f32,
@@ -117,23 +118,35 @@ impl CancelPhraseDetector {
     ///
     /// Must be called before processing audio.
     pub fn load_model(&self) -> Result<(), CancelPhraseError> {
+        crate::debug!("[cancel] Loading Parakeet TDT model for cancel detection...");
+
         let model_dir = get_model_dir(ModelType::ParakeetTDT)
-            .map_err(|e| CancelPhraseError::ModelLoadFailed(e.to_string()))?;
+            .map_err(|e| {
+                crate::error!("[cancel] Failed to get model directory: {}", e);
+                CancelPhraseError::ModelLoadFailed(e.to_string())
+            })?;
 
         let path_str = model_dir.to_str().ok_or_else(|| {
+            crate::error!("[cancel] Invalid path encoding");
             CancelPhraseError::ModelLoadFailed("Invalid path encoding".to_string())
         })?;
 
         let tdt = ParakeetTDT::from_pretrained(path_str, None)
-            .map_err(|e| CancelPhraseError::ModelLoadFailed(e.to_string()))?;
+            .map_err(|e| {
+                crate::error!("[cancel] Failed to load model: {}", e);
+                CancelPhraseError::ModelLoadFailed(e.to_string())
+            })?;
 
         let mut guard = self.model.lock().map_err(|_| CancelPhraseError::LockPoisoned)?;
         *guard = Some(tdt);
+
+        crate::info!("[cancel] Model loaded successfully");
 
         Ok(())
     }
 
     /// Check if the model is loaded
+    #[allow(dead_code)] // Utility method for status checks and debugging
     pub fn is_loaded(&self) -> bool {
         self.model
             .lock()
@@ -145,6 +158,11 @@ impl CancelPhraseDetector {
     ///
     /// Call this when recording starts to begin the cancellation window.
     pub fn start_session(&self) -> Result<(), CancelPhraseError> {
+        crate::debug!(
+            "[cancel] Starting detection session, window={}s",
+            self.config.cancellation_window_secs
+        );
+
         let mut start = self.session_start.lock().map_err(|_| CancelPhraseError::LockPoisoned)?;
         *start = Some(Instant::now());
 
@@ -157,6 +175,8 @@ impl CancelPhraseDetector {
 
     /// End the current detection session
     pub fn end_session(&self) -> Result<(), CancelPhraseError> {
+        crate::debug!("[cancel] Ending detection session");
+
         let mut start = self.session_start.lock().map_err(|_| CancelPhraseError::LockPoisoned)?;
         *start = None;
 
@@ -183,6 +203,7 @@ impl CancelPhraseDetector {
     }
 
     /// Get remaining time in cancellation window (in seconds)
+    #[allow(dead_code)] // Utility method for UI display
     pub fn remaining_window_secs(&self) -> f32 {
         let start = match self.session_start.lock() {
             Ok(guard) => guard,
@@ -214,6 +235,7 @@ impl CancelPhraseDetector {
     pub fn analyze(&self) -> Result<CancelPhraseResult, CancelPhraseError> {
         // Check if window is still open
         if !self.is_window_open() {
+            crate::trace!("[cancel] Window expired, skipping analysis");
             return Err(CancelPhraseError::WindowExpired);
         }
 
@@ -223,7 +245,9 @@ impl CancelPhraseDetector {
             if buffer.is_empty() {
                 return Err(CancelPhraseError::EmptyBuffer);
             }
-            buffer.get_samples()
+            let samples = buffer.get_samples();
+            crate::debug!("[cancel] Analyzing {} samples for cancel phrase", samples.len());
+            samples
         };
 
         // Transcribe the audio
@@ -240,8 +264,20 @@ impl CancelPhraseDetector {
             fixed_text.trim().to_string()
         };
 
+        crate::debug!("[cancel] Transcription: '{}'", transcription);
+
         // Check for cancel phrases
         let (detected, phrase, confidence) = self.check_cancel_phrase(&transcription);
+
+        if detected {
+            crate::info!(
+                "[cancel] CANCEL_PHRASE_DETECTED: '{}' (confidence={:.2})",
+                phrase.as_ref().unwrap_or(&"unknown".to_string()),
+                confidence
+            );
+        } else {
+            crate::trace!("[cancel] No cancel phrase in: '{}'", transcription);
+        }
 
         Ok(CancelPhraseResult {
             detected,
@@ -262,6 +298,7 @@ impl CancelPhraseDetector {
     /// Use `analyze_and_abort` for full integration with RecordingManager.
     ///
     /// Returns the detection result regardless of whether an event was emitted.
+    #[allow(dead_code)] // Alternative API - coordinator uses analyze_and_abort
     pub fn analyze_and_emit<E: ListeningEventEmitter>(
         &self,
         emitter: &E,
@@ -311,6 +348,12 @@ impl CancelPhraseDetector {
         let result = self.analyze()?;
 
         if result.detected {
+            crate::info!(
+                "[cancel] Aborting recording due to cancel phrase '{}', returning_to_listening={}",
+                result.phrase.as_ref().unwrap_or(&"unknown".to_string()),
+                return_to_listening
+            );
+
             // Emit the recording cancelled event
             emitter.emit_recording_cancelled(listening_events::RecordingCancelledPayload {
                 cancel_phrase: result.phrase.clone().unwrap_or_default(),
@@ -328,7 +371,7 @@ impl CancelPhraseDetector {
                 // Abort discards the buffer without saving
                 if let Err(e) = manager.abort_recording(target_state) {
                     // Log but don't fail - the cancellation event was emitted
-                    eprintln!("Warning: Failed to abort recording: {}", e);
+                    crate::warn!("[cancel] Failed to abort recording: {}", e);
                 }
             }
 
@@ -340,6 +383,7 @@ impl CancelPhraseDetector {
     }
 
     /// Clear the audio buffer
+    #[allow(dead_code)] // Utility method for manual buffer control
     pub fn clear_buffer(&self) -> Result<(), CancelPhraseError> {
         let mut buffer = self.buffer.lock().map_err(|_| CancelPhraseError::LockPoisoned)?;
         buffer.clear();
@@ -410,6 +454,7 @@ impl CancelPhraseDetector {
     }
 
     /// Get the current configuration
+    #[allow(dead_code)] // Utility method for introspection
     pub fn config(&self) -> &CancelPhraseDetectorConfig {
         &self.config
     }

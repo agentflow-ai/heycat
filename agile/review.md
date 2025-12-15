@@ -6,6 +6,8 @@ You are reviewing a spec for a **Tauri v2 desktop application** with React front
 
 For each spec, complete ALL sections below. Use `file:line` evidence for every verification.
 
+IMPORTANT: Apart from detailed instructions, be sure to reason about and find evidence for the entire spec actually being properly intergrated and works end to end in a real data flow, not just state transitions or other signals that may mislead you. Be sceptical and verify that the spec is actually working properly.
+
 ---
 
 ## 1. Acceptance Criteria Verification
@@ -146,7 +148,41 @@ Map spec test cases to actual tests:
 
 ---
 
-## 8. Code Quality Notes
+## 8. Build Warning Audit
+
+Run builds and verify no new warnings related to the spec:
+
+### Backend (Rust)
+```bash
+cd src-tauri && cargo build 2>&1 | grep -E "(warning|unused|dead_code)"
+```
+
+### Frontend (TypeScript)
+```bash
+bun run build 2>&1 | grep -E "(warning|unused|never used)"
+```
+
+**Check for these warning types:**
+
+| Warning Type | Indicates |
+|-------------|-----------|
+| `unused import` | Code imported but never called |
+| `never constructed` | Struct/enum defined but never instantiated |
+| `never used` | Function/method implemented but never called |
+| `dead_code` | Code that cannot be reached |
+
+**New code introduced by this spec:**
+
+| Item | Type | Used? | Evidence |
+|------|------|-------|----------|
+| [StructName] | struct | YES/NO | `instantiated at file:line` |
+| [function_name] | function | YES/NO | `called at file:line` |
+
+**NEEDS_WORK** if any new code generates unused warnings.
+
+---
+
+## 9. Code Quality Notes
 
 Brief assessment of:
 - [ ] Error handling appropriate
@@ -156,7 +192,7 @@ Brief assessment of:
 
 ---
 
-## 9. Verdict
+## 10. Verdict
 
 ### APPROVED
 All of the following must be true:
@@ -167,6 +203,7 @@ All of the following must be true:
 - All emitted events have frontend listeners
 - All deferrals reference tracked specs
 - Test coverage matches spec test cases
+- No unused code warnings for new code (build warning audit passed)
 
 ### NEEDS_WORK
 If any above fails, provide:
@@ -188,4 +225,6 @@ Before submitting verdict:
 - [ ] Audited event emission vs subscription
 - [ ] Searched for deferrals
 - [ ] Mapped test cases to actual tests
+- [ ] Ran `cargo build`, no unused code warnings for new code
+- [ ] Ran `bun run build`, no unused warnings for new code
 - [ ] Provided line-level evidence for every claim

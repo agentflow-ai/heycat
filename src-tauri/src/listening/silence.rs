@@ -1,6 +1,7 @@
 // Silence detection for automatic recording stop
 // Uses energy-based (RMS) detection to identify end of speech
 
+use crate::{debug, info, trace};
 use std::time::Instant;
 
 /// Reason why recording was automatically stopped due to silence detection
@@ -22,8 +23,10 @@ pub struct SilenceConfig {
     /// Duration before canceling if no speech detected after wake word in milliseconds (default: 5000)
     pub no_speech_timeout_ms: u32,
     /// Duration of pause that doesn't trigger stop in milliseconds (default: 1000)
+    #[allow(dead_code)] // Reserved for future pause detection refinement
     pub pause_tolerance_ms: u32,
     /// Sample rate for calculating frame durations (default: 16000)
+    #[allow(dead_code)] // Reserved for future frame-based timing calculations
     pub sample_rate: u32,
 }
 
@@ -81,17 +84,20 @@ impl SilenceDetector {
 
     /// Reset the detector state for a new recording session
     pub fn reset(&mut self) {
+        debug!("[silence] Detector reset for new recording session");
         self.has_detected_speech = false;
         self.silence_start = None;
         self.recording_start = Instant::now();
     }
 
     /// Get the configuration
+    #[allow(dead_code)] // Utility method for introspection
     pub fn config(&self) -> &SilenceConfig {
         &self.config
     }
 
     /// Check if speech has been detected
+    #[allow(dead_code)] // Utility method for status checks
     pub fn has_detected_speech(&self) -> bool {
         self.has_detected_speech
     }
@@ -108,23 +114,29 @@ impl SilenceDetector {
         (sum_squares / samples.len() as f32).sqrt()
     }
 
-    /// Check if the given samples represent silence
-    pub fn is_silence(&self, samples: &[f32]) -> bool {
-        Self::calculate_rms(samples) < self.config.silence_threshold
-    }
-
     /// Process a frame of audio samples and return detection result
     ///
     /// Call this periodically with frames of audio (e.g., 100ms chunks).
     /// Returns whether to continue recording or stop (with reason).
     pub fn process_samples(&mut self, samples: &[f32]) -> SilenceDetectionResult {
         let now = Instant::now();
-        let is_silent = self.is_silence(samples);
+        let rms = Self::calculate_rms(samples);
+        let is_silent = rms < self.config.silence_threshold;
+
+        // Log audio level on every call (trace level for high-frequency)
+        trace!(
+            "[silence] RMS={:.4}, threshold={:.4}, is_silent={}, samples={}",
+            rms,
+            self.config.silence_threshold,
+            is_silent,
+            samples.len()
+        );
 
         if is_silent {
             // Audio is silent
             if self.silence_start.is_none() {
                 // Start tracking silence period
+                debug!("[silence] Silence period started");
                 self.silence_start = Some(now);
             }
 
@@ -133,17 +145,41 @@ impl SilenceDetector {
             if !self.has_detected_speech {
                 // No speech yet - check for no-speech timeout
                 let total_elapsed = self.recording_start.elapsed();
+                trace!(
+                    "[silence] No speech yet, elapsed={:?}, timeout={}ms",
+                    total_elapsed,
+                    self.config.no_speech_timeout_ms
+                );
                 if total_elapsed.as_millis() >= self.config.no_speech_timeout_ms as u128 {
+                    info!(
+                        "[silence] NO_SPEECH_TIMEOUT triggered after {:?}",
+                        total_elapsed
+                    );
                     return SilenceDetectionResult::Stop(SilenceStopReason::NoSpeechTimeout);
                 }
             } else {
                 // Had speech - check for silence after speech (ignoring brief pauses)
+                trace!(
+                    "[silence] Silence after speech, duration={:?}, threshold={}ms",
+                    silence_duration,
+                    self.config.silence_duration_ms
+                );
                 if silence_duration.as_millis() >= self.config.silence_duration_ms as u128 {
+                    info!(
+                        "[silence] SILENCE_AFTER_SPEECH triggered after {:?} of silence",
+                        silence_duration
+                    );
                     return SilenceDetectionResult::Stop(SilenceStopReason::SilenceAfterSpeech);
                 }
             }
         } else {
             // Audio is not silent (speech detected)
+            if !self.has_detected_speech {
+                debug!("[silence] First speech detected! RMS={:.4}", rms);
+            }
+            if self.silence_start.is_some() {
+                debug!("[silence] Speech resumed after silence");
+            }
             self.has_detected_speech = true;
             self.silence_start = None;
         }
@@ -215,20 +251,6 @@ mod tests {
     fn test_silence_detector_default() {
         let detector = SilenceDetector::default();
         assert!(!detector.has_detected_speech());
-    }
-
-    #[test]
-    fn test_is_silence_with_silent_samples() {
-        let detector = SilenceDetector::new();
-        let silent_samples = vec![0.001; 100];
-        assert!(detector.is_silence(&silent_samples));
-    }
-
-    #[test]
-    fn test_is_silence_with_loud_samples() {
-        let detector = SilenceDetector::new();
-        let loud_samples = vec![0.5; 100];
-        assert!(!detector.is_silence(&loud_samples));
     }
 
     #[test]

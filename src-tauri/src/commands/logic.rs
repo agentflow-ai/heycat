@@ -66,13 +66,13 @@ pub fn start_recording_impl(
         "Unable to access recording state. Please try again or restart the application."
     })?;
 
-    // Check current state
+    // Check current state - allow starting from Idle or Listening (for wake word activation)
     let current_state = manager.get_state();
     debug!("Current recording state: {:?}", current_state);
-    if current_state != RecordingState::Idle {
+    if current_state != RecordingState::Idle && current_state != RecordingState::Listening {
         debug!("Recording rejected: already in {:?} state", current_state);
         return Err(
-            "A recording is already in progress. Stop the current recording first.".to_string(),
+            "Cannot start recording: already recording or processing.".to_string(),
         );
     }
 
@@ -457,44 +457,72 @@ pub fn transcribe_file_impl(
 // Listening Commands
 // =============================================================================
 
-use crate::listening::{ListeningManager, ListeningStatus};
+use crate::events::ListeningEventEmitter;
+use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus};
 
 /// Implementation of enable_listening
 ///
-/// Enables listening mode and transitions to Listening state if in Idle.
+/// Enables listening mode, transitions to Listening state, and starts the pipeline.
 ///
 /// # Arguments
 /// * `listening_manager` - The listening manager state
 /// * `recording_manager` - The recording manager state
+/// * `listening_pipeline` - The listening pipeline state
+/// * `audio_thread` - The audio thread handle for capturing audio
+/// * `emitter` - Event emitter for wake word detection events
 ///
 /// # Errors
 /// Returns an error string if:
 /// - Currently recording
 /// - State transition fails
+/// - Pipeline fails to start
 /// - State lock is poisoned
-pub fn enable_listening_impl(
+pub fn enable_listening_impl<E: ListeningEventEmitter + 'static>(
     listening_manager: &Mutex<ListeningManager>,
     recording_manager: &Mutex<RecordingManager>,
+    listening_pipeline: &Mutex<ListeningPipeline>,
+    audio_thread: &AudioThreadHandle,
+    emitter: std::sync::Arc<E>,
 ) -> Result<(), String> {
     debug!("enable_listening_impl called");
 
-    let mut lm = listening_manager.lock().map_err(|_| {
-        error!("Failed to acquire listening manager lock");
-        "Unable to access listening state. Please try again."
-    })?;
+    // First, enable listening mode and transition state
+    {
+        let mut lm = listening_manager.lock().map_err(|_| {
+            error!("Failed to acquire listening manager lock");
+            "Unable to access listening state. Please try again."
+        })?;
 
-    lm.enable_listening(recording_manager).map_err(|e| {
-        error!("Failed to enable listening: {}", e);
-        match e {
-            crate::listening::ListeningError::RecordingInProgress => {
-                "Cannot enable listening while recording. Stop the recording first.".to_string()
+        lm.enable_listening(recording_manager).map_err(|e| {
+            error!("Failed to enable listening: {}", e);
+            match e {
+                crate::listening::ListeningError::RecordingInProgress => {
+                    "Cannot enable listening while recording. Stop the recording first.".to_string()
+                }
+                crate::listening::ListeningError::LockError => {
+                    "Unable to access recording state. Please try again.".to_string()
+                }
+                _ => format!("Failed to enable listening: {}", e),
             }
-            crate::listening::ListeningError::LockError => {
-                "Unable to access recording state. Please try again.".to_string()
-            }
-            _ => format!("Failed to enable listening: {}", e),
+        })?;
+    }
+
+    // Start the listening pipeline
+    {
+        let mut pipeline = listening_pipeline.lock().map_err(|_| {
+            error!("Failed to acquire listening pipeline lock");
+            "Unable to access listening pipeline. Please try again."
+        })?;
+
+        // Only start if not already running
+        if !pipeline.is_running() {
+            pipeline.start(audio_thread, emitter).map_err(|e| {
+                error!("Failed to start listening pipeline: {}", e);
+                format!("Failed to start listening: {}", e)
+            })?;
+            info!("Listening pipeline started");
         }
-    })?;
+    }
 
     info!("Listening mode enabled");
     Ok(())
@@ -502,11 +530,13 @@ pub fn enable_listening_impl(
 
 /// Implementation of disable_listening
 ///
-/// Disables listening mode and transitions to Idle state if in Listening.
+/// Disables listening mode, stops the pipeline, and transitions to Idle state.
 ///
 /// # Arguments
 /// * `listening_manager` - The listening manager state
 /// * `recording_manager` - The recording manager state
+/// * `listening_pipeline` - The listening pipeline state
+/// * `audio_thread` - The audio thread handle for stopping capture
 ///
 /// # Errors
 /// Returns an error string if:
@@ -515,18 +545,39 @@ pub fn enable_listening_impl(
 pub fn disable_listening_impl(
     listening_manager: &Mutex<ListeningManager>,
     recording_manager: &Mutex<RecordingManager>,
+    listening_pipeline: &Mutex<ListeningPipeline>,
+    audio_thread: &AudioThreadHandle,
 ) -> Result<(), String> {
     debug!("disable_listening_impl called");
 
-    let mut lm = listening_manager.lock().map_err(|_| {
-        error!("Failed to acquire listening manager lock");
-        "Unable to access listening state. Please try again."
-    })?;
+    // Stop the listening pipeline first
+    {
+        let mut pipeline = listening_pipeline.lock().map_err(|_| {
+            error!("Failed to acquire listening pipeline lock");
+            "Unable to access listening pipeline. Please try again."
+        })?;
 
-    lm.disable_listening(recording_manager).map_err(|e| {
-        error!("Failed to disable listening: {}", e);
-        format!("Failed to disable listening: {}", e)
-    })?;
+        if pipeline.is_running() {
+            pipeline.stop(audio_thread).map_err(|e| {
+                error!("Failed to stop listening pipeline: {}", e);
+                format!("Failed to stop listening: {}", e)
+            })?;
+            info!("Listening pipeline stopped");
+        }
+    }
+
+    // Disable listening mode and transition state
+    {
+        let mut lm = listening_manager.lock().map_err(|_| {
+            error!("Failed to acquire listening manager lock");
+            "Unable to access listening state. Please try again."
+        })?;
+
+        lm.disable_listening(recording_manager).map_err(|e| {
+            error!("Failed to disable listening: {}", e);
+            format!("Failed to disable listening: {}", e)
+        })?;
+    }
 
     info!("Listening mode disabled");
     Ok(())

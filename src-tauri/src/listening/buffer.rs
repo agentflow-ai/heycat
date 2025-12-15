@@ -16,6 +16,8 @@ pub struct CircularBuffer {
     write_pos: usize,
     /// Number of samples currently in buffer
     len: usize,
+    /// Total samples ever pushed (monotonic counter for tracking analyzed audio)
+    total_samples_pushed: u64,
 }
 
 impl CircularBuffer {
@@ -29,6 +31,7 @@ impl CircularBuffer {
             capacity,
             write_pos: 0,
             len: 0,
+            total_samples_pushed: 0,
         }
     }
 
@@ -53,6 +56,7 @@ impl CircularBuffer {
                 self.len += 1;
             }
         }
+        self.total_samples_pushed += samples.len() as u64;
     }
 
     /// Get all samples in chronological order
@@ -73,11 +77,27 @@ impl CircularBuffer {
 
     /// Clear the buffer
     pub fn clear(&mut self) {
+        crate::trace!("[buffer] Buffer cleared, was holding {} samples", self.len);
         self.write_pos = 0;
         self.len = 0;
+        // Note: total_samples_pushed is NOT reset here - it's reset separately
+        // when analysis tracking needs to be reset (via reset_sample_counter)
+    }
+
+    /// Get the total number of samples ever pushed to this buffer
+    ///
+    /// This is a monotonic counter used for tracking which audio has been analyzed.
+    pub fn total_samples_pushed(&self) -> u64 {
+        self.total_samples_pushed
+    }
+
+    /// Reset the total samples counter (call when starting fresh analysis)
+    pub fn reset_sample_counter(&mut self) {
+        self.total_samples_pushed = 0;
     }
 
     /// Get the current number of samples in the buffer
+    #[allow(dead_code)] // Used in tests and for debugging
     pub fn len(&self) -> usize {
         self.len
     }
@@ -88,11 +108,13 @@ impl CircularBuffer {
     }
 
     /// Check if the buffer is full
+    #[allow(dead_code)] // Used in tests and for debugging
     pub fn is_full(&self) -> bool {
         self.len == self.capacity
     }
 
     /// Get the capacity of the buffer
+    #[allow(dead_code)] // Used in tests and for debugging
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -171,6 +193,30 @@ mod tests {
         buffer.clear();
         assert!(buffer.is_empty());
         assert_eq!(buffer.len(), 0);
+    }
+
+    #[test]
+    fn test_total_samples_pushed_counter() {
+        let mut buffer = CircularBuffer::new(5);
+        assert_eq!(buffer.total_samples_pushed(), 0);
+
+        buffer.push_samples(&[1.0, 2.0, 3.0]);
+        assert_eq!(buffer.total_samples_pushed(), 3);
+
+        buffer.push_samples(&[4.0, 5.0]);
+        assert_eq!(buffer.total_samples_pushed(), 5);
+
+        // Counter continues even when buffer wraps
+        buffer.push_samples(&[6.0, 7.0, 8.0]);
+        assert_eq!(buffer.total_samples_pushed(), 8);
+
+        // clear() doesn't reset the counter
+        buffer.clear();
+        assert_eq!(buffer.total_samples_pushed(), 8);
+
+        // reset_sample_counter() does reset it
+        buffer.reset_sample_counter();
+        assert_eq!(buffer.total_samples_pushed(), 0);
     }
 
     #[test]

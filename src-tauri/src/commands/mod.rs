@@ -12,7 +12,7 @@ use logic::{
     list_recordings_impl, start_recording_impl, stop_recording_impl, transcribe_file_impl,
 };
 
-use crate::listening::{ListeningManager, ListeningStatus};
+use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus};
 
 use crate::events::{
     command_events, event_names, listening_events, CommandAmbiguousPayload, CommandEventEmitter,
@@ -46,6 +46,15 @@ pub type ProductionState = Arc<Mutex<RecordingManager>>;
 
 /// Type alias for listening manager state
 pub type ListeningState = Arc<Mutex<ListeningManager>>;
+
+/// Type alias for listening pipeline state
+pub type ListeningPipelineState = Arc<Mutex<ListeningPipeline>>;
+
+/// Type alias for hotkey integration state
+pub type HotkeyIntegrationState = Arc<Mutex<crate::hotkey::HotkeyIntegration<TauriEventEmitter, TauriEventEmitter, TauriEventEmitter>>>;
+
+/// Type alias for recording detectors state
+pub type RecordingDetectorsState = Arc<Mutex<crate::listening::RecordingDetectors>>;
 
 /// Tauri AppHandle-based event emitter for production use
 pub struct TauriEventEmitter {
@@ -303,9 +312,64 @@ pub fn enable_listening(
     app_handle: AppHandle,
     listening_state: State<'_, ListeningState>,
     recording_state: State<'_, ProductionState>,
+    listening_pipeline: State<'_, ListeningPipelineState>,
+    audio_thread: State<'_, AudioThreadState>,
+    hotkey_integration: State<'_, HotkeyIntegrationState>,
+    recording_detectors: State<'_, RecordingDetectorsState>,
 ) -> Result<(), String> {
-    let result =
-        enable_listening_impl(listening_state.as_ref(), recording_state.as_ref());
+    let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
+
+    // Set wake word callback to start recording when "Hey Cat" is detected
+    // The callback captures Arc clones so the original references can be dropped
+    let integration_for_callback = hotkey_integration.inner().clone();
+    let recording_for_callback = recording_state.inner().clone();
+    let detectors_for_callback = recording_detectors.inner().clone();
+    let audio_thread_for_callback = audio_thread.inner().clone();
+    let emitter_for_callback = Arc::new(TauriEventEmitter::new(app_handle.clone()));
+
+    if let Ok(pipeline_guard) = listening_pipeline.lock() {
+        pipeline_guard.set_wake_word_callback(Box::new(move || {
+            crate::info!("Wake word detected! Starting recording...");
+
+            // Start recording via HotkeyIntegration
+            let recording_started = if let Ok(mut guard) = integration_for_callback.lock() {
+                guard.handle_toggle(&recording_for_callback)
+            } else {
+                crate::error!("Failed to acquire integration lock for wake word callback");
+                false
+            };
+
+            // If recording started, start the silence/cancel detection
+            if recording_started {
+                // Get the audio buffer for detection
+                if let Ok(rm) = recording_for_callback.lock() {
+                    if let Ok(buffer) = rm.get_audio_buffer() {
+                        if let Ok(mut det) = detectors_for_callback.lock() {
+                            if let Err(e) = det.start_monitoring(
+                                buffer,
+                                recording_for_callback.clone(),
+                                audio_thread_for_callback.clone(),
+                                emitter_for_callback.clone(),
+                                true, // return_to_listening
+                            ) {
+                                crate::warn!("Failed to start recording detectors: {}", e);
+                            } else {
+                                crate::info!("Recording detectors started");
+                            }
+                        }
+                    }
+                }
+            }
+        }));
+    }
+
+    let result = enable_listening_impl(
+        listening_state.as_ref(),
+        recording_state.as_ref(),
+        listening_pipeline.as_ref(),
+        audio_thread.as_ref(),
+        emitter,
+    );
 
     // Emit event on success
     if result.is_ok() {
@@ -327,9 +391,15 @@ pub fn disable_listening(
     app_handle: AppHandle,
     listening_state: State<'_, ListeningState>,
     recording_state: State<'_, ProductionState>,
+    listening_pipeline: State<'_, ListeningPipelineState>,
+    audio_thread: State<'_, AudioThreadState>,
 ) -> Result<(), String> {
-    let result =
-        disable_listening_impl(listening_state.as_ref(), recording_state.as_ref());
+    let result = disable_listening_impl(
+        listening_state.as_ref(),
+        recording_state.as_ref(),
+        listening_pipeline.as_ref(),
+        audio_thread.as_ref(),
+    );
 
     // Emit event on success
     if result.is_ok() {

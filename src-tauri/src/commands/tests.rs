@@ -80,7 +80,7 @@ fn test_start_recording_returns_error_when_already_recording() {
     let result = start_recording_impl(&state, None, true);
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already in progress"));
+    assert!(result.unwrap_err().contains("already recording"));
 }
 
 #[test]

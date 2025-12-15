@@ -16,7 +16,6 @@
     "global-shortcut:allow-unregister",
     "log:default",
     "clipboard-manager:allow-write-text",
-    "http:default",
     {
       "identifier": "http:default",
       "allow": [

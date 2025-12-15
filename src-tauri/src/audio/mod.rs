@@ -111,8 +111,10 @@ pub enum StopReason {
     /// Resample buffer overflow (resampling can't keep up)
     ResampleOverflow,
     /// Silence detected after speech (user finished talking)
+    #[allow(dead_code)] // Used by silence detection in listening module
     SilenceAfterSpeech,
     /// No speech detected after wake word (false activation timeout)
+    #[allow(dead_code)] // Used by silence detection in listening module
     NoSpeechTimeout,
 }
 

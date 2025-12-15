@@ -64,6 +64,14 @@ pub fn run() {
             let listening_state = Arc::new(Mutex::new(listening::ListeningManager::new()));
             app.manage(listening_state.clone());
 
+            // Create and manage listening pipeline
+            let listening_pipeline = Arc::new(Mutex::new(listening::ListeningPipeline::new()));
+            app.manage(listening_pipeline.clone());
+
+            // Create and manage recording detectors (for silence/cancel detection during recording)
+            let recording_detectors = Arc::new(Mutex::new(listening::RecordingDetectors::new()));
+            app.manage(recording_detectors.clone());
+
             // Create event emitter, audio thread, and hotkey integration
             debug!("Creating audio thread...");
             let emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
@@ -144,6 +152,9 @@ pub fn run() {
             }
 
             let integration = Arc::new(Mutex::new(integration_builder));
+
+            // Manage integration state so it can be accessed from commands
+            app.manage(integration.clone());
 
             // Clone for callback
             let integration_clone = integration.clone();

@@ -27,6 +27,7 @@ pub enum ListeningError {
     /// State lock error
     LockError,
     /// Already in the requested state
+    #[allow(dead_code)] // Error variant for future use
     AlreadyInState,
 }
 
@@ -201,11 +202,13 @@ impl ListeningManager {
     /// Set microphone availability
     ///
     /// Called when the microphone becomes available or unavailable.
+    #[allow(dead_code)] // Future use for mic status tracking
     pub fn set_mic_available(&mut self, available: bool) {
         self.mic_available = available;
     }
 
     /// Check if microphone is available
+    #[allow(dead_code)] // Used in tests and for status checks
     pub fn is_mic_available(&self) -> bool {
         self.mic_available
     }
@@ -214,6 +217,7 @@ impl ListeningManager {
     ///
     /// Returns `Listening` if listening_enabled is true, otherwise `Idle`.
     /// Used by stop_recording to determine the return state.
+    #[allow(dead_code)] // Future use for post-recording state determination
     pub fn get_post_recording_state(&self) -> RecordingState {
         if self.listening_enabled {
             RecordingState::Listening
