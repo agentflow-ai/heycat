@@ -32,8 +32,8 @@ The listening mode settings reset to their default values after restarting the a
 
 ## Definition of Done
 
-- [ ] All specs completed
-- [ ] Technical guidance finalized
-- [ ] Code reviewed and approved
-- [ ] Tests written and passing
-- [ ] Root cause documented
+- [x] All specs completed
+- [x] Technical guidance finalized
+- [x] Code reviewed and approved
+- [x] Tests written and passing
+- [x] Root cause documented

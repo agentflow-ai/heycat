@@ -1,6 +1,6 @@
 ---
 last-updated: 2025-12-15
-status: draft
+status: finalized
 ---
 
 # Technical Guidance: Settings Not Persisting
