@@ -9,6 +9,93 @@ use super::types::{TranscriptionError, TranscriptionResult, TranscriptionState};
 use super::utils::fix_parakeet_text;
 use crate::info;
 
+// ============================================================================
+// TranscribingGuard - RAII guard for state transitions
+// ============================================================================
+
+/// RAII guard that manages transcription state transitions.
+///
+/// This guard ensures that:
+/// - State is set to `Transcribing` only when the guard is acquired
+/// - State is automatically reset to `Idle` when the guard is dropped
+/// - Panics during transcription don't leave the state stuck
+/// - Explicit errors can be recorded via `complete_with_error`
+///
+/// # Example
+/// ```ignore
+/// fn transcribe(&self) -> Result<String, TranscriptionError> {
+///     let _guard = TranscribingGuard::new(&self.state)?;
+///     // State is now Transcribing
+///
+///     let result = self.do_work()?;
+///     // Guard drops here, state becomes Idle
+///     Ok(result)
+/// }
+/// ```
+pub struct TranscribingGuard {
+    state: Arc<Mutex<TranscriptionState>>,
+    completed: bool,
+}
+
+impl TranscribingGuard {
+    /// Create a new TranscribingGuard, setting state to Transcribing.
+    ///
+    /// # Errors
+    /// - `LockPoisoned` if the state mutex is poisoned
+    /// - `ModelNotLoaded` if the model is in Unloaded state
+    pub fn new(state: Arc<Mutex<TranscriptionState>>) -> TranscriptionResult<Self> {
+        let mut guard = state.lock().map_err(|_| TranscriptionError::LockPoisoned)?;
+        if *guard == TranscriptionState::Unloaded {
+            return Err(TranscriptionError::ModelNotLoaded);
+        }
+        *guard = TranscriptionState::Transcribing;
+        drop(guard); // Release the lock before returning
+        Ok(Self {
+            state,
+            completed: false,
+        })
+    }
+
+    /// Mark the transcription as completed successfully.
+    ///
+    /// Sets state to `Completed` and marks the guard as completed
+    /// so it won't reset to `Idle` on drop.
+    pub fn complete_success(&mut self) {
+        if let Ok(mut guard) = self.state.lock() {
+            *guard = TranscriptionState::Completed;
+        }
+        self.completed = true;
+    }
+
+    /// Mark the transcription as failed with an error.
+    ///
+    /// Sets state to `Error` and marks the guard as completed
+    /// so it won't reset to `Idle` on drop.
+    pub fn complete_with_error(&mut self) {
+        if let Ok(mut guard) = self.state.lock() {
+            *guard = TranscriptionState::Error;
+        }
+        self.completed = true;
+    }
+}
+
+impl Drop for TranscribingGuard {
+    fn drop(&mut self) {
+        // Only reset to Idle if we didn't explicitly complete
+        // This handles both normal completion (where we want Idle)
+        // and panics (where we want to reset from Transcribing)
+        if !self.completed {
+            if let Ok(mut guard) = self.state.lock() {
+                // Only reset if still in Transcribing state
+                // (in case someone else changed it)
+                if *guard == TranscriptionState::Transcribing {
+                    *guard = TranscriptionState::Idle;
+                }
+            }
+        }
+    }
+}
+
 /// Shared transcription model wrapper for ParakeetTDT
 ///
 /// This struct provides thread-safe access to a single Parakeet model instance
@@ -96,33 +183,6 @@ impl SharedTranscriptionModel {
             .unwrap_or(TranscriptionState::Unloaded)
     }
 
-    /// Set state to Transcribing (called before transcription)
-    fn set_transcribing(&self) -> TranscriptionResult<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| TranscriptionError::LockPoisoned)?;
-        if *state == TranscriptionState::Unloaded {
-            return Err(TranscriptionError::ModelNotLoaded);
-        }
-        *state = TranscriptionState::Transcribing;
-        Ok(())
-    }
-
-    /// Set state based on transcription result
-    fn set_completion_state(&self, success: bool) -> TranscriptionResult<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| TranscriptionError::LockPoisoned)?;
-        *state = if success {
-            TranscriptionState::Completed
-        } else {
-            TranscriptionState::Error
-        };
-        Ok(())
-    }
-
     /// Reset state from Completed/Error back to Idle
     pub fn reset_to_idle(&self) -> TranscriptionResult<()> {
         let mut state = self
@@ -139,6 +199,11 @@ impl SharedTranscriptionModel {
     /// Transcribe audio from a WAV file to text
     ///
     /// This is the primary method for batch transcription (hotkey recording).
+    ///
+    /// Uses RAII guard to ensure state transitions are atomic and panic-safe:
+    /// - State becomes Transcribing when guard is acquired
+    /// - State becomes Completed/Error when guard completes
+    /// - State resets to Idle on panic
     pub fn transcribe_file(&self, file_path: &str) -> TranscriptionResult<String> {
         if file_path.is_empty() {
             return Err(TranscriptionError::InvalidAudio(
@@ -146,15 +211,17 @@ impl SharedTranscriptionModel {
             ));
         }
 
-        self.set_transcribing()?;
+        // Acquire guard - sets state to Transcribing
+        let mut state_guard = TranscribingGuard::new(self.state.clone())?;
 
+        // Do the actual transcription work
         let result = {
-            let mut guard = self
+            let mut model_guard = self
                 .model
                 .lock()
                 .map_err(|_| TranscriptionError::LockPoisoned)?;
 
-            let tdt = guard.as_mut().ok_or(TranscriptionError::ModelNotLoaded)?;
+            let tdt = model_guard.as_mut().ok_or(TranscriptionError::ModelNotLoaded)?;
 
             match tdt.transcribe_file(file_path, None) {
                 Ok(transcribe_result) => {
@@ -171,7 +238,12 @@ impl SharedTranscriptionModel {
             }
         };
 
-        let _ = self.set_completion_state(result.is_ok());
+        // Set completion state explicitly
+        match &result {
+            Ok(_) => state_guard.complete_success(),
+            Err(_) => state_guard.complete_with_error(),
+        }
+
         result
     }
 
@@ -360,5 +432,118 @@ mod tests {
 
         handle1.join().unwrap();
         handle2.join().unwrap();
+    }
+
+    // ==========================================================================
+    // TranscribingGuard Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_guard_sets_state_to_transcribing_on_creation() {
+        let state = Arc::new(Mutex::new(TranscriptionState::Idle));
+        let guard = TranscribingGuard::new(state.clone()).unwrap();
+        assert_eq!(*state.lock().unwrap(), TranscriptionState::Transcribing);
+        drop(guard);
+    }
+
+    #[test]
+    fn test_guard_resets_state_to_idle_on_drop() {
+        let state = Arc::new(Mutex::new(TranscriptionState::Idle));
+        {
+            let _guard = TranscribingGuard::new(state.clone()).unwrap();
+            assert_eq!(*state.lock().unwrap(), TranscriptionState::Transcribing);
+        }
+        // Guard dropped, state should be Idle
+        assert_eq!(*state.lock().unwrap(), TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_guard_resets_state_to_idle_on_panic() {
+        use std::panic;
+
+        let state = Arc::new(Mutex::new(TranscriptionState::Idle));
+        let state_clone = state.clone();
+
+        let result = panic::catch_unwind(move || {
+            let _guard = TranscribingGuard::new(state_clone).unwrap();
+            panic!("Simulated panic during transcription");
+        });
+
+        assert!(result.is_err()); // Panic occurred
+        // Guard should have reset state to Idle despite panic
+        assert_eq!(*state.lock().unwrap(), TranscriptionState::Idle);
+    }
+
+    #[test]
+    fn test_guard_complete_success_sets_completed_state() {
+        let state = Arc::new(Mutex::new(TranscriptionState::Idle));
+        {
+            let mut guard = TranscribingGuard::new(state.clone()).unwrap();
+            assert_eq!(*state.lock().unwrap(), TranscriptionState::Transcribing);
+            guard.complete_success();
+            assert_eq!(*state.lock().unwrap(), TranscriptionState::Completed);
+        }
+        // State remains Completed after drop (not reset to Idle)
+        assert_eq!(*state.lock().unwrap(), TranscriptionState::Completed);
+    }
+
+    #[test]
+    fn test_guard_complete_with_error_sets_error_state() {
+        let state = Arc::new(Mutex::new(TranscriptionState::Idle));
+        {
+            let mut guard = TranscribingGuard::new(state.clone()).unwrap();
+            assert_eq!(*state.lock().unwrap(), TranscriptionState::Transcribing);
+            guard.complete_with_error();
+            assert_eq!(*state.lock().unwrap(), TranscriptionState::Error);
+        }
+        // State remains Error after drop (not reset to Idle)
+        assert_eq!(*state.lock().unwrap(), TranscriptionState::Error);
+    }
+
+    #[test]
+    fn test_guard_fails_when_model_not_loaded() {
+        let state = Arc::new(Mutex::new(TranscriptionState::Unloaded));
+        let result = TranscribingGuard::new(state.clone());
+        assert!(result.is_err());
+        assert!(matches!(result, Err(TranscriptionError::ModelNotLoaded)));
+        // State unchanged
+        assert_eq!(*state.lock().unwrap(), TranscriptionState::Unloaded);
+    }
+
+    #[test]
+    fn test_concurrent_guards_are_consistent() {
+        use std::thread;
+
+        let state = Arc::new(Mutex::new(TranscriptionState::Idle));
+        let mut handles = vec![];
+
+        // Spawn threads that create and drop guards rapidly
+        for _ in 0..10 {
+            let state_clone = state.clone();
+            handles.push(thread::spawn(move || {
+                for _ in 0..100 {
+                    // Try to acquire guard - may fail if state is wrong
+                    if let Ok(guard) = TranscribingGuard::new(state_clone.clone()) {
+                        // Do some "work"
+                        std::hint::black_box(1 + 1);
+                        drop(guard);
+                    }
+                    // Small yield to increase contention
+                    std::thread::yield_now();
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // After all threads complete, state should be Idle (or possibly Transcribing if one is in progress)
+        let final_state = *state.lock().unwrap();
+        assert!(
+            final_state == TranscriptionState::Idle || final_state == TranscriptionState::Transcribing,
+            "Final state should be Idle or Transcribing, got {:?}",
+            final_state
+        );
     }
 }
