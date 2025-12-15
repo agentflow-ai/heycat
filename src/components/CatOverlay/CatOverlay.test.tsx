@@ -77,32 +77,6 @@ describe("CatOverlay", () => {
     expect(overlay?.className).toContain("cat-overlay--listening");
   });
 
-  it("shows listening indicator in listening mode", async () => {
-    const { container } = render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(overlayModeCallback).not.toBeNull();
-    });
-
-    setOverlayMode("listening", false);
-
-    const indicator = container.querySelector(".cat-overlay__indicator--listening");
-    expect(indicator).not.toBeNull();
-  });
-
-  it("does not show listening indicator in recording mode", async () => {
-    const { container } = render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(overlayModeCallback).not.toBeNull();
-    });
-
-    setOverlayMode("recording", false);
-
-    const indicator = container.querySelector(".cat-overlay__indicator--listening");
-    expect(indicator).toBeNull();
-  });
-
   it("applies unavailable class when mic is unavailable", async () => {
     const { container } = render(<CatOverlay />);
 
@@ -114,19 +88,6 @@ describe("CatOverlay", () => {
 
     const overlay = container.querySelector(".cat-overlay");
     expect(overlay?.className).toContain("cat-overlay--unavailable");
-  });
-
-  it("shows unavailable indicator when mic is unavailable", async () => {
-    const { container } = render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(overlayModeCallback).not.toBeNull();
-    });
-
-    setOverlayMode("listening", true);
-
-    const indicator = container.querySelector(".cat-overlay__indicator--unavailable");
-    expect(indicator).not.toBeNull();
   });
 
   it("cleans up event listener on unmount", async () => {

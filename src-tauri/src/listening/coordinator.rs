@@ -1,7 +1,6 @@
 // Recording detection coordinator
-// Manages silence and cancel phrase detection during recording phase
+// Manages silence detection during recording phase
 
-use super::cancel::{CancelPhraseDetector, CancelPhraseDetectorConfig, CancelPhraseError};
 use super::silence::{SilenceConfig, SilenceDetectionResult, SilenceDetector, SilenceStopReason};
 use super::ListeningPipeline;
 use crate::audio::{encode_wav, AudioBuffer, SystemFileWriter, TARGET_SAMPLE_RATE};
@@ -12,18 +11,15 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-/// Coordinator for silence and cancel phrase detection during recording
+/// Coordinator for silence detection during recording
 ///
 /// When recording starts (triggered by wake word or hotkey), this coordinator:
 /// 1. Starts monitoring audio for silence to auto-stop recording
-/// 2. Starts monitoring for cancel phrases ("cancel", "nevermind") to abort
-/// 3. Feeds audio samples to both detectors
-/// 4. Triggers appropriate actions based on detection results
+/// 2. Feeds audio samples to the silence detector
+/// 3. Triggers appropriate actions based on detection results
 pub struct RecordingDetectors {
     /// Silence detector configuration
     silence_config: SilenceConfig,
-    /// Cancel phrase detector configuration
-    cancel_config: CancelPhraseDetectorConfig,
     /// Detection thread handle
     detection_thread: Option<JoinHandle<()>>,
     /// Flag to stop the detection thread
@@ -33,14 +29,13 @@ pub struct RecordingDetectors {
 impl RecordingDetectors {
     /// Create a new recording detectors coordinator with default configuration
     pub fn new() -> Self {
-        Self::with_config(SilenceConfig::default(), CancelPhraseDetectorConfig::default())
+        Self::with_config(SilenceConfig::default())
     }
 
     /// Create a new recording detectors coordinator with custom configuration
-    pub fn with_config(silence_config: SilenceConfig, cancel_config: CancelPhraseDetectorConfig) -> Self {
+    pub fn with_config(silence_config: SilenceConfig) -> Self {
         Self {
             silence_config,
-            cancel_config,
             detection_thread: None,
             should_stop: Arc::new(AtomicBool::new(false)),
         }
@@ -102,19 +97,9 @@ impl RecordingDetectors {
         // Reset stop flag
         self.should_stop.store(false, Ordering::SeqCst);
 
-        // Create detectors
+        // Create silence detector
         let mut silence_detector = SilenceDetector::with_config(self.silence_config.clone());
         silence_detector.reset();
-
-        let cancel_detector = CancelPhraseDetector::with_config(self.cancel_config.clone());
-        // Load cancel phrase model
-        if let Err(e) = cancel_detector.load_model() {
-            crate::warn!("Cancel phrase model not loaded, cancel detection disabled: {}", e);
-        }
-        // Start cancel detection session
-        if let Err(e) = cancel_detector.start_session() {
-            crate::warn!("Failed to start cancel detection session: {}", e);
-        }
 
         let should_stop = self.should_stop.clone();
 
@@ -123,7 +108,6 @@ impl RecordingDetectors {
             detection_loop(
                 buffer,
                 silence_detector,
-                cancel_detector,
                 recording_manager,
                 audio_thread,
                 emitter,
@@ -165,12 +149,11 @@ impl Drop for RecordingDetectors {
 
 /// Main detection loop
 ///
-/// Reads audio samples and feeds them to silence and cancel detectors.
+/// Reads audio samples and feeds them to the silence detector.
 /// Takes action based on detection results.
 fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
     buffer: AudioBuffer,
     mut silence_detector: SilenceDetector,
-    cancel_detector: CancelPhraseDetector,
     recording_manager: Arc<Mutex<RecordingManager>>,
     audio_thread: Arc<crate::audio::AudioThreadHandle>,
     emitter: Arc<E>,
@@ -250,41 +233,6 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
                 "[coordinator] Processing {} samples for detection",
                 samples_since_last_check.len()
             );
-
-            // Feed to cancel phrase detector (only during cancellation window)
-            if cancel_detector.is_window_open() {
-                crate::trace!(
-                    "[coordinator] Cancel window open, remaining={:.2}s",
-                    cancel_detector.remaining_window_secs()
-                );
-                let _ = cancel_detector.push_samples(&samples_since_last_check);
-
-                // Try to analyze for cancel phrase
-                match cancel_detector.analyze_and_abort(emitter.as_ref(), &recording_manager, return_to_listening) {
-                    Ok(result) => {
-                        if result.detected {
-                            crate::info!(
-                                "[coordinator] Cancel phrase detected: '{}', aborting recording",
-                                result.phrase.as_ref().unwrap_or(&"unknown".to_string())
-                            );
-                            // Stop audio capture
-                            let _ = audio_thread.stop();
-                            break;
-                        } else {
-                            crate::trace!("[coordinator] No cancel phrase detected");
-                        }
-                    }
-                    Err(CancelPhraseError::WindowExpired) => {
-                        crate::debug!("[coordinator] Cancel detection window expired");
-                    }
-                    Err(CancelPhraseError::ModelNotLoaded) => {
-                        // Model not loaded, skip cancel detection (only log once)
-                    }
-                    Err(e) => {
-                        crate::debug!("[coordinator] Cancel phrase detection error: {}", e);
-                    }
-                }
-            }
 
             // Feed to silence detector
             let silence_result = silence_detector.process_samples(&samples_since_last_check);
@@ -448,9 +396,6 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
     }
 
     crate::debug!("[coordinator] Detection loop exited after {} iterations", loop_count);
-
-    // Clean up cancel detector session
-    let _ = cancel_detector.end_session();
 }
 
 #[cfg(test)]
@@ -469,11 +414,7 @@ mod tests {
             silence_duration_ms: 1000,
             ..Default::default()
         };
-        let cancel_config = CancelPhraseDetectorConfig {
-            cancellation_window_secs: 5.0,
-            ..Default::default()
-        };
-        let detectors = RecordingDetectors::with_config(silence_config, cancel_config);
+        let detectors = RecordingDetectors::with_config(silence_config);
         assert!(!detectors.is_running());
     }
 

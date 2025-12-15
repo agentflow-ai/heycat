@@ -32,27 +32,6 @@
   filter: grayscale(0.5);
 }
 
-/* Visual indicator dot */
-.cat-overlay__indicator {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-/* Listening indicator: subtle blue pulse */
-.cat-overlay__indicator--listening {
-  background: #3b82f6;
-  animation: pulse-indicator 1.5s ease-in-out infinite;
-}
-
-/* Unavailable indicator: red warning */
-.cat-overlay__indicator--unavailable {
-  background: #ef4444;
-  animation: blink-indicator 1s ease-in-out infinite;
-}
 
 @keyframes pulse-listening {
   0%, 100% {
@@ -65,22 +44,3 @@
   }
 }
 
-@keyframes pulse-indicator {
-  0%, 100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.2);
-  }
-}
-
-@keyframes blink-indicator {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}

@@ -140,10 +140,6 @@ impl crate::events::ListeningEventEmitter for MockEmitter {
     fn emit_listening_unavailable(&self, _payload: crate::events::listening_events::ListeningUnavailablePayload) {
         // No-op for tests
     }
-
-    fn emit_recording_cancelled(&self, _payload: crate::events::listening_events::RecordingCancelledPayload) {
-        // No-op for tests
-    }
 }
 
 /// Type alias for HotkeyIntegration with MockEmitter for all parameters

@@ -3,7 +3,6 @@
 // and ListeningManager for coordinating listening state with recording
 
 mod buffer;
-mod cancel;
 mod coordinator;
 mod detector;
 mod manager;
@@ -18,10 +17,6 @@ pub use pipeline::ListeningPipeline;
 
 // Recording phase detectors - implemented but integration pending
 // These will be wired when RecordingDetectors is integrated into HotkeyIntegration
-#[allow(unused_imports)]
-pub use cancel::{
-    CancelPhraseDetector, CancelPhraseDetectorConfig, CancelPhraseError, CancelPhraseResult,
-};
 #[allow(unused_imports)]
 pub use coordinator::RecordingDetectors;
 #[allow(unused_imports)]

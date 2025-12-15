@@ -65,12 +65,6 @@ export function CatOverlay() {
         playsInline
         autoPlay
       />
-      {mode === "listening" && (
-        <div className="cat-overlay__indicator cat-overlay__indicator--listening" />
-      )}
-      {isMicUnavailable && (
-        <div className="cat-overlay__indicator cat-overlay__indicator--unavailable" />
-      )}
     </div>
   );
 }

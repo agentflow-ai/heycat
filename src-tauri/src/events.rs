@@ -29,7 +29,6 @@ pub mod listening_events {
     pub const LISTENING_STARTED: &str = "listening_started";
     pub const LISTENING_STOPPED: &str = "listening_stopped";
     pub const LISTENING_UNAVAILABLE: &str = "listening_unavailable";
-    pub const RECORDING_CANCELLED: &str = "recording_cancelled";
 
     /// Payload for wake_word_detected event
     #[derive(Debug, Clone, serde::Serialize, PartialEq)]
@@ -68,16 +67,6 @@ pub mod listening_events {
         /// ISO 8601 timestamp when listening became unavailable
         pub timestamp: String,
     }
-
-    /// Payload for recording_cancelled event
-    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct RecordingCancelledPayload {
-        /// The cancel phrase that was detected (e.g., "cancel", "nevermind")
-        pub cancel_phrase: String,
-        /// ISO 8601 timestamp when cancellation was triggered
-        pub timestamp: String,
-    }
 }
 
 /// Trait for emitting listening events
@@ -98,9 +87,6 @@ pub trait ListeningEventEmitter: Send + Sync {
 
     /// Emit listening_unavailable event
     fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload);
-
-    /// Emit recording_cancelled event
-    fn emit_recording_cancelled(&self, payload: listening_events::RecordingCancelledPayload);
 }
 
 /// Model-related event names
@@ -309,7 +295,6 @@ pub(crate) mod tests {
         pub listening_started_events: Arc<Mutex<Vec<listening_events::ListeningStartedPayload>>>,
         pub listening_stopped_events: Arc<Mutex<Vec<listening_events::ListeningStoppedPayload>>>,
         pub listening_unavailable_events: Arc<Mutex<Vec<listening_events::ListeningUnavailablePayload>>>,
-        pub recording_cancelled_events: Arc<Mutex<Vec<listening_events::RecordingCancelledPayload>>>,
     }
 
     impl MockEventEmitter {
@@ -379,10 +364,6 @@ pub(crate) mod tests {
 
         fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload) {
             self.listening_unavailable_events.lock().unwrap().push(payload);
-        }
-
-        fn emit_recording_cancelled(&self, payload: listening_events::RecordingCancelledPayload) {
-            self.recording_cancelled_events.lock().unwrap().push(payload);
         }
     }
 
@@ -1033,48 +1014,5 @@ pub(crate) mod tests {
             timestamp: "2025-01-01T12:00:00Z".to_string(),
         });
         assert_eq!(emitter.listening_unavailable_events.lock().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_recording_cancelled_event_name_constant() {
-        assert_eq!(listening_events::RECORDING_CANCELLED, "recording_cancelled");
-    }
-
-    #[test]
-    fn test_recording_cancelled_payload_serialization() {
-        use super::listening_events::RecordingCancelledPayload;
-        let payload = RecordingCancelledPayload {
-            cancel_phrase: "cancel".to_string(),
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        };
-        let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains("cancelPhrase"));
-        assert!(json.contains("cancel"));
-        assert!(json.contains("timestamp"));
-    }
-
-    #[test]
-    fn test_recording_cancelled_payload_clone() {
-        use super::listening_events::RecordingCancelledPayload;
-        let payload = RecordingCancelledPayload {
-            cancel_phrase: "nevermind".to_string(),
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        };
-        let cloned = payload.clone();
-        assert_eq!(payload, cloned);
-    }
-
-    #[test]
-    fn test_mock_emitter_records_recording_cancelled_events() {
-        let emitter = MockEventEmitter::new();
-
-        emitter.emit_recording_cancelled(listening_events::RecordingCancelledPayload {
-            cancel_phrase: "cancel".to_string(),
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        });
-        assert_eq!(emitter.recording_cancelled_events.lock().unwrap().len(), 1);
-
-        let events = emitter.recording_cancelled_events.lock().unwrap();
-        assert_eq!(events[0].cancel_phrase, "cancel");
     }
 }
