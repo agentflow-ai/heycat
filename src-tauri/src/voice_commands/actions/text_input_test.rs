@@ -38,6 +38,7 @@ async fn test_missing_text_parameter_returns_error() {
 
 #[tokio::test]
 #[cfg(target_os = "macos")]
+#[ignore] // Types into active window - skip during local dev
 async fn test_type_hello_world() {
     // This test requires Accessibility permission to be granted
     // If permission is not granted, we expect PERMISSION_DENIED error
@@ -57,6 +58,7 @@ async fn test_type_hello_world() {
 
 #[tokio::test]
 #[cfg(target_os = "macos")]
+#[ignore] // Types into active window - skip during local dev
 async fn test_type_special_characters() {
     let action = TextInputAction::new();
     let result = action.execute(&params("!@#$%")).await;
@@ -73,6 +75,7 @@ async fn test_type_special_characters() {
 
 #[tokio::test]
 #[cfg(target_os = "macos")]
+#[ignore] // Types into active window - skip during local dev
 async fn test_type_unicode_characters() {
     let action = TextInputAction::new();
     let result = action.execute(&params("héllo 🎉")).await;
@@ -90,6 +93,7 @@ async fn test_type_unicode_characters() {
 
 #[tokio::test]
 #[cfg(target_os = "macos")]
+#[ignore] // Types into active window - skip during local dev
 async fn test_configurable_delay() {
     let action = TextInputAction::new();
     // Test with custom delay
