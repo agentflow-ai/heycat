@@ -171,6 +171,23 @@ impl std::fmt::Display for WakeWordError {
 
 impl std::error::Error for WakeWordError {}
 
+/// Internal mutable state for WakeWordDetector.
+///
+/// All fields are protected by a single lock for simplicity and deadlock prevention.
+/// This coarse-grained locking is intentional: the analysis interval is 150ms,
+/// so contention is minimal, and simplicity trumps micro-optimization here.
+struct DetectorState {
+    /// Circular buffer for audio samples
+    buffer: CircularBuffer,
+    /// Sample count at last analysis (for tracking new samples)
+    last_analysis_sample_count: u64,
+    /// Recent audio fingerprints for deduplication (stores last 5)
+    /// Uses sample indices to identify audio segments, independent of transcription text
+    recent_fingerprints: VecDeque<AudioFingerprint>,
+    /// Voice Activity Detector for filtering non-speech audio
+    vad: Option<VoiceActivityDetector>,
+}
+
 /// Wake word detector using Parakeet TDT model
 ///
 /// Processes audio samples in small windows to detect the wake phrase.
@@ -183,15 +200,8 @@ pub struct WakeWordDetector {
     config: WakeWordDetectorConfig,
     /// Shared transcription model (wraps ParakeetTDT)
     shared_model: Option<SharedTranscriptionModel>,
-    /// Circular buffer for audio samples
-    buffer: Mutex<CircularBuffer>,
-    /// Sample count at last analysis (for tracking new samples)
-    last_analysis_sample_count: Mutex<u64>,
-    /// Recent audio fingerprints for deduplication (stores last 5)
-    /// Uses sample indices to identify audio segments, independent of transcription text
-    recent_fingerprints: Mutex<VecDeque<AudioFingerprint>>,
-    /// Voice Activity Detector for filtering non-speech audio
-    vad: Mutex<Option<VoiceActivityDetector>>,
+    /// All mutable state protected by a single lock (coarse-grained for simplicity)
+    state: Mutex<DetectorState>,
 }
 
 impl WakeWordDetector {
@@ -206,10 +216,12 @@ impl WakeWordDetector {
         Self {
             config,
             shared_model: None,
-            buffer: Mutex::new(buffer),
-            last_analysis_sample_count: Mutex::new(0),
-            recent_fingerprints: Mutex::new(VecDeque::with_capacity(5)),
-            vad: Mutex::new(None),
+            state: Mutex::new(DetectorState {
+                buffer,
+                last_analysis_sample_count: 0,
+                recent_fingerprints: VecDeque::with_capacity(5),
+                vad: None,
+            }),
         }
     }
 
@@ -231,10 +243,12 @@ impl WakeWordDetector {
         Self {
             config,
             shared_model: Some(shared_model),
-            buffer: Mutex::new(buffer),
-            last_analysis_sample_count: Mutex::new(0),
-            recent_fingerprints: Mutex::new(VecDeque::with_capacity(5)),
-            vad: Mutex::new(None),
+            state: Mutex::new(DetectorState {
+                buffer,
+                last_analysis_sample_count: 0,
+                recent_fingerprints: VecDeque::with_capacity(5),
+                vad: None,
+            }),
         }
     }
 
@@ -275,8 +289,8 @@ impl WakeWordDetector {
             }
         })?;
 
-        let mut vad_guard = self.vad.lock().map_err(|_| WakeWordError::LockPoisoned)?;
-        *vad_guard = Some(vad);
+        let mut state = self.state.lock().map_err(|_| WakeWordError::LockPoisoned)?;
+        state.vad = Some(vad);
 
         crate::info!(
             "[wake-word] VAD initialized (threshold={})",
@@ -300,8 +314,8 @@ impl WakeWordDetector {
     /// Call this with incoming audio data from the audio capture.
     pub fn push_samples(&self, samples: &[f32]) -> Result<(), WakeWordError> {
         crate::trace!("[wake-word] Pushing {} samples to buffer", samples.len());
-        let mut buffer = self.buffer.lock().map_err(|_| WakeWordError::LockPoisoned)?;
-        buffer.push_samples(samples);
+        let mut state = self.state.lock().map_err(|_| WakeWordError::LockPoisoned)?;
+        state.buffer.push_samples(samples);
         Ok(())
     }
 
@@ -310,28 +324,22 @@ impl WakeWordDetector {
     /// Returns a WakeWordResult indicating whether the wake phrase was detected.
     /// Skips analysis if not enough new samples have accumulated since last analysis.
     pub fn analyze(&self) -> Result<WakeWordResult, WakeWordError> {
-        // Get samples from buffer and calculate audio fingerprint
-        let (samples, fingerprint) = {
-            let buffer = self.buffer.lock().map_err(|_| WakeWordError::LockPoisoned)?;
-            if buffer.is_empty() {
-                return Err(WakeWordError::EmptyBuffer);
-            }
-            let samples = buffer.get_samples();
-            let end_idx = buffer.total_samples_pushed();
-            let start_idx = end_idx.saturating_sub(samples.len() as u64);
-            (samples, AudioFingerprint { start_idx, end_idx })
-        };
+        // Acquire the single state lock for the entire operation
+        let mut state = self.state.lock().map_err(|_| WakeWordError::LockPoisoned)?;
+
+        // Check if buffer is empty
+        if state.buffer.is_empty() {
+            return Err(WakeWordError::EmptyBuffer);
+        }
+
+        // Get samples and calculate audio fingerprint
+        let samples = state.buffer.get_samples();
+        let end_idx = state.buffer.total_samples_pushed();
+        let start_idx = end_idx.saturating_sub(samples.len() as u64);
+        let fingerprint = AudioFingerprint { start_idx, end_idx };
 
         // Check if we have enough new samples since last analysis
-        let last_count = {
-            let guard = self
-                .last_analysis_sample_count
-                .lock()
-                .map_err(|_| WakeWordError::LockPoisoned)?;
-            *guard
-        };
-
-        let new_samples = fingerprint.end_idx.saturating_sub(last_count) as usize;
+        let new_samples = fingerprint.end_idx.saturating_sub(state.last_analysis_sample_count) as usize;
         if new_samples < self.config.min_new_samples_for_analysis {
             crate::trace!(
                 "[wake-word] Skipping analysis: only {} new samples (need {})",
@@ -342,20 +350,14 @@ impl WakeWordDetector {
         }
 
         // Check for duplicate audio using fingerprint (>50% overlap with recent)
-        {
-            let fingerprints = self
-                .recent_fingerprints
-                .lock()
-                .map_err(|_| WakeWordError::LockPoisoned)?;
-            for fp in fingerprints.iter() {
-                let overlap = fingerprint.overlap_ratio(fp);
-                if overlap >= FINGERPRINT_OVERLAP_THRESHOLD {
-                    crate::trace!(
-                        "[wake-word] Skipping duplicate audio: {:.1}% overlap with recent fingerprint",
-                        overlap * 100.0
-                    );
-                    return Err(WakeWordError::DuplicateAudio);
-                }
+        for fp in state.recent_fingerprints.iter() {
+            let overlap = fingerprint.overlap_ratio(fp);
+            if overlap >= FINGERPRINT_OVERLAP_THRESHOLD {
+                crate::trace!(
+                    "[wake-word] Skipping duplicate audio: {:.1}% overlap with recent fingerprint",
+                    overlap * 100.0
+                );
+                return Err(WakeWordError::DuplicateAudio);
             }
         }
 
@@ -367,13 +369,18 @@ impl WakeWordDetector {
 
         // VAD check - skip expensive transcription if no speech detected
         if self.config.vad_enabled {
-            let has_speech = self.check_vad(&samples)?;
+            let has_speech = Self::check_vad_internal(&mut state.vad, &samples, &self.config)?;
             if !has_speech {
                 crate::trace!("[wake-word] VAD: No speech detected, skipping transcription");
                 return Err(WakeWordError::NoSpeechDetected);
             }
             crate::debug!("[wake-word] VAD: Speech detected, proceeding with transcription");
         }
+
+        // Drop the lock before expensive transcription to avoid blocking push_samples
+        // We clone the samples since we need them after releasing the lock
+        let samples_clone = samples.clone();
+        drop(state);
 
         // Transcribe the audio using the shared model
         let transcribe_start = std::time::Instant::now();
@@ -383,7 +390,7 @@ impl WakeWordDetector {
             .ok_or(WakeWordError::ModelNotLoaded)?;
 
         let transcription = shared_model
-            .transcribe_samples(samples, self.config.sample_rate, 1)
+            .transcribe_samples(samples_clone, self.config.sample_rate, 1)
             .map_err(|e| WakeWordError::TranscriptionFailed(e.to_string()))?;
         let transcribe_duration = transcribe_start.elapsed();
 
@@ -403,29 +410,20 @@ impl WakeWordDetector {
             });
         }
 
-        // Update sample count and store fingerprint after successful transcription
-        {
-            let mut guard = self
-                .last_analysis_sample_count
-                .lock()
-                .map_err(|_| WakeWordError::LockPoisoned)?;
-            *guard = fingerprint.end_idx;
+        // Re-acquire lock to update state after successful transcription
+        let mut state = self.state.lock().map_err(|_| WakeWordError::LockPoisoned)?;
+
+        // Update sample count and store fingerprint
+        state.last_analysis_sample_count = fingerprint.end_idx;
+        state.recent_fingerprints.push_back(fingerprint);
+        // Keep only last 5 fingerprints
+        while state.recent_fingerprints.len() > 5 {
+            state.recent_fingerprints.pop_front();
         }
-        {
-            let mut fingerprints = self
-                .recent_fingerprints
-                .lock()
-                .map_err(|_| WakeWordError::LockPoisoned)?;
-            fingerprints.push_back(fingerprint);
-            // Keep only last 5 fingerprints
-            while fingerprints.len() > 5 {
-                fingerprints.pop_front();
-            }
-            crate::trace!(
-                "[wake-word] Stored fingerprint, total={} recent fingerprints",
-                fingerprints.len()
-            );
-        }
+        crate::trace!(
+            "[wake-word] Stored fingerprint, total={} recent fingerprints",
+            state.recent_fingerprints.len()
+        );
 
         crate::debug!(
             "[wake-word] Transcribed in {:?}: '{}'",
@@ -489,45 +487,32 @@ impl WakeWordDetector {
     ///
     /// Call this after a wake word is detected to reset for next detection.
     pub fn clear_buffer(&self) -> Result<(), WakeWordError> {
+        let mut state = self.state.lock().map_err(|_| WakeWordError::LockPoisoned)?;
+
         // Clear the audio buffer
-        {
-            let mut buffer = self.buffer.lock().map_err(|_| WakeWordError::LockPoisoned)?;
-            buffer.clear();
-            buffer.reset_sample_counter();
-        }
+        state.buffer.clear();
+        state.buffer.reset_sample_counter();
 
         // Reset analysis tracking
-        {
-            let mut count = self
-                .last_analysis_sample_count
-                .lock()
-                .map_err(|_| WakeWordError::LockPoisoned)?;
-            *count = 0;
-        }
+        state.last_analysis_sample_count = 0;
 
         // Clear recent fingerprints to allow fresh detection
-        {
-            let mut fingerprints = self
-                .recent_fingerprints
-                .lock()
-                .map_err(|_| WakeWordError::LockPoisoned)?;
-            fingerprints.clear();
-        }
+        state.recent_fingerprints.clear();
 
         Ok(())
     }
 
-    /// Check if audio samples contain speech using Voice Activity Detection
+    /// Check if audio samples contain speech using Voice Activity Detection (internal helper)
     ///
-    /// Returns true if speech is detected in enough frames of the audio.
-    /// Uses Silero VAD with 512-sample chunks at 16kHz.
-    /// Now uses min_speech_frames (default: 2) instead of 10% ratio for better
-    /// detection of short utterances like "hello".
-    fn check_vad(&self, samples: &[f32]) -> Result<bool, WakeWordError> {
-        let mut vad_guard = self.vad.lock().map_err(|_| WakeWordError::LockPoisoned)?;
-
+    /// This is the internal implementation that takes the VAD directly to avoid
+    /// re-acquiring the lock when called from analyze().
+    fn check_vad_internal(
+        vad: &mut Option<VoiceActivityDetector>,
+        samples: &[f32],
+        config: &WakeWordDetectorConfig,
+    ) -> Result<bool, WakeWordError> {
         // If VAD not initialized, conservatively assume speech is present
-        let vad = match vad_guard.as_mut() {
+        let vad = match vad.as_mut() {
             Some(v) => v,
             None => {
                 crate::trace!("[wake-word] VAD not initialized, assuming speech present");
@@ -545,11 +530,11 @@ impl WakeWordDetector {
             if chunk.len() == CHUNK_SIZE {
                 let probability = vad.predict(chunk.to_vec());
                 max_probability = max_probability.max(probability);
-                if probability >= self.config.vad_speech_threshold {
+                if probability >= config.vad_speech_threshold {
                     speech_frames += 1;
                     // Early return on confident speech detection for performance
                     // This ensures short utterances like "hello" trigger analysis quickly
-                    if speech_frames >= self.config.min_speech_frames + 1 {
+                    if speech_frames >= config.min_speech_frames + 1 {
                         crate::trace!(
                             "[wake-word] VAD: Early return after {} speech frames (max_prob={:.2})",
                             speech_frames,
@@ -572,7 +557,7 @@ impl WakeWordDetector {
             padded[..remaining].copy_from_slice(&samples[start..]);
             let probability = vad.predict(padded);
             max_probability = max_probability.max(probability);
-            if probability >= self.config.vad_speech_threshold {
+            if probability >= config.vad_speech_threshold {
                 speech_frames += 1;
             }
             total_frames += 1;
@@ -583,13 +568,13 @@ impl WakeWordDetector {
             speech_frames,
             total_frames,
             max_probability,
-            self.config.vad_speech_threshold,
-            self.config.min_speech_frames
+            config.vad_speech_threshold,
+            config.min_speech_frames
         );
 
         // Require at least min_speech_frames with speech above threshold
         // This catches short utterances while filtering random noise spikes
-        Ok(speech_frames >= self.config.min_speech_frames)
+        Ok(speech_frames >= config.min_speech_frames)
     }
 
     /// Check if transcription contains the wake phrase
