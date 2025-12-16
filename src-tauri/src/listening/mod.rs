@@ -17,9 +17,7 @@ pub use detector::{WakeWordDetector, WakeWordDetectorConfig, WakeWordError};
 pub use manager::{ListeningError, ListeningManager, ListeningStatus};
 pub use pipeline::ListeningPipeline;
 
-// Recording phase detectors - implemented but integration pending
-// These will be wired when RecordingDetectors is integrated into HotkeyIntegration
-#[allow(unused_imports)]
+// Recording phase detectors - used by both wake word and hotkey recording flows
 pub use coordinator::RecordingDetectors;
 #[allow(unused_imports)]
 pub use detector::WakeWordResult;
