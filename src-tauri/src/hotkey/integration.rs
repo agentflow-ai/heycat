@@ -876,10 +876,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         let transcription_emitter_for_callback = self.transcription_emitter.clone();
         let app_handle_for_callback = self.app_handle.clone();
         let recording_state_for_callback = self.recording_state.clone();
-        let command_registry_for_callback = self.command_registry.clone();
-        let command_matcher_for_callback = self.command_matcher.clone();
-        let action_dispatcher_for_callback = self.action_dispatcher.clone();
-        let command_emitter_for_callback = self.command_emitter.clone();
         let transcription_semaphore_for_callback = self.transcription_semaphore.clone();
         let transcription_timeout_for_callback = self.transcription_timeout;
 
@@ -904,10 +900,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
 
                     let semaphore = transcription_semaphore_for_callback.clone();
                     let timeout_duration = transcription_timeout_for_callback;
-                    let command_registry = command_registry_for_callback.clone();
-                    let command_matcher = command_matcher_for_callback.clone();
-                    let action_dispatcher = action_dispatcher_for_callback.clone();
-                    let command_emitter = command_emitter_for_callback.clone();
                     let app_handle = app_handle_for_callback.clone();
                     let recording_state = recording_state_for_callback.clone();
 
@@ -987,26 +979,17 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                         let duration_ms = start_time.elapsed().as_millis() as u64;
                         info!("Transcription completed in {}ms: {} chars", duration_ms, text.len());
 
-                        // Command matching (simplified - same as spawn_transcription)
-                        // The coordinator already handles recording completion and emits events
-                        // For voice command matching, we just fall through to clipboard for now
-                        // Full command matching would require refactoring to share code with spawn_transcription
-                        let command_handled = command_registry.is_some()
-                            && command_matcher.is_some()
-                            && action_dispatcher.is_some()
-                            && command_emitter.is_some()
-                            && false; // Placeholder - fall through to clipboard
-
-                        // Clipboard fallback
-                        if !command_handled {
-                            if let Some(ref handle) = app_handle {
-                                if let Err(e) = handle.clipboard().write_text(&text) {
-                                    warn!("Failed to copy to clipboard: {}", e);
-                                } else {
-                                    debug!("Transcribed text copied to clipboard");
-                                    if let Err(e) = simulate_paste() {
-                                        warn!("Failed to auto-paste: {}", e);
-                                    }
+                        // Silence detection auto-stop always goes to clipboard
+                        // Voice command matching is only supported for manual hotkey recordings
+                        // (via spawn_transcription). This is by design - auto-stop recordings
+                        // are intended for quick dictation, not command execution.
+                        if let Some(ref handle) = app_handle {
+                            if let Err(e) = handle.clipboard().write_text(&text) {
+                                warn!("Failed to copy to clipboard: {}", e);
+                            } else {
+                                debug!("Transcribed text copied to clipboard");
+                                if let Err(e) = simulate_paste() {
+                                    warn!("Failed to auto-paste: {}", e);
                                 }
                             }
                         }
