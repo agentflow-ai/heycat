@@ -94,8 +94,8 @@ Feature: Always Listening Mode
 
 ## Definition of Done
 
-- [ ] All specs completed
-- [ ] Technical guidance finalized
-- [ ] Code reviewed and approved
-- [ ] Tests written and passing
-- [ ] Documentation updated
+- [x] All specs completed
+- [x] Technical guidance finalized
+- [x] Code reviewed and approved
+- [x] Tests written and passing
+- [x] Documentation updated
