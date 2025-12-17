@@ -9,6 +9,7 @@ use crate::recording::RecordingMetadata;
 pub mod event_names {
     pub const RECORDING_STARTED: &str = "recording_started";
     pub const RECORDING_STOPPED: &str = "recording_stopped";
+    pub const RECORDING_CANCELLED: &str = "recording_cancelled";
     pub const RECORDING_ERROR: &str = "recording_error";
     pub const AUDIO_DEVICE_ERROR: &str = "audio_device_error";
     pub const AUDIO_LEVEL: &str = "audio-level";
@@ -148,6 +149,16 @@ pub struct RecordingErrorPayload {
     pub message: String,
 }
 
+/// Payload for recording_cancelled event
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingCancelledPayload {
+    /// Reason for cancellation (e.g., "double-tap-escape")
+    pub reason: String,
+    /// ISO 8601 timestamp when recording was cancelled
+    pub timestamp: String,
+}
+
 /// Payload for transcription_started event
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TranscriptionStartedPayload {
@@ -237,6 +248,9 @@ pub trait RecordingEventEmitter: Send + Sync {
     /// Emit recording_stopped event
     fn emit_recording_stopped(&self, payload: RecordingStoppedPayload);
 
+    /// Emit recording_cancelled event
+    fn emit_recording_cancelled(&self, payload: RecordingCancelledPayload);
+
     /// Emit recording_error event
     fn emit_recording_error(&self, payload: RecordingErrorPayload);
 }
@@ -285,6 +299,7 @@ pub(crate) mod tests {
     pub struct MockEventEmitter {
         pub started_events: Arc<Mutex<Vec<RecordingStartedPayload>>>,
         pub stopped_events: Arc<Mutex<Vec<RecordingStoppedPayload>>>,
+        pub cancelled_events: Arc<Mutex<Vec<RecordingCancelledPayload>>>,
         pub error_events: Arc<Mutex<Vec<RecordingErrorPayload>>>,
         pub transcription_started_events: Arc<Mutex<Vec<TranscriptionStartedPayload>>>,
         pub transcription_completed_events: Arc<Mutex<Vec<TranscriptionCompletedPayload>>>,
@@ -313,6 +328,10 @@ pub(crate) mod tests {
 
         fn emit_recording_stopped(&self, payload: RecordingStoppedPayload) {
             self.stopped_events.lock().unwrap().push(payload);
+        }
+
+        fn emit_recording_cancelled(&self, payload: RecordingCancelledPayload) {
+            self.cancelled_events.lock().unwrap().push(payload);
         }
 
         fn emit_recording_error(&self, payload: RecordingErrorPayload) {

@@ -7,9 +7,9 @@ use crate::commands::logic::{start_recording_impl, stop_recording_impl};
 use crate::events::{
     current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
     CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, ListeningEventEmitter,
-    RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
-    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
-    TranscriptionStartedPayload,
+    RecordingCancelledPayload, RecordingErrorPayload, RecordingEventEmitter,
+    RecordingStartedPayload, RecordingStoppedPayload, TranscriptionCompletedPayload,
+    TranscriptionErrorPayload, TranscriptionEventEmitter, TranscriptionStartedPayload,
 };
 use crate::hotkey::double_tap::{DoubleTapDetector, DEFAULT_DOUBLE_TAP_WINDOW_MS};
 use crate::hotkey::ShortcutBackend;
@@ -1239,6 +1239,88 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                 warn!("Failed to unregister Escape key listener: {}", e);
                 // Mark as unregistered anyway to allow re-registration
                 self.escape_registered = false;
+            }
+        }
+    }
+
+    /// Cancel recording without transcription
+    ///
+    /// This method is called when the user double-taps Escape during recording.
+    /// It stops the recording immediately, discards the audio buffer (no WAV file
+    /// created, no transcription triggered), and transitions directly to Idle state.
+    ///
+    /// # Arguments
+    /// * `state` - The recording state mutex
+    /// * `reason` - The reason for cancellation (e.g., "double-tap-escape")
+    ///
+    /// # Returns
+    /// * `true` if cancellation was successful
+    /// * `false` if not in recording state or an error occurred
+    pub fn cancel_recording(&mut self, state: &Mutex<RecordingManager>, reason: &str) -> bool {
+        // Check current state - can only cancel from Recording state
+        let current_state = match state.lock() {
+            Ok(guard) => guard.get_state(),
+            Err(e) => {
+                error!("Failed to acquire lock for cancel: {}", e);
+                self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                    message: "Internal error: state lock poisoned".to_string(),
+                });
+                return false;
+            }
+        };
+
+        if current_state != RecordingState::Recording {
+            debug!("Cancel ignored - not in recording state (current: {:?})", current_state);
+            return false;
+        }
+
+        info!("Cancelling recording (reason: {})", reason);
+
+        // 1. Unregister Escape key listener first
+        self.unregister_escape_listener();
+
+        // 2. Stop silence detection if active
+        self.stop_silence_detection();
+
+        // 3. Stop audio capture (discard result - we don't want the audio)
+        if let Some(ref audio_thread) = self.audio_thread {
+            // Stop the audio thread to halt capture
+            if let Err(e) = audio_thread.stop() {
+                warn!("Failed to stop audio thread during cancel: {:?}", e);
+                // Continue anyway - the buffer will be discarded
+            }
+        }
+
+        // 4. Abort recording - this clears the buffer and transitions directly to Idle
+        //    (bypassing Processing state, so no transcription will be triggered)
+        let abort_result = match state.lock() {
+            Ok(mut guard) => guard.abort_recording(RecordingState::Idle),
+            Err(e) => {
+                error!("Failed to acquire lock for abort: {}", e);
+                self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                    message: "Internal error: state lock poisoned".to_string(),
+                });
+                return false;
+            }
+        };
+
+        match abort_result {
+            Ok(()) => {
+                // 5. Emit recording_cancelled event
+                self.recording_emitter.emit_recording_cancelled(RecordingCancelledPayload {
+                    reason: reason.to_string(),
+                    timestamp: current_timestamp(),
+                });
+
+                info!("Recording cancelled successfully");
+                true
+            }
+            Err(e) => {
+                error!("Failed to abort recording: {}", e);
+                self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                    message: format!("Failed to cancel recording: {}", e),
+                });
+                false
             }
         }
     }

@@ -17,9 +17,9 @@ use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus, Wak
 use crate::events::{
     command_events, event_names, listening_events, CommandAmbiguousPayload, CommandEventEmitter,
     CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, ListeningEventEmitter,
-    RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
-    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
-    TranscriptionStartedPayload,
+    RecordingCancelledPayload, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
+    RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
+    TranscriptionEventEmitter, TranscriptionStartedPayload,
 };
 use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, StopReason};
 use crate::parakeet::SharedTranscriptionModel;
@@ -74,6 +74,10 @@ impl RecordingEventEmitter for TauriEventEmitter {
 
     fn emit_recording_stopped(&self, payload: RecordingStoppedPayload) {
         emit_or_warn!(self.app_handle, event_names::RECORDING_STOPPED, payload);
+    }
+
+    fn emit_recording_cancelled(&self, payload: RecordingCancelledPayload) {
+        emit_or_warn!(self.app_handle, event_names::RECORDING_CANCELLED, payload);
     }
 
     fn emit_recording_error(&self, payload: RecordingErrorPayload) {
