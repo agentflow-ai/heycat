@@ -16,7 +16,14 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue(undefined),
+  invoke: vi.fn().mockImplementation((cmd: string) => {
+    if (cmd === "list_audio_devices") {
+      return Promise.resolve([
+        { name: "Built-in Microphone", isDefault: true },
+      ]);
+    }
+    return Promise.resolve(undefined);
+  }),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({

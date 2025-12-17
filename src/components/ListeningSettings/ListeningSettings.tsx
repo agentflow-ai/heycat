@@ -1,5 +1,6 @@
 import { useSettings } from "../../hooks/useSettings";
 import { useListening } from "../../hooks/useListening";
+import { AudioDeviceSelector } from "./AudioDeviceSelector";
 import "./ListeningSettings.css";
 
 export interface ListeningSettingsProps {
@@ -59,6 +60,11 @@ export function ListeningSettings({ className = "" }: ListeningSettingsProps) {
           {error}
         </div>
       )}
+
+      <section className="listening-settings__section">
+        <h3 className="listening-settings__section-title">Audio Input</h3>
+        <AudioDeviceSelector />
+      </section>
 
       <section className="listening-settings__section">
         <h3 className="listening-settings__section-title">Always Listening</h3>
