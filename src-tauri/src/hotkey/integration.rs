@@ -141,6 +141,17 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         self
     }
 
+    /// Get the selected audio device from persistent settings store
+    fn get_selected_audio_device(&self) -> Option<String> {
+        use tauri_plugin_store::StoreExt;
+        self.app_handle.as_ref().and_then(|app| {
+            app.store("settings.json")
+                .ok()
+                .and_then(|store| store.get("audio.selectedDevice"))
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+        })
+    }
+
     /// Add an audio thread handle (builder pattern)
     pub fn with_audio_thread(mut self, handle: Arc<AudioThreadHandle>) -> Self {
         self.audio_thread = Some(handle);
@@ -319,11 +330,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                 let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or(false);
 
                 // Use unified command implementation
-                // Note: device_name is None here because hotkey integration doesn't have
-                // direct access to frontend settings. The frontend passes device_name when
-                // using the Tauri command. For hotkey-triggered recordings, we use the
-                // system default device.
-                match start_recording_impl(state, self.audio_thread.as_deref(), model_available, None) {
+                // Read selected device from persistent settings store
+                let device_name = self.get_selected_audio_device();
+                match start_recording_impl(state, self.audio_thread.as_deref(), model_available, device_name) {
                     Ok(()) => {
                         self.recording_emitter
                             .emit_recording_started(RecordingStartedPayload {

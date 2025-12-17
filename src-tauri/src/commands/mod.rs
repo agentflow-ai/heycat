@@ -446,6 +446,13 @@ async fn handle_wake_word_events(
                     "[event_handler] Wake word detected: '{}' (confidence: {:.2})",
                     text, confidence
                 );
+                // Read selected device from persistent settings store
+                use tauri_plugin_store::StoreExt;
+                let device_name = app_handle
+                    .store("settings.json")
+                    .ok()
+                    .and_then(|store| store.get("audio.selectedDevice"))
+                    .and_then(|v| v.as_str().map(|s| s.to_string()));
                 handle_wake_word_detected(
                     &listening_pipeline,
                     &recording_state,
@@ -454,6 +461,7 @@ async fn handle_wake_word_events(
                     &app_handle,
                     &emitter,
                     &hotkey_integration,
+                    device_name,
                 );
             }
             WakeWordEvent::Unavailable { reason } => {
@@ -482,6 +490,7 @@ fn handle_wake_word_detected(
     app_handle: &AppHandle,
     emitter: &Arc<TauriEventEmitter>,
     hotkey_integration: &HotkeyIntegrationState,
+    device_name: Option<String>,
 ) {
     crate::info!("Wake word detected! Stopping pipeline and starting recording...");
 
@@ -530,7 +539,7 @@ fn handle_wake_word_detected(
         match manager.start_recording_with_buffer(16000, shared_buffer.clone()) {
             Ok(_) => {
                 // Restart audio capture with the shared buffer
-                match audio_thread.start(shared_buffer.clone()) {
+                match audio_thread.start_with_device(shared_buffer.clone(), device_name.clone()) {
                     Ok(_) => {
                         crate::info!("Recording started with shared buffer");
                         true
