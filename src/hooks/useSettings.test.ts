@@ -32,6 +32,7 @@ describe("useSettings", () => {
     expect(result.current.isLoading).toBe(true);
     expect(result.current.settings.listening.enabled).toBe(false);
     expect(result.current.settings.listening.autoStartOnLaunch).toBe(false);
+    expect(result.current.settings.audio.selectedDevice).toBeNull();
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -42,6 +43,7 @@ describe("useSettings", () => {
     mockStore.get.mockImplementation((key: string) => {
       if (key === "listening.enabled") return Promise.resolve(true);
       if (key === "listening.autoStartOnLaunch") return Promise.resolve(true);
+      if (key === "audio.selectedDevice") return Promise.resolve("USB Microphone");
       return Promise.resolve(undefined);
     });
 
@@ -53,6 +55,7 @@ describe("useSettings", () => {
 
     expect(result.current.settings.listening.enabled).toBe(true);
     expect(result.current.settings.listening.autoStartOnLaunch).toBe(true);
+    expect(result.current.settings.audio.selectedDevice).toBe("USB Microphone");
   });
 
   it("updateListeningEnabled saves to store and updates state", async () => {
@@ -166,6 +169,78 @@ describe("useSettings", () => {
 
     expect(result.current.settings.listening.enabled).toBe(false);
     expect(result.current.settings.listening.autoStartOnLaunch).toBe(false);
+    expect(result.current.settings.audio.selectedDevice).toBeNull();
+  });
+
+  it("updateAudioDevice saves to store and updates state", async () => {
+    const { result } = renderHook(() => useSettings());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.updateAudioDevice("USB Microphone");
+    });
+
+    expect(mockStore.set).toHaveBeenCalledWith(
+      "audio.selectedDevice",
+      "USB Microphone"
+    );
+    expect(result.current.settings.audio.selectedDevice).toBe("USB Microphone");
+  });
+
+  it("updateAudioDevice can clear selection with null", async () => {
+    // Start with a device selected
+    mockStore.get.mockImplementation((key: string) => {
+      if (key === "audio.selectedDevice")
+        return Promise.resolve("USB Microphone");
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSettings());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.settings.audio.selectedDevice).toBe("USB Microphone");
+
+    await act(async () => {
+      await result.current.updateAudioDevice(null);
+    });
+
+    expect(mockStore.set).toHaveBeenCalledWith("audio.selectedDevice", null);
+    expect(result.current.settings.audio.selectedDevice).toBeNull();
+  });
+
+  it("updateAudioDevice handles store set error", async () => {
+    mockStore.set.mockRejectedValueOnce(new Error("Audio write failed"));
+    const { result } = renderHook(() => useSettings());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.updateAudioDevice("USB Microphone");
+    });
+
+    expect(result.current.error).toBe("Audio write failed");
+  });
+
+  it("updateAudioDevice returns stable function reference", async () => {
+    const { result, rerender } = renderHook(() => useSettings());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    const updateAudioDevice1 = result.current.updateAudioDevice;
+
+    rerender();
+
+    expect(result.current.updateAudioDevice).toBe(updateAudioDevice1);
   });
 
   it("does nothing when updateListeningEnabled called before store loads", async () => {
@@ -178,6 +253,22 @@ describe("useSettings", () => {
     // Store is still loading, try to update
     await act(async () => {
       await result.current.updateListeningEnabled(true);
+    });
+
+    // Should not throw, store.set should not be called
+    expect(mockStore.set).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when updateAudioDevice called before store loads", async () => {
+    // Delay store load indefinitely
+    const { load } = await import("@tauri-apps/plugin-store");
+    vi.mocked(load).mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useSettings());
+
+    // Store is still loading, try to update
+    await act(async () => {
+      await result.current.updateAudioDevice("USB Microphone");
     });
 
     // Should not throw, store.set should not be called

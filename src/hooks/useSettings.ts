@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { load, Store } from "@tauri-apps/plugin-store";
+import { AudioSettings, DEFAULT_AUDIO_SETTINGS } from "../types/audio";
 
 /** Settings related to listening mode */
 export interface ListeningSettings {
@@ -10,6 +11,7 @@ export interface ListeningSettings {
 /** All application settings */
 export interface AppSettings {
   listening: ListeningSettings;
+  audio: AudioSettings;
 }
 
 /** Default settings for fresh installations */
@@ -18,6 +20,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: false,
     autoStartOnLaunch: false,
   },
+  audio: DEFAULT_AUDIO_SETTINGS,
 };
 
 /** Return type of the useSettings hook */
@@ -27,6 +30,7 @@ export interface UseSettingsReturn {
   error: string | null;
   updateListeningEnabled: (enabled: boolean) => Promise<void>;
   updateAutoStartListening: (enabled: boolean) => Promise<void>;
+  updateAudioDevice: (deviceName: string | null) => Promise<void>;
 }
 
 const STORE_FILE = "settings.json";
@@ -59,12 +63,19 @@ export function useSettings(): UseSettingsReturn {
         const autoStartOnLaunch = await storeInstance.get<boolean>(
           "listening.autoStartOnLaunch"
         );
+        const audioSelectedDevice = await storeInstance.get<string | null>(
+          "audio.selectedDevice"
+        );
 
         setSettings({
           listening: {
             enabled: listeningEnabled ?? DEFAULT_SETTINGS.listening.enabled,
             autoStartOnLaunch:
               autoStartOnLaunch ?? DEFAULT_SETTINGS.listening.autoStartOnLaunch,
+          },
+          audio: {
+            selectedDevice:
+              audioSelectedDevice ?? DEFAULT_SETTINGS.audio.selectedDevice,
           },
         });
         setIsLoading(false);
@@ -121,11 +132,31 @@ export function useSettings(): UseSettingsReturn {
     [store]
   );
 
+  const updateAudioDevice = useCallback(
+    async (deviceName: string | null) => {
+      /* v8 ignore start -- @preserve */
+      if (!store) return;
+      try {
+        await store.set("audio.selectedDevice", deviceName);
+        setSettings((prev) => ({
+          ...prev,
+          audio: { ...prev.audio, selectedDevice: deviceName },
+        }));
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      /* v8 ignore stop */
+    },
+    [store]
+  );
+
   return {
     settings,
     isLoading,
     error,
     updateListeningEnabled,
     updateAutoStartListening,
+    updateAudioDevice,
   };
 }
