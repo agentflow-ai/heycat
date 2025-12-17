@@ -285,6 +285,11 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     /// of the Escape key is detected within the configured time window (default 300ms).
     /// Single Escape key presses are ignored. The Escape key listener is automatically
     /// registered when recording starts and unregistered when recording stops.
+    ///
+    /// Note: Production code uses `set_escape_callback` instead because the callback
+    /// needs to capture a reference to the integration after it's wrapped in Arc<Mutex<>>.
+    /// This builder method is kept for test ergonomics.
+    #[allow(dead_code)]
     pub fn with_escape_callback(mut self, callback: Arc<dyn Fn() + Send + Sync>) -> Self {
         self.escape_callback = Some(callback);
         self
