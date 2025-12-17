@@ -1,5 +1,7 @@
 import { useAudioDevices } from "../../hooks/useAudioDevices";
 import { useSettings } from "../../hooks/useSettings";
+import { useAudioLevelMonitor } from "../../hooks/useAudioLevelMonitor";
+import { AudioLevelMeter } from "./AudioLevelMeter";
 import "./AudioDeviceSelector.css";
 
 export function AudioDeviceSelector() {
@@ -7,6 +9,12 @@ export function AudioDeviceSelector() {
   const { settings, updateAudioDevice } = useSettings();
 
   const selectedDevice = settings.audio.selectedDevice;
+
+  // Monitor audio level for the selected device
+  const { level, isMonitoring } = useAudioLevelMonitor({
+    deviceName: selectedDevice,
+    enabled: !isLoading && !error,
+  });
 
   const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const value = event.target.value;
@@ -58,6 +66,7 @@ export function AudioDeviceSelector() {
           </option>
         ))}
       </select>
+      <AudioLevelMeter level={level} isMonitoring={isMonitoring} />
     </div>
   );
 }

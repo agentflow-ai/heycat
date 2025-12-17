@@ -12,6 +12,15 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
 }));
 
+// Mock listen for useAudioLevelMonitor
+const { mockListen } = vi.hoisted(() => ({
+  mockListen: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
+}));
+
 // Mock store for useSettings
 const { mockStore } = vi.hoisted(() => ({
   mockStore: {
@@ -28,14 +37,28 @@ describe("AudioDeviceSelector", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStore.get.mockResolvedValue(null);
-    mockInvoke.mockResolvedValue([
-      { name: "Built-in Microphone", isDefault: true },
-      { name: "USB Microphone", isDefault: false },
-    ]);
+    // Mock listen to return an unlisten function
+    mockListen.mockResolvedValue(vi.fn());
+    // Default mock for list_audio_devices
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_audio_devices") {
+        return Promise.resolve([
+          { name: "Built-in Microphone", isDefault: true },
+          { name: "USB Microphone", isDefault: false },
+        ]);
+      }
+      // For start_audio_monitor and stop_audio_monitor
+      return Promise.resolve(undefined);
+    });
   });
 
   it("shows loading state initially", () => {
-    mockInvoke.mockReturnValue(new Promise(() => {}));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_audio_devices") {
+        return new Promise(() => {}); // Never resolve
+      }
+      return Promise.resolve(undefined);
+    });
     render(<AudioDeviceSelector />);
 
     expect(screen.getByText("Loading devices...")).toBeDefined();
@@ -132,7 +155,12 @@ describe("AudioDeviceSelector", () => {
   });
 
   it("shows error state when device fetch fails", async () => {
-    mockInvoke.mockRejectedValue(new Error("Failed to list devices"));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_audio_devices") {
+        return Promise.reject(new Error("Failed to list devices"));
+      }
+      return Promise.resolve(undefined);
+    });
     render(<AudioDeviceSelector />);
 
     await waitFor(() => {
@@ -143,10 +171,19 @@ describe("AudioDeviceSelector", () => {
   });
 
   it("retry button refetches devices", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("Failed to list devices"));
-    mockInvoke.mockResolvedValueOnce([
-      { name: "Built-in Microphone", isDefault: true },
-    ]);
+    let callCount = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_audio_devices") {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject(new Error("Failed to list devices"));
+        }
+        return Promise.resolve([
+          { name: "Built-in Microphone", isDefault: true },
+        ]);
+      }
+      return Promise.resolve(undefined);
+    });
 
     const user = userEvent.setup();
     render(<AudioDeviceSelector />);
@@ -161,6 +198,18 @@ describe("AudioDeviceSelector", () => {
       expect(screen.getByLabelText("Microphone")).toBeDefined();
     });
 
-    expect(mockInvoke).toHaveBeenCalledTimes(2);
+    expect(callCount).toBe(2);
+  });
+
+  it("renders AudioLevelMeter component when loaded", async () => {
+    render(<AudioDeviceSelector />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Microphone")).toBeDefined();
+    });
+
+    // Check that the level meter is rendered
+    expect(screen.getByRole("progressbar")).toBeDefined();
+    expect(screen.getByText(/Monitoring|Idle/)).toBeDefined();
   });
 });

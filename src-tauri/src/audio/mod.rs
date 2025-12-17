@@ -8,6 +8,9 @@ pub use cpal_backend::CpalBackend;
 mod device;
 pub use device::{list_input_devices, AudioInputDevice};
 
+pub mod monitor;
+pub use monitor::AudioMonitorHandle;
+
 pub mod thread;
 pub use thread::AudioThreadHandle;
 

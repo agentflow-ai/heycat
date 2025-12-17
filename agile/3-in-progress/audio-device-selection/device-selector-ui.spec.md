@@ -1,7 +1,7 @@
 ---
-status: in-progress
+status: completed
 created: 2025-12-15
-completed: null
+completed: 2025-12-17
 dependencies:
   - device-enumeration
   - device-settings-persistence
@@ -297,3 +297,101 @@ describe('AudioDeviceSelector', () => {
   });
 });
 ```
+
+## Review
+
+**Reviewed:** 2025-12-17
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `useAudioDevices` hook fetches device list via `invoke('list_audio_devices')` | PASS | src/hooks/useAudioDevices.ts:25 |
+| `AudioDeviceSelector` component renders dropdown with all available devices | PASS | src/components/ListeningSettings/AudioDeviceSelector.tsx:54-59 |
+| Dropdown shows device names with "(Default)" indicator for system default device | PASS | src/components/ListeningSettings/AudioDeviceSelector.tsx:57 |
+| Current selection is highlighted/shown in dropdown | PASS | src/components/ListeningSettings/AudioDeviceSelector.tsx:50 |
+| Selecting a device updates settings via `useSettings` hook | PASS | src/components/ListeningSettings/AudioDeviceSelector.tsx:11-14 |
+| "System Default" option available to clear explicit selection | PASS | src/components/ListeningSettings/AudioDeviceSelector.tsx:53 |
+| Component shows loading state while fetching devices | PASS | src/components/ListeningSettings/AudioDeviceSelector.tsx:16-22 |
+| Component integrated into `ListeningSettings.tsx` | PASS | src/components/ListeningSettings/ListeningSettings.tsx:3,66 |
+| Styling matches existing settings UI patterns | PASS | src/components/ListeningSettings/AudioDeviceSelector.css |
+| Component exported from `ListeningSettings/index.ts` | PASS | src/components/ListeningSettings/index.ts:2 |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| test_hook_fetches_devices | PASS | AudioDeviceSelector.test.tsx:44 "renders device list after loading" |
+| test_hook_returns_loading_state | PASS | AudioDeviceSelector.test.tsx:37 "shows loading state initially" |
+| test_hook_returns_devices | PASS | AudioDeviceSelector.test.tsx:44 (covered in "renders device list") |
+| test_selector_renders_devices | PASS | AudioDeviceSelector.test.tsx:44 "renders device list after loading" |
+| test_selector_shows_current_selection | PASS | AudioDeviceSelector.test.tsx:82 "shows current selection from settings" |
+| test_selector_updates_settings | PASS | AudioDeviceSelector.test.tsx:97 "updates settings when selection changes" |
+| test_selector_shows_default_indicator | PASS | AudioDeviceSelector.test.tsx:72 "marks default device with (Default) indicator" |
+| test_system_default_option | PASS | AudioDeviceSelector.test.tsx:60,114 (both "shows System Default option" and "clears selection when System Default is chosen") |
+
+### Data Flow Verification
+
+```
+[UI Action] User selects device in dropdown
+     |
+     v
+[Component] src/components/ListeningSettings/AudioDeviceSelector.tsx:11 handleChange()
+     | calls updateAudioDevice()
+     v
+[Hook] src/hooks/useSettings.ts:135 updateAudioDevice()
+     | store.set("audio.selectedDevice", deviceName)
+     v
+[Store] @tauri-apps/plugin-store persists to settings.json
+     |
+     v
+[State Update] setSettings() at useSettings.ts:141
+     |
+     v
+[UI Re-render] Dropdown reflects new selection
+```
+
+```
+[Component Mount] AudioDeviceSelector renders
+     |
+     v
+[Hook] src/hooks/useAudioDevices.ts:34 useEffect()
+     | invoke("list_audio_devices")
+     v
+[Command] src-tauri/src/commands/mod.rs:585 list_audio_devices()
+     | registered in lib.rs:240
+     v
+[Backend] src-tauri/src/audio/mod.rs list_input_devices()
+     |
+     v
+[State Update] setDevices() at useAudioDevices.ts:26
+     |
+     v
+[UI Re-render] Dropdown populated with devices
+```
+
+### Code Quality
+
+**Strengths:**
+- Clean separation of concerns: hook handles data fetching, component handles rendering
+- Proper loading and error states with user-friendly retry option
+- Dark mode support via CSS media query
+- All tests pass (9/9)
+- Good use of useCallback for stable function references
+- Well-structured BEM-style CSS classes
+
+**Concerns:**
+- Minor React warning about act() wrapping in "shows loading state initially" test (does not affect functionality)
+
+### Automated Check Results
+
+```
+Build warnings: warning about unused imports VAD_CHUNK_SIZE_16KHZ and VAD_CHUNK_SIZE_8KHZ (pre-existing, unrelated to this spec)
+Command registration: list_audio_devices is properly registered (src-tauri/src/lib.rs:240)
+Deferrals: None found in implementation files
+```
+
+### Verdict
+
+**APPROVED** - All acceptance criteria are met, tests pass, data flow is complete end-to-end, and the component is properly integrated into the ListeningSettings UI. The implementation follows the spec closely with minor improvements (BEM CSS naming, useCallback optimization).

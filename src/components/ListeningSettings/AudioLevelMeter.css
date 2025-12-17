@@ -1,0 +1,94 @@
+/* AudioLevelMeter component styles */
+.audio-level-meter {
+  margin-top: 8px;
+}
+
+.audio-level-meter__track {
+  position: relative;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.audio-level-meter__fill {
+  height: 100%;
+  transition: width 0.05s linear;
+  border-radius: 4px;
+}
+
+/* Color zones */
+.audio-level-meter__fill--safe {
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+}
+
+.audio-level-meter__fill--optimal {
+  background: linear-gradient(90deg, #4caf50, #ffeb3b);
+}
+
+.audio-level-meter__fill--clipping {
+  background: linear-gradient(90deg, #4caf50, #ffeb3b, #f44336);
+}
+
+/* Zone markers */
+.audio-level-meter__marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.audio-level-meter__marker--optimal {
+  left: 50%;
+}
+
+.audio-level-meter__marker--clipping {
+  left: 85%;
+}
+
+/* Status label */
+.audio-level-meter__status {
+  font-size: 11px;
+  margin-top: 4px;
+  color: #666;
+}
+
+.audio-level-meter__status--active {
+  color: #4caf50;
+}
+
+.audio-level-meter__status--active::before {
+  content: "● ";
+}
+
+.audio-level-meter__status--idle {
+  color: #999;
+}
+
+.audio-level-meter__status--idle::before {
+  content: "○ ";
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .audio-level-meter__track {
+    background: #374151;
+  }
+
+  .audio-level-meter__marker {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .audio-level-meter__status {
+    color: #9ca3af;
+  }
+
+  .audio-level-meter__status--active {
+    color: #4ade80;
+  }
+
+  .audio-level-meter__status--idle {
+    color: #6b7280;
+  }
+}

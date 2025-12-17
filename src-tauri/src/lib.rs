@@ -75,6 +75,10 @@ pub fn run() {
             ));
             app.manage(listening_state.clone());
 
+            // Create and manage audio monitor state for device testing
+            let audio_monitor = Arc::new(audio::AudioMonitorHandle::spawn());
+            app.manage(audio_monitor);
+
             // Create shared transcription model (single ~3GB Parakeet model)
             // This model is shared between all transcription consumers and WakeWordDetector
             debug!("Creating SharedTranscriptionModel...");
@@ -238,6 +242,8 @@ pub fn run() {
             commands::disable_listening,
             commands::get_listening_status,
             commands::list_audio_devices,
+            commands::start_audio_monitor,
+            commands::stop_audio_monitor,
             model::check_parakeet_model_status,
             model::download_model,
             voice_commands::get_commands,

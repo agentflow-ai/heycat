@@ -586,5 +586,41 @@ pub fn list_audio_devices() -> Vec<AudioInputDevice> {
     crate::audio::list_input_devices()
 }
 
+/// Type alias for audio monitor state (the thread handle)
+pub type AudioMonitorState = Arc<crate::audio::AudioMonitorHandle>;
+
+/// Start audio level monitoring for device testing
+///
+/// Starts capturing audio from the specified device and emits "audio-level" events
+/// with the current input level (0-100). Used for visual feedback in the device selector.
+#[tauri::command]
+pub fn start_audio_monitor(
+    app_handle: AppHandle,
+    monitor_state: State<'_, AudioMonitorState>,
+    device_name: Option<String>,
+) -> Result<(), String> {
+    // Start monitoring and get the level receiver
+    let level_rx = monitor_state.start(device_name)?;
+
+    // Spawn a thread to forward levels to frontend
+    // (Receiver is not Clone, so we need a dedicated thread)
+    std::thread::spawn(move || {
+        while let Ok(level) = level_rx.recv() {
+            let _ = app_handle.emit("audio-level", level);
+        }
+        // Channel closed - monitoring stopped
+    });
+
+    Ok(())
+}
+
+/// Stop audio level monitoring
+///
+/// Stops capturing audio and releasing the device.
+#[tauri::command]
+pub fn stop_audio_monitor(monitor_state: State<'_, AudioMonitorState>) -> Result<(), String> {
+    monitor_state.stop()
+}
+
 #[cfg(test)]
 mod tests;
