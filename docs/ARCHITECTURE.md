@@ -160,51 +160,22 @@ Audio Subsystem
 
 ```
 src/
-├── hooks/           # State & side effects
-│   ├── useRecording.ts         # Recording state + invoke + listen
-│   ├── useListening.ts         # Listening state + invoke + listen
-│   ├── useSettings.ts          # Persistent settings (store)
-│   ├── useAudioDevices.ts      # Device enumeration
-│   ├── useAudioLevelMonitor.ts # Real-time audio levels for device testing
-│   ├── useAudioErrorHandler.ts # Audio device error events
-│   ├── useTranscription.ts     # Transcription events (started/completed/error)
-│   ├── useCatOverlay.ts        # Overlay window state management
-│   ├── useDisambiguation.ts    # Voice command disambiguation UI
-│   ├── useMultiModelStatus.ts  # Model download progress tracking
-│   └── useAutoStartListening.ts # Auto-enable listening on launch
-├── components/      # UI components
-│   └── [Component]/
-│       ├── Component.tsx
-│       └── Component.css
-└── types/           # Shared type definitions
+├── hooks/       # State & side effects (invoke + listen patterns)
+├── components/  # UI components ([Component]/Component.tsx + .css)
+└── types/       # Shared type definitions
 ```
 
 ### Backend
 
 ```
 src-tauri/src/
-├── lib.rs              # App setup, command registration
-├── audio_constants.rs  # Audio configuration constants
-├── commands/           # Tauri IPC handlers
-│   ├── mod.rs          # Command wrappers + event emission
-│   └── logic.rs        # Testable implementation (no Tauri deps)
-├── events.rs           # Event types + emitter traits
-├── recording/          # Recording state machine
-├── listening/          # Wake word pipeline
-│   └── events.rs       # Listening-specific events
-├── audio/              # Audio capture (cpal)
-├── hotkey/             # Global hotkey integration
-│   └── integration.rs  # Hotkey orchestration
-├── parakeet/           # Transcription model
-├── model/              # Model download & management
-└── voice_commands/     # Voice command system
-    ├── registry.rs     # Command persistence
-    ├── matcher.rs      # Fuzzy matching
-    ├── executor.rs     # Action dispatch
-    └── actions/        # Action implementations
+├── lib.rs        # App setup, command registration
+├── commands/     # Tauri IPC handlers (mod.rs + logic.rs pattern)
+├── events.rs     # Event types + emitter traits
+└── [feature]/    # Feature modules (recording/, listening/, audio/, etc.)
 ```
 
-> Note: The `mod.rs` + `logic.rs` pattern (separating Tauri-specific wrappers from testable logic) is used in the `commands/` module. Other modules keep implementations in their main files.
+> **Pattern:** The `commands/` module uses `mod.rs` + `logic.rs` to separate Tauri-specific wrappers from testable implementation logic.
 
 ---
 

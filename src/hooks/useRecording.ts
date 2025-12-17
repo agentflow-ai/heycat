@@ -75,7 +75,7 @@ export function useRecording(
     setError(null);
     /* v8 ignore start -- @preserve */
     try {
-      await invoke("stop_recording");
+      await invoke<RecordingMetadata>("stop_recording");
       // State will be updated by recording_stopped event
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
