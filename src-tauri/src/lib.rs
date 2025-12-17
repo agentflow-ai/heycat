@@ -154,11 +154,6 @@ pub fn run() {
             let escape_backend: Arc<dyn hotkey::ShortcutBackend + Send + Sync> =
                 Arc::new(hotkey::TauriShortcutBackend::new(app.handle().clone()));
 
-            // Escape key callback - placeholder for now, double-tap detection will be added in a later spec
-            let escape_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {
-                debug!("Escape key pressed during recording");
-            });
-
             let mut integration_builder = hotkey::HotkeyIntegration::<
                 commands::TauriEventEmitter,
                 commands::TauriEventEmitter,
@@ -173,8 +168,7 @@ pub fn run() {
                 .with_command_emitter(command_emitter)
                 .with_listening_pipeline(listening_pipeline.clone())
                 .with_recording_detectors(recording_detectors.clone())
-                .with_shortcut_backend(escape_backend)
-                .with_escape_callback(escape_callback);
+                .with_shortcut_backend(escape_backend);
 
             // Wire up voice command integration if available
             if let (Some(registry), Some(matcher), Some(dispatcher)) = (command_registry, command_matcher, action_dispatcher) {
@@ -186,6 +180,26 @@ pub fn run() {
             }
 
             let integration = Arc::new(Mutex::new(integration_builder));
+
+            // Set up escape callback after integration is created (so callback can capture reference)
+            // Double-tap Escape cancels the recording without transcription
+            {
+                let integration_for_escape = integration.clone();
+                let state_for_escape = recording_state.clone();
+                let escape_callback: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                    debug!("Double-tap Escape detected, cancelling recording");
+                    if let Ok(mut guard) = integration_for_escape.lock() {
+                        guard.cancel_recording(&state_for_escape, "double-tap-escape");
+                    } else {
+                        error!("Failed to acquire integration lock for cancel");
+                    }
+                });
+
+                if let Ok(mut guard) = integration.lock() {
+                    guard.set_escape_callback(escape_callback);
+                    debug!("Escape callback wired up for recording cancellation");
+                }
+            }
 
             // Manage integration state so it can be accessed from commands
             app.manage(integration.clone());

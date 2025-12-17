@@ -300,6 +300,15 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         self
     }
 
+    /// Set the escape callback after construction
+    ///
+    /// This allows setting the callback after the integration is wrapped in Arc<Mutex<>>,
+    /// which is necessary when the callback needs to capture a reference to the integration
+    /// itself (for calling cancel_recording).
+    pub fn set_escape_callback(&mut self, callback: Arc<dyn Fn() + Send + Sync>) {
+        self.escape_callback = Some(callback);
+    }
+
     /// Create with custom debounce duration (for testing)
     #[cfg(test)]
     pub fn with_debounce(recording_emitter: R, debounce_ms: u64) -> Self {
