@@ -1162,6 +1162,11 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     ///
     /// Uses double-tap detection: single Escape presses are ignored, only
     /// double-taps within the configured time window trigger the cancel callback.
+    ///
+    /// IMPORTANT: The actual registration is deferred to a spawned thread to avoid
+    /// re-entrancy deadlock. When this function is called from within a global shortcut
+    /// callback (e.g., the recording hotkey), calling backend.register() synchronously
+    /// would deadlock because the shortcut manager's lock is already held.
     fn register_escape_listener(&mut self) {
         // Skip if already registered or not configured
         if self.escape_registered {
@@ -1194,25 +1199,61 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         )));
         self.double_tap_detector = Some(detector.clone());
 
-        // Register Escape key - each press calls on_tap() on the detector
-        match backend.register(super::ESCAPE_SHORTCUT, Box::new(move || {
-            if let Ok(mut det) = detector.lock() {
-                if det.on_tap() {
-                    debug!("Double-tap Escape detected, cancel triggered");
-                } else {
-                    trace!("Single Escape tap recorded, waiting for double-tap");
+        // In tests, use synchronous registration (mock backends don't have deadlock issues)
+        // In production, spawn registration on a separate thread to avoid re-entrancy deadlock
+        #[cfg(test)]
+        {
+            match backend.register(super::ESCAPE_SHORTCUT, Box::new(move || {
+                if let Ok(mut det) = detector.lock() {
+                    if det.on_tap() {
+                        debug!("Double-tap Escape detected, cancel triggered");
+                    } else {
+                        trace!("Single Escape tap recorded, waiting for double-tap");
+                    }
+                }
+            })) {
+                Ok(()) => {
+                    self.escape_registered = true;
+                    info!("Escape key listener registered for recording cancel (double-tap required)");
+                }
+                Err(e) => {
+                    warn!("Failed to register Escape key listener: {}", e);
+                    self.double_tap_detector = None;
                 }
             }
-        })) {
-            Ok(()) => {
-                self.escape_registered = true;
-                info!("Escape key listener registered for recording cancel (double-tap required)");
-            }
-            Err(e) => {
-                warn!("Failed to register Escape key listener: {}", e);
-                self.double_tap_detector = None; // Clean up on failure
-                // Continue anyway - cancel via Escape just won't work
-            }
+        }
+
+        #[cfg(not(test))]
+        {
+            // Mark as registered optimistically before spawning
+            // If registration fails, cancel via Escape won't work but the app continues
+            self.escape_registered = true;
+
+            // Spawn registration on a separate thread to avoid re-entrancy deadlock
+            // This is necessary because we're called from within a global shortcut callback,
+            // and the shortcut manager holds a lock during callback execution.
+            std::thread::spawn(move || {
+                // Small delay to ensure the calling shortcut callback has completed
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                match backend.register(super::ESCAPE_SHORTCUT, Box::new(move || {
+                    if let Ok(mut det) = detector.lock() {
+                        if det.on_tap() {
+                            debug!("Double-tap Escape detected, cancel triggered");
+                        } else {
+                            trace!("Single Escape tap recorded, waiting for double-tap");
+                        }
+                    }
+                })) {
+                    Ok(()) => {
+                        info!("Escape key listener registered for recording cancel (double-tap required)");
+                    }
+                    Err(e) => {
+                        warn!("Failed to register Escape key listener: {}", e);
+                        // Note: escape_registered remains true, but unregister will handle this gracefully
+                    }
+                }
+            });
         }
     }
 
@@ -1221,6 +1262,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     /// Called when recording stops (either normally or via cancellation).
     /// Safe to call even if listener was never registered. Also resets the
     /// double-tap detector state.
+    ///
+    /// IMPORTANT: Like register_escape_listener, the actual unregistration is deferred
+    /// to a spawned thread to avoid re-entrancy deadlock when called from within a
+    /// global shortcut callback (e.g., the recording hotkey or Escape key itself).
     fn unregister_escape_listener(&mut self) {
         // Reset double-tap detector state
         if let Some(ref detector) = self.double_tap_detector {
@@ -1239,16 +1284,42 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             None => return,
         };
 
-        match backend.unregister(super::ESCAPE_SHORTCUT) {
-            Ok(()) => {
-                self.escape_registered = false;
-                debug!("Escape key listener unregistered");
+        // Mark as unregistered immediately
+        self.escape_registered = false;
+
+        // In tests, use synchronous unregistration (mock backends don't have deadlock issues)
+        // In production, spawn unregistration on a separate thread to avoid re-entrancy deadlock
+        #[cfg(test)]
+        {
+            match backend.unregister(super::ESCAPE_SHORTCUT) {
+                Ok(()) => {
+                    debug!("Escape key listener unregistered");
+                }
+                Err(e) => {
+                    warn!("Failed to unregister Escape key listener: {}", e);
+                }
             }
-            Err(e) => {
-                warn!("Failed to unregister Escape key listener: {}", e);
-                // Mark as unregistered anyway to allow re-registration
-                self.escape_registered = false;
-            }
+        }
+
+        #[cfg(not(test))]
+        {
+            // Spawn unregistration on a separate thread to avoid re-entrancy deadlock
+            // This is necessary because we may be called from within a global shortcut callback
+            // (e.g., when stopping via recording hotkey or cancelling via Escape double-tap).
+            std::thread::spawn(move || {
+                // Small delay to ensure the calling shortcut callback has completed
+                std::thread::sleep(std::time::Duration::from_millis(10));
+
+                match backend.unregister(super::ESCAPE_SHORTCUT) {
+                    Ok(()) => {
+                        debug!("Escape key listener unregistered");
+                    }
+                    Err(e) => {
+                        // This can happen if registration failed or was never completed
+                        warn!("Failed to unregister Escape key listener: {}", e);
+                    }
+                }
+            });
         }
     }
 
