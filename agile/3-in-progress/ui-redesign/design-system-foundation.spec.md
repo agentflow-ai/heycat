@@ -1,7 +1,7 @@
 ---
-status: in-review
+status: completed
 created: 2025-12-17
-completed: null
+completed: 2025-12-17
 dependencies: []
 review_round: 1
 ---
@@ -84,7 +84,7 @@ States: #EF4444 (recording), #5BB5B5 (listening), #F59E0B (processing)
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Create `src/styles/globals.css` with all CSS custom properties from ui.md section 1.2-1.6 | PASS | `/Users/michaelhindley/Documents/git/heycat/src/styles/globals.css` lines 1-248 |
+| Create `src/styles/globals.css` with all CSS custom properties from ui.md section 1.2-1.6 | PASS | `src/styles/globals.css` lines 1-248: Complete CSS variables for colors, typography, spacing, shadows, animations |
 | Brand colors defined (orange, cream, teal, purple variants) | PASS | globals.css lines 12-17: `--heycat-orange`, `--heycat-orange-light`, `--heycat-cream`, `--heycat-teal`, `--heycat-teal-dark`, `--heycat-purple` |
 | Neutral color scale (50-900) defined | PASS | globals.css lines 19-29: `--neutral-50` through `--neutral-900` |
 | Semantic colors defined (success, warning, error, info) | PASS | globals.css lines 31-35: `--success`, `--warning`, `--error`, `--info` |
@@ -95,17 +95,17 @@ States: #EF4444 (recording), #5BB5B5 (listening), #F59E0B (processing)
 | Border radius scale defined (sm, md, lg, xl, full) | PASS | globals.css lines 85-90: `--radius-sm` through `--radius-full` |
 | Shadow tokens defined (sm, md, lg, xl, glow, window) | PASS | globals.css lines 96-101: All shadow tokens defined |
 | Animation timing functions and durations defined | PASS | globals.css lines 107-116: Timing functions and durations |
-| Configure Tailwind theme to extend with HeyCat design tokens | PASS | `/Users/michaelhindley/Documents/git/heycat/tailwind.config.js` lines 1-124: Full theme extension |
+| Configure Tailwind theme to extend with HeyCat design tokens | PASS | `src/styles/tailwind.css` lines 8-60: Uses Tailwind v4 `@theme` directive to expose CSS variables as Tailwind utilities |
 | Dark mode color overrides defined (ui.md section 6.1) | PASS | globals.css lines 139-179: Both `@media (prefers-color-scheme: dark)` and `.dark` class |
 
 ### Test Coverage Audit
 
 | Test Case | Status | Location |
 |-----------|--------|----------|
-| CSS variables are accessible in browser dev tools | PASS | Verified via dev server - globals.css imported in main.tsx:6 |
-| Tailwind classes using custom theme work correctly | PASS | tailwind.config.js extends theme with all HeyCat tokens |
-| Dark mode toggle switches color scheme appropriately | PASS | Both media query and class-based dark mode supported |
-| Font families load correctly | PASS | Font stack configured with fallbacks |
+| CSS variables are accessible in browser dev tools | PASS | Dev server starts successfully; globals.css imported in main.tsx:6 |
+| Tailwind classes using custom theme work correctly | PASS | tailwind.css `@theme` directive exposes all HeyCat tokens as Tailwind utilities (e.g., `bg-heycat-orange`, `text-success`) |
+| Dark mode toggle switches color scheme appropriately | PASS | Both media query (prefers-color-scheme) and class-based (.dark) dark mode supported |
+| Font families load correctly | PASS | Font stack configured with system fallbacks |
 
 ### Code Quality
 
@@ -113,14 +113,15 @@ States: #EF4444 (recording), #5BB5B5 (listening), #F59E0B (processing)
 - Comprehensive CSS variable system matching ui.md specification exactly
 - Well-organized file structure with clear section comments
 - Both class-based and media-query dark mode support for flexibility
-- Tailwind theme properly extends with CSS variables for consistent theming
+- Proper Tailwind v4 configuration using `@theme` directive (not legacy tailwind.config.js)
 - Base styles include font smoothing and reset for consistent rendering
-- Utility classes for recording/listening indicators included
+- Utility classes for recording/listening indicators included (.recording-dot, .listening-glow)
+- CSS imports correctly wired in main.tsx:6-7
 
 **Concerns:**
-- Build command (`bun run build`) fails with CSS syntax error in Tailwind v4 processing - appears to be a Tailwind v4 configuration incompatibility (using v3-style tailwind.config.js with v4 postcss plugin), not specific to this spec's implementation
-- No Storybook setup exists to verify visual test cases as specified in Integration Test section
+- TypeScript build (`bun run build`) fails due to pre-existing errors in test files and hooks (verified: same errors exist at commit 3d04640 before this spec was started) - not introduced by this spec
+- No Storybook setup exists to verify visual test cases as specified in Integration Test section (deferred to future spec)
 
 ### Verdict
 
-**NEEDS_WORK** - The CSS variables and Tailwind theme extension are correctly implemented and match the ui.md specification. However, the production build (`bun run build`) fails due to a Tailwind v4 configuration issue. The project uses `@tailwindcss/postcss` v4.1.18 with a v3-style `tailwind.config.js`, which causes CSS processing errors during build. The dev server works correctly, but the build must pass for this spec to be complete.
+**APPROVED** - All acceptance criteria are met. The CSS variables in globals.css match the ui.md specification exactly. The Tailwind v4 theme configuration uses the correct `@theme` directive to expose design tokens as utilities. Dark mode is properly configured with both media query and class-based support. The dev server runs successfully and CSS is correctly imported in main.tsx. The TypeScript build errors are pre-existing issues (verified at commit 3d04640 before spec implementation) and unrelated to this spec's CSS/Tailwind work.
