@@ -26,15 +26,6 @@ pub struct DoubleTapDetector<F: Fn() + Send + Sync> {
 }
 
 impl<F: Fn() + Send + Sync> DoubleTapDetector<F> {
-    /// Create a new DoubleTapDetector with default window (300ms)
-    pub fn new(callback: F) -> Self {
-        Self {
-            last_tap_time: None,
-            window: Duration::from_millis(DEFAULT_DOUBLE_TAP_WINDOW_MS),
-            callback,
-        }
-    }
-
     /// Create a new DoubleTapDetector with custom window duration
     pub fn with_window(callback: F, window_ms: u64) -> Self {
         Self {
@@ -95,9 +86,12 @@ mod tests {
         let triggered = Arc::new(Mutex::new(false));
         let triggered_clone = triggered.clone();
 
-        let mut detector = DoubleTapDetector::new(move || {
-            *triggered_clone.lock().unwrap() = true;
-        });
+        let mut detector = DoubleTapDetector::with_window(
+            move || {
+                *triggered_clone.lock().unwrap() = true;
+            },
+            DEFAULT_DOUBLE_TAP_WINDOW_MS,
+        );
 
         // First tap
         let result1 = detector.on_tap();
@@ -140,9 +134,12 @@ mod tests {
         let triggered = Arc::new(Mutex::new(false));
         let triggered_clone = triggered.clone();
 
-        let mut detector = DoubleTapDetector::new(move || {
-            *triggered_clone.lock().unwrap() = true;
-        });
+        let mut detector = DoubleTapDetector::with_window(
+            move || {
+                *triggered_clone.lock().unwrap() = true;
+            },
+            DEFAULT_DOUBLE_TAP_WINDOW_MS,
+        );
 
         // Single tap only
         let result = detector.on_tap();
@@ -155,9 +152,12 @@ mod tests {
         let count = Arc::new(Mutex::new(0));
         let count_clone = count.clone();
 
-        let mut detector = DoubleTapDetector::new(move || {
-            *count_clone.lock().unwrap() += 1;
-        });
+        let mut detector = DoubleTapDetector::with_window(
+            move || {
+                *count_clone.lock().unwrap() += 1;
+            },
+            DEFAULT_DOUBLE_TAP_WINDOW_MS,
+        );
 
         // Three rapid taps
         detector.on_tap(); // First tap - records time
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_default_window_is_300ms() {
-        let detector = DoubleTapDetector::new(|| {});
+        let detector = DoubleTapDetector::with_window(|| {}, DEFAULT_DOUBLE_TAP_WINDOW_MS);
         assert_eq!(detector.window_ms(), DEFAULT_DOUBLE_TAP_WINDOW_MS);
         assert_eq!(DEFAULT_DOUBLE_TAP_WINDOW_MS, 300);
     }
@@ -206,9 +206,12 @@ mod tests {
         let count = Arc::new(Mutex::new(0));
         let count_clone = count.clone();
 
-        let mut detector = DoubleTapDetector::new(move || {
-            *count_clone.lock().unwrap() += 1;
-        });
+        let mut detector = DoubleTapDetector::with_window(
+            move || {
+                *count_clone.lock().unwrap() += 1;
+            },
+            DEFAULT_DOUBLE_TAP_WINDOW_MS,
+        );
 
         // First tap
         detector.on_tap();
