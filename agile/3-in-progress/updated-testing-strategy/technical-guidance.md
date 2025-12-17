@@ -7,11 +7,13 @@ status: active
 
 ## Architecture Overview
 
+This feature refactors the test suite to focus on behavior-based testing rather than implementation details. The goal is to reduce test maintenance burden while maintaining confidence through smoke testing of valuable paths.
+
 ### Current State Analysis
 
 **Test Inventory:**
 - Frontend: 323 tests across 27 files (Vitest + React Testing Library)
-- Backend: 401 tests across 11 files (Rust #[test])
+- Backend: 401 tests across 11 files (Rust test attribute)
 - Coverage threshold: 60% (lines + functions)
 
 **Identified Anti-Patterns:**
