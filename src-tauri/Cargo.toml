@@ -54,3 +54,8 @@ path = "examples/test_transcribe.rs"
 [lints.rust]
 # Allow coverage and coverage_nightly cfg flags used by cargo-llvm-cov
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1

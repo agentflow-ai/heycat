@@ -59,34 +59,6 @@ This enables:
 - Multiple components reacting to same state change
 - Consistent state across all listeners
 
-### Additional Event Types
-
-**Audio Monitor Events** (device testing feedback):
-```rust
-app_handle.emit("audio-level", AudioLevelPayload { level: 75 });
-```
-
-**Audio Error Events** (discriminated union for type-safe handling):
-```rust
-app_handle.emit("audio_device_error", AudioDeviceError::DeviceNotFound { device_name });
-app_handle.emit("audio_device_error", AudioDeviceError::DeviceDisconnected);
-app_handle.emit("audio_device_error", AudioDeviceError::CaptureError { message });
-```
-
-**Voice Command Events**:
-```rust
-app_handle.emit("command_matched", CommandMatchPayload { transcription, command_id, trigger, confidence });
-app_handle.emit("command_executed", CommandExecutedPayload { command_id, trigger, message });
-app_handle.emit("command_failed", CommandFailedPayload { command_id, trigger, error_code, error_message });
-app_handle.emit("command_ambiguous", CommandAmbiguousPayload { transcription, candidates });
-```
-
-**Model Download Events**:
-```rust
-app_handle.emit("model_download_completed", ModelCompletedPayload { model_type, model_path });
-app_handle.emit("model_file_download_progress", DownloadProgressPayload { percent, file_name, ... });
-```
-
 ---
 
 ## 2. State Management
@@ -179,17 +151,6 @@ Audio Subsystem
     ├── start_with_device(), stop()
     └── CPAL Backend (cross-platform)
 ```
-
-### Audio Level Monitoring (Device Testing)
-
-Separate from the main audio capture pipeline, used for UI feedback when selecting devices:
-
-```
-useAudioLevelMonitor → invoke("start_audio_monitor") → AudioMonitorHandle
-                     ← listen("audio-level") ← (emits levels, throttled 20fps)
-```
-
-Purpose: Visual feedback for device selection UI. Runs in separate thread from AudioThreadHandle.
 
 ---
 
