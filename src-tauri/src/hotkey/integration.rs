@@ -1272,11 +1272,14 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     /// to a spawned thread to avoid re-entrancy deadlock when called from within a
     /// global shortcut callback (e.g., the recording hotkey or Escape key itself).
     fn unregister_escape_listener(&mut self) {
-        // Reset double-tap detector state
+        // Reset double-tap detector state - use try_lock to avoid deadlock when called
+        // from within the escape callback (which already holds this lock)
         if let Some(ref detector) = self.double_tap_detector {
-            if let Ok(mut det) = detector.lock() {
+            if let Ok(mut det) = detector.try_lock() {
                 det.reset();
             }
+            // If try_lock fails, we're being called from within the escape callback.
+            // The detector will be dropped anyway, so skipping reset is fine.
         }
         self.double_tap_detector = None;
 
