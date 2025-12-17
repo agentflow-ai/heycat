@@ -1,1 +1,60 @@
 @import "tailwindcss";
+
+/**
+ * HeyCat Design System - Tailwind v4 Theme Configuration
+ * Uses CSS variables from globals.css via @theme directive
+ * Source of Truth: ui.md Part 1: Style Guide
+ */
+@theme {
+  /* HeyCat Brand Colors */
+  --color-heycat-orange: var(--heycat-orange);
+  --color-heycat-orange-light: var(--heycat-orange-light);
+  --color-heycat-cream: var(--heycat-cream);
+  --color-heycat-teal: var(--heycat-teal);
+  --color-heycat-teal-dark: var(--heycat-teal-dark);
+  --color-heycat-purple: var(--heycat-purple);
+
+  /* Semantic Colors */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+
+  /* State Colors */
+  --color-recording: var(--recording);
+  --color-listening: var(--listening);
+  --color-processing: var(--processing);
+
+  /* Contextual Colors */
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border: var(--border);
+
+  /* Text Colors */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+
+  /* Font Families */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+
+  /* Shadows */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-glow: var(--shadow-glow);
+  --shadow-window: var(--shadow-window);
+
+  /* Animation Timing */
+  --ease-default: var(--ease-default);
+  --ease-in: var(--ease-in);
+  --ease-out: var(--ease-out);
+  --ease-bounce: var(--ease-bounce);
+
+  /* Animation Durations */
+  --animate-duration-fast: var(--duration-fast);
+  --animate-duration-normal: var(--duration-normal);
+  --animate-duration-slow: var(--duration-slow);
+}
