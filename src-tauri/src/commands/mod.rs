@@ -364,6 +364,16 @@ pub fn enable_listening(
     recording_detectors: State<'_, RecordingDetectorsState>,
     device_name: Option<String>,
 ) -> Result<(), String> {
+    // If device_name not provided, read from persistent settings store as fallback
+    use tauri_plugin_store::StoreExt;
+    let device_name = device_name.or_else(|| {
+        app_handle
+            .store("settings.json")
+            .ok()
+            .and_then(|store| store.get("audio.selectedDevice"))
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    });
+
     let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
 
     // Subscribe to wake word events before starting the pipeline
