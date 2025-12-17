@@ -39,20 +39,43 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 **Testing Philosophy:**
 Before writing a test, ensure to have looked at docs/TESTING.md
 
-**Example commands:**
+#### Quick Tests (for specs and spec reviews)
+Use these for fast feedback during development - no coverage overhead:
 ```bash
-# Frontend tests
-tcr check "bun run test:coverage"
+# Quick: Both frontend and backend (~3-5s)
+tcr check "bun run test && cd src-tauri && cargo test"
 
-# Backend tests
-tcr check "cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'"
+# Quick: Frontend only
+tcr check "bun run test"
 
-# Both frontend and backend
+# Quick: Backend only
+tcr check "cd src-tauri && cargo test"
+```
+
+#### Full Coverage Tests (for feature reviews only)
+Use these only during `/devloop:agile:feature-review` to verify coverage thresholds:
+```bash
+# Full: Both frontend and backend (slower, includes coverage)
 tcr check "bun run test:coverage && cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'"
 
-# Check status / reset after failures
-tcr status
-tcr reset
+# Full: Frontend only
+tcr check "bun run test:coverage"
+
+# Full: Backend only
+tcr check "cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'"
+```
+
+#### TCR in Agile Workflow
+| Workflow Stage | Test Command |
+|----------------|--------------|
+| Spec implementation | Quick tests |
+| `/devloop:agile:review` (spec review) | Quick tests |
+| `/devloop:agile:feature-review` | Full coverage tests |
+
+#### TCR Status Commands
+```bash
+tcr status  # Check current TCR state
+tcr reset   # Reset after failures
 ```
 
 ### Review Independence
