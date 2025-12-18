@@ -298,6 +298,7 @@ pub fn run() {
             commands::get_last_recording_buffer,
             commands::clear_last_recording_buffer,
             commands::list_recordings,
+            commands::delete_recording,
             commands::transcribe_file,
             commands::enable_listening,
             commands::disable_listening,

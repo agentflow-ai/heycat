@@ -145,36 +145,46 @@ src/pages/
 **Reviewed:** 2025-12-18
 **Reviewer:** Claude
 
+### Pre-Review Gate Checks
+
+**Build Warning Check:** PASS - No new unused warnings in src-tauri.
+
+**Command Registration Check:**
+```
+Output: check_parakeet_model_status, download_model
+```
+Note: `delete_recording` command is called by frontend but not registered in invoke_handler.
+
 ### Acceptance Criteria Verification
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| Title: "Recordings" | PASS | src/pages/Recordings.tsx:239-241 |
-| Subtitle: "Manage your voice recordings and transcriptions." | PASS | src/pages/Recordings.tsx:242-244 |
-| Search input with placeholder "Search recordings..." | PASS | src/pages/Recordings.tsx:252-259 |
-| Filter dropdown: All, Transcribed, Pending | PASS | src/pages/Recordings.tsx:263-273 |
-| Sort dropdown: Newest, Oldest, Longest, Shortest | PASS | src/pages/Recordings.tsx:276-287 |
-| Virtualized list for performance (100+ recordings) | FAIL | No virtualization library imported or used; spec notes recommend react-window or @tanstack/react-virtual |
-| Collapsed item shows: play button, filename, date, duration, size, status badge | PASS | src/pages/components/RecordingItem.tsx:79-148 |
-| Play/pause button on left | PASS | RecordingItem.tsx:88-103 |
-| Filename (truncated if long) | PASS | RecordingItem.tsx:106-109 with truncate class |
-| Metadata: date, duration, file size | PASS | RecordingItem.tsx:110-112 |
-| Status badge: "Transcribed" (green) or "Transcribe" (button) | PASS | RecordingItem.tsx:116-138 |
-| More menu (kebab icon) for additional actions | FAIL | No kebab menu implemented; actions in expanded view only |
-| Click to expand/collapse (accordion style) | PASS | RecordingItem.tsx:80-148, Recordings.tsx:108-110 |
-| Shows transcription text (or "No transcription" message) | PASS | RecordingItem.tsx:154-168 |
-| Action buttons: Copy Text, Open File, Delete | PASS | RecordingItem.tsx:194-222 |
-| Transcription text is scrollable if long | PASS | RecordingItem.tsx:159 max-h-32 overflow-y-auto |
-| Play: Plays audio (inline player or system) | DEFERRED | handlePlay toggles state but no actual audio playback (comment says "For now") |
-| Transcribe: Triggers transcription, shows progress | PASS | Recordings.tsx:118-142, RecordingItem.tsx:126-138 |
+| Title: "Recordings" | PASS | src/pages/Recordings.tsx:265-267 |
+| Subtitle: "Manage your voice recordings and transcriptions." | PASS | src/pages/Recordings.tsx:268-270 |
+| Search input with placeholder "Search recordings..." | PASS | src/pages/Recordings.tsx:278-285 |
+| Filter dropdown: All, Transcribed, Pending | PASS | src/pages/Recordings.tsx:289-298 |
+| Sort dropdown: Newest, Oldest, Longest, Shortest | PASS | src/pages/Recordings.tsx:301-312 |
+| Virtualized list for performance (100+ recordings) | FAIL | No virtualization library imported; spec recommends react-window or @tanstack/react-virtual |
+| Collapsed item shows: play button, filename, date, duration, size, status badge | PASS | src/pages/components/RecordingItem.tsx:79-146 |
+| Play/pause button on left | PASS | RecordingItem.tsx:81-93 (separate button, not nested) |
+| Filename (truncated if long) | PASS | RecordingItem.tsx:103-105 with truncate class |
+| Metadata: date, duration, file size | PASS | RecordingItem.tsx:106-108 |
+| Status badge: "Transcribed" (green) or "Transcribe" (button) | PASS | RecordingItem.tsx:111-131 |
+| More menu (kebab icon) for additional actions | DEFERRED | Replaced with expand/collapse pattern showing actions in expanded state |
+| Click to expand/collapse (accordion style) | PASS | RecordingItem.tsx:96-109 (filename clickable), :134-145 (chevron button) |
+| Shows transcription text (or "No transcription" message) | PASS | RecordingItem.tsx:156-166 |
+| Action buttons: Copy Text, Open File, Delete | PASS | RecordingItem.tsx:191-221 |
+| Transcription text is scrollable if long | PASS | RecordingItem.tsx:157 max-h-32 overflow-y-auto |
+| Play: Plays audio (inline player or system) | DEFERRED | handlePlay toggles state but no actual audio playback (comment: "For now") |
+| Transcribe: Triggers transcription, shows progress | PASS | Recordings.tsx:118-142, RecordingItem.tsx:121-130 |
 | Copy Text: Copies transcription to clipboard, shows toast | PASS | Recordings.tsx:144-161 |
 | Open File: Opens in system file manager | PASS | Recordings.tsx:163-173, uses @tauri-apps/plugin-opener |
-| Delete: Confirmation dialog, then removes | FAIL | Backend command `delete_recording` not registered in invoke_handler (lib.rs:294) |
+| Delete: Confirmation dialog, then removes | FAIL | Frontend calls invoke("delete_recording") but command not in invoke_handler (lib.rs:294-315) |
 | Empty state: Friendly illustration or icon | PASS | RecordingsEmptyState.tsx:13-15 (Mic icon) |
 | Empty state: "No recordings yet" | PASS | RecordingsEmptyState.tsx:19 |
 | Empty state: "Press Cmd+Shift+R or say 'Hey Cat' to start" | PASS | RecordingsEmptyState.tsx:22-24 |
 | Empty state: Primary button "Start Recording" | PASS | RecordingsEmptyState.tsx:28-30 |
-| Skeleton loaders while fetching | FAIL | Only shows "Loading recordings..." text, no skeleton loaders |
+| Skeleton loaders while fetching | PASS | Recordings.tsx:202-236 (full skeleton UI with cards) |
 | Transcription progress indicator | PASS | Button loading state via isTranscribing prop |
 
 ### Test Coverage Audit
@@ -183,14 +193,23 @@ src/pages/
 |-----------|--------|----------|
 | List renders recordings correctly | PASS | Recordings.test.tsx:116-132 |
 | Search filters recordings by name/content | PASS | Recordings.test.tsx:151-193 |
-| Filter dropdown works | PASS | Implicitly tested via search/filter tests |
-| Sort changes order | MISSING | No explicit sort order test |
+| Filter dropdown works | PASS | Recordings.test.tsx:134-149 (transcribed/pending) |
+| Sort changes order | PASS | Recordings.test.tsx:491-510 |
 | Click expands/collapses item | PASS | Recordings.test.tsx:214-245 |
-| Play button plays audio | MISSING | No explicit play button test |
+| Play button plays audio | PASS | Recordings.test.tsx:512-542 |
 | Copy button copies and shows toast | PASS | Recordings.test.tsx:266-311 |
 | Delete shows confirmation and removes | PASS | Recordings.test.tsx:337-377 |
 | Empty state shows when no recordings | PASS | Recordings.test.tsx:99-114 |
+| Skeleton loaders while loading | PASS | Recordings.test.tsx:544-554 |
 | Virtualization works for large lists | MISSING | Not implemented |
+
+### Frontend Integration Check
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Page exported from index.ts | PASS | src/pages/index.ts:10-11 |
+| Page wired up in App.tsx | PASS | src/App.tsx:12 (import), :74 (render) |
+| Page routed correctly | PASS | App.tsx:74 `navItem === "recordings" && <Recordings />` |
 
 ### Code Quality
 
@@ -198,22 +217,39 @@ src/pages/
 - Well-organized component structure (Recordings, RecordingItem, RecordingsEmptyState)
 - Good separation of concerns with individual handlers for each action
 - Proper error handling with toast notifications
-- Comprehensive test coverage for core functionality (17 passing tests)
+- Comprehensive test coverage (20 passing tests)
 - Proper TypeScript types exported for RecordingInfo
+- DOM nesting issue fixed - play button is now separate from expand button
+- Full skeleton loader UI implemented during loading state
 
 **Concerns:**
-- DOM nesting warning: button inside button (RecordingItem.tsx - play button nested in expand button)
-- Recordings page not exported from src/pages/index.ts
-- Recordings page not wired up in App.tsx (line 74 shows "Page coming soon" placeholder)
-- `delete_recording` command not registered in backend invoke_handler
-- No virtualization for large lists (spec requirement)
-- No skeleton loader UI for loading state
+- `delete_recording` command not registered in backend invoke_handler - will fail at runtime
+- No virtualization for large lists (spec requirement for 100+ recordings)
+- Audio playback deferred (toggles state only, no actual audio)
+
+### Data Flow Analysis
+
+```
+[UI: Click Delete] Recordings.tsx:175
+     |
+     v
+[State] setDeleteConfirmPath()
+     |
+     v
+[UI: Confirm Delete] Recordings.tsx:175-196
+     | invoke("delete_recording", { filePath })
+     v
+[BROKEN] Command not registered in lib.rs invoke_handler
+```
 
 ### Verdict
 
-**NEEDS_WORK** - The Recordings page component is well-implemented but not wired up end-to-end. Critical issues:
-1. Page not routed in App.tsx (line 72-78) - needs to render `<Recordings />` when `navItem === "recordings"`
-2. Page not exported from src/pages/index.ts
-3. `delete_recording` backend command not registered (would fail at runtime)
-4. Virtualization not implemented (spec requirement for 100+ recordings)
-5. DOM nesting violation (button inside button) causing React warning
+**NEEDS_WORK** - The Recordings page is properly wired up and tested, but has one blocking issue:
+
+1. **delete_recording command not registered** - Frontend calls `invoke("delete_recording")` at Recordings.tsx:178, but the command is not registered in src-tauri/src/lib.rs invoke_handler (lines 294-315). This will cause runtime failure when users try to delete recordings.
+
+**How to fix:**
+1. Create `delete_recording` command in src-tauri/src/commands.rs (or appropriate module)
+2. Register it in lib.rs invoke_handler alongside other recording commands (line 300-301)
+
+**Note:** Virtualization is listed as a spec requirement but may be acceptable to defer given the implementation complexity. However, the delete command is critical for basic functionality.

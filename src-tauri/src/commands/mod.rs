@@ -7,9 +7,10 @@ pub mod logic;
 
 pub use logic::{RecordingInfo, RecordingStateInfo};
 use logic::{
-    clear_last_recording_buffer_impl, disable_listening_impl, enable_listening_impl,
-    get_last_recording_buffer_impl, get_listening_status_impl, get_recording_state_impl,
-    list_recordings_impl, start_recording_impl, stop_recording_impl, transcribe_file_impl,
+    clear_last_recording_buffer_impl, delete_recording_impl, disable_listening_impl,
+    enable_listening_impl, get_last_recording_buffer_impl, get_listening_status_impl,
+    get_recording_state_impl, list_recordings_impl, start_recording_impl, stop_recording_impl,
+    transcribe_file_impl,
 };
 
 use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus, WakeWordEvent};
@@ -303,6 +304,12 @@ pub fn clear_last_recording_buffer(state: State<'_, ProductionState>) -> Result<
 #[tauri::command]
 pub fn list_recordings() -> Result<Vec<RecordingInfo>, String> {
     list_recordings_impl()
+}
+
+/// Delete a recording file
+#[tauri::command]
+pub fn delete_recording(file_path: String) -> Result<(), String> {
+    delete_recording_impl(&file_path)
 }
 
 /// Transcribe an audio file and copy result to clipboard

@@ -415,6 +415,61 @@ pub fn list_recordings_impl() -> Result<Vec<RecordingInfo>, String> {
     Ok(recordings)
 }
 
+/// Implementation of delete_recording
+///
+/// Deletes a recording file from the filesystem.
+///
+/// # Arguments
+/// * `file_path` - Path to the recording file to delete
+///
+/// # Returns
+/// Ok(()) on success
+///
+/// # Errors
+/// Returns an error string if:
+/// - File does not exist
+/// - File is not in the recordings directory (security check)
+/// - Deletion fails
+pub fn delete_recording_impl(file_path: &str) -> Result<(), String> {
+    let path = std::path::Path::new(file_path);
+
+    // Check if file exists
+    if !path.exists() {
+        return Err(format!("Recording file not found: {}", file_path));
+    }
+
+    // Security check: ensure file is in recordings directory
+    let recordings_dir = get_recordings_dir();
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve path: {}", e))?;
+    let canonical_recordings = recordings_dir
+        .canonicalize()
+        .unwrap_or_else(|_| recordings_dir.clone());
+
+    if !canonical_path.starts_with(&canonical_recordings) {
+        error!(
+            "Security: Attempted to delete file outside recordings directory: {}",
+            file_path
+        );
+        return Err("Cannot delete files outside the recordings directory".to_string());
+    }
+
+    // Check it's a .wav file
+    if path.extension().and_then(|s| s.to_str()) != Some("wav") {
+        return Err("Can only delete .wav recording files".to_string());
+    }
+
+    // Delete the file
+    std::fs::remove_file(path).map_err(|e| {
+        error!("Failed to delete recording {}: {}", file_path, e);
+        format!("Failed to delete recording: {}", e)
+    })?;
+
+    info!("Deleted recording: {}", file_path);
+    Ok(())
+}
+
 /// Implementation of transcribe_file
 ///
 /// Transcribes an audio file using the TDT (batch) model.
