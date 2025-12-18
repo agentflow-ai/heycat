@@ -2,51 +2,43 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
-import * as useRecordingModule from "./hooks/useRecording";
-import * as useTranscriptionModule from "./hooks/useTranscription";
 import * as useCatOverlayModule from "./hooks/useCatOverlay";
-import * as useAudioErrorHandlerModule from "./hooks/useAudioErrorHandler";
-import * as useListeningModule from "./hooks/useListening";
 import * as useAppStatusModule from "./hooks/useAppStatus";
+import * as useAutoStartListeningModule from "./hooks/useAutoStartListening";
+import * as useListeningModule from "./hooks/useListening";
+import * as useRecordingModule from "./hooks/useRecording";
+import * as useMultiModelStatusModule from "./hooks/useMultiModelStatus";
+import * as useSettingsModule from "./hooks/useSettings";
 
-vi.mock("./hooks/useRecording");
 vi.mock("./hooks/useCatOverlay");
-vi.mock("./hooks/useTranscription");
-vi.mock("./hooks/useAudioErrorHandler");
-vi.mock("./hooks/useListening");
 vi.mock("./hooks/useAppStatus");
+vi.mock("./hooks/useAutoStartListening");
+vi.mock("./hooks/useListening");
+vi.mock("./hooks/useRecording");
+vi.mock("./hooks/useMultiModelStatus");
+vi.mock("./hooks/useSettings");
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
 
-const mockUseRecording = vi.mocked(useRecordingModule.useRecording);
-const mockUseTranscription = vi.mocked(useTranscriptionModule.useTranscription);
 const mockUseCatOverlay = vi.mocked(useCatOverlayModule.useCatOverlay);
-const mockUseAudioErrorHandler = vi.mocked(useAudioErrorHandlerModule.useAudioErrorHandler);
-const mockUseListening = vi.mocked(useListeningModule.useListening);
 const mockUseAppStatus = vi.mocked(useAppStatusModule.useAppStatus);
+const mockUseAutoStartListening = vi.mocked(useAutoStartListeningModule.useAutoStartListening);
+const mockUseListening = vi.mocked(useListeningModule.useListening);
+const mockUseRecording = vi.mocked(useRecordingModule.useRecording);
+const mockUseMultiModelStatus = vi.mocked(useMultiModelStatusModule.useMultiModelStatus);
+const mockUseSettings = vi.mocked(useSettingsModule.useSettings);
 
 describe("App Integration", () => {
-  const defaultRecordingMock: useRecordingModule.UseRecordingResult = {
+  const defaultAppStatusMock: useAppStatusModule.UseAppStatusResult = {
+    status: "idle",
     isRecording: false,
-    error: null,
-    startRecording: vi.fn(),
-    stopRecording: vi.fn(),
-    lastRecording: null,
-    wasCancelled: false,
-    cancelReason: null,
-  };
-
-  const defaultTranscriptionMock: useTranscriptionModule.UseTranscriptionResult = {
     isTranscribing: false,
-    transcribedText: null,
+    isListening: false,
     error: null,
-    durationMs: null,
-  };
-
-  const defaultAudioErrorMock: useAudioErrorHandlerModule.UseAudioErrorHandlerReturn = {
-    error: null,
-    clearError: vi.fn(),
   };
 
   const defaultListeningMock: useListeningModule.UseListeningReturn = {
@@ -58,71 +50,78 @@ describe("App Integration", () => {
     disableListening: vi.fn(),
   };
 
-  const defaultAppStatusMock: useAppStatusModule.UseAppStatusResult = {
-    status: "idle",
+  const defaultRecordingMock: useRecordingModule.UseRecordingResult = {
     isRecording: false,
-    isTranscribing: false,
-    isListening: false,
+    error: null,
+    startRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    lastRecording: null,
+    wasCancelled: false,
+    cancelReason: null,
+  };
+
+  const defaultMultiModelStatusMock: useMultiModelStatusModule.UseMultiModelStatusReturn = {
+    models: {
+      isAvailable: true,
+      downloadState: "idle" as const,
+      progress: 0,
+      error: null,
+    },
+    downloadModel: vi.fn(),
+    checkStatus: vi.fn(),
+  };
+
+  const defaultSettingsMock = {
+    settings: {
+      audio: { selectedDevice: null },
+      listening: { enabled: false, autoStartOnLaunch: false },
+    },
+    updateSettings: vi.fn(),
+    isLoading: false,
     error: null,
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseRecording.mockReturnValue(defaultRecordingMock);
-    mockUseTranscription.mockReturnValue(defaultTranscriptionMock);
     mockUseCatOverlay.mockReturnValue({ isRecording: false });
-    mockUseAudioErrorHandler.mockReturnValue(defaultAudioErrorMock);
-    mockUseListening.mockReturnValue(defaultListeningMock);
     mockUseAppStatus.mockReturnValue(defaultAppStatusMock);
+    mockUseAutoStartListening.mockReturnValue(undefined);
+    mockUseListening.mockReturnValue(defaultListeningMock);
+    mockUseRecording.mockReturnValue(defaultRecordingMock);
+    mockUseMultiModelStatus.mockReturnValue(defaultMultiModelStatusMock);
+    mockUseSettings.mockReturnValue(defaultSettingsMock);
   });
 
-  it("renders RecordingIndicator component without errors", async () => {
+  it("renders AppShell with navigation", async () => {
     render(<App />);
 
-    const indicator = document.querySelector(".recording-indicator");
-    expect(indicator).not.toBeNull();
-    expect(screen.getByText("Idle")).toBeDefined();
-    // Wait for RecordingsList async effect to complete
     await waitFor(() => {
-      expect(screen.getByText("No recordings yet")).toBeDefined();
+      // Check for navigation element
+      expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeDefined();
     });
   });
 
-  it("syncs state when backend emits recording events", async () => {
-    const { rerender } = render(<App />);
+  it("renders the header with HeyCat branding", async () => {
+    render(<App />);
 
-    expect(screen.getByText("Idle")).toBeDefined();
-
-    mockUseRecording.mockReturnValue({
-      ...defaultRecordingMock,
-      isRecording: true,
+    await waitFor(() => {
+      expect(screen.getByText("HeyCat")).toBeDefined();
     });
+  });
+
+  it("shows status pill when recording", async () => {
     mockUseAppStatus.mockReturnValue({
       ...defaultAppStatusMock,
       status: "recording",
       isRecording: true,
     });
 
-    rerender(<App />);
-
-    expect(screen.getByText("Recording")).toBeDefined();
-    // Wait for RecordingsList async effect to complete
-    await waitFor(() => {
-      expect(screen.getByText("No recordings yet")).toBeDefined();
-    });
-  });
-
-  it("App renders without console errors", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
     render(<App />);
 
-    // Wait for RecordingsList async effect to complete
     await waitFor(() => {
-      expect(screen.getByText("No recordings yet")).toBeDefined();
+      // Status pill should show Recording state
+      expect(screen.getByRole("status")).toBeDefined();
+      expect(screen.getByText("Recording")).toBeDefined();
     });
-
-    expect(consoleSpy).not.toHaveBeenCalled();
-    consoleSpy.mockRestore();
   });
 });

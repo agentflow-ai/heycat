@@ -12,7 +12,7 @@ import { useListening } from "../hooks/useListening";
 import { useRecording, type RecordingMetadata } from "../hooks/useRecording";
 import { useMultiModelStatus } from "../hooks/useMultiModelStatus";
 import { useSettings } from "../hooks/useSettings";
-import { formatDuration, formatDate, type RecordingInfo } from "../components/RecordingsView/RecordingsList";
+import { formatDuration, formatDate, type RecordingInfo } from "./components/RecordingItem";
 
 export interface DashboardProps {
   /** Navigate to another page */
