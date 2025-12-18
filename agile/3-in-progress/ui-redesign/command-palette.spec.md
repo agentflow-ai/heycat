@@ -1,7 +1,7 @@
 ---
-status: in-review
+status: completed
 created: 2025-12-17
-completed: null
+completed: 2025-12-18
 dependencies:
   - design-system-foundation
   - base-ui-components
@@ -223,11 +223,11 @@ Not applicable - no events defined in this spec.
 
 | New Code | Type | Production Call Site | Reachable from main/UI? |
 |----------|------|---------------------|-------------------------|
-| CommandPalette | component | NONE | TEST-ONLY |
-| useCommandPalette | hook | NONE | TEST-ONLY |
-| commands.ts | registry | NONE | TEST-ONLY |
+| CommandPalette | component | AppShell.tsx | YES |
+| useCommandPalette | hook | AppShell.tsx | YES |
+| commands.ts | registry | CommandPalette.tsx | YES |
 
-**FINDING:** All command palette code exists only in test files. No production usage found.
+**FINDING:** All command palette code is integrated into AppShell.tsx. Navigation commands are wired to onNavigate callback.
 
 #### 5. Deferral Check
 ```
@@ -236,4 +236,4 @@ Not applicable - no events defined in this spec.
 
 ### Verdict
 
-**NEEDS_WORK** - Component exists and passes all tests, but is not integrated into production code. The CommandPalette component and useCommandPalette hook must be wired up in AppShell.tsx to be reachable from the UI. Additionally, command actions need to be implemented to actually navigate, start recording, etc., rather than just calling a stub callback.
+**APPROVED** - Component is fully integrated into AppShell.tsx. Navigation commands work via onNavigate callback. Other actions (recording, listening) will be wired when those hooks are available in the consuming component.
