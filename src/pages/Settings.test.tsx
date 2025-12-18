@@ -158,14 +158,17 @@ describe("Settings Page", () => {
       expect(screen.getByText("GitHub Repository")).toBeDefined();
     });
 
-    it("calls onNavigate when tab changes", async () => {
+    it("keeps tab state internal without triggering navigation", async () => {
       const user = userEvent.setup();
       const handleNavigate = vi.fn();
       render(<Settings onNavigate={handleNavigate} />);
 
       await user.click(screen.getByRole("tab", { name: "Audio" }));
 
-      expect(handleNavigate).toHaveBeenCalledWith("settings/audio");
+      // Tab changes should NOT trigger navigation (stays on settings page)
+      expect(handleNavigate).not.toHaveBeenCalled();
+      // But the tab content should change
+      expect(screen.getByText("Input Device")).toBeDefined();
     });
   });
 

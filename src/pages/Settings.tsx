@@ -25,10 +25,6 @@ export function Settings({ onNavigate, initialTab = "general" }: SettingsProps) 
 
   const handleTabChange = (tab: SettingsTab) => {
     setActiveTab(tab);
-    // Update URL if onNavigate is provided (e.g., /settings/audio)
-    if (onNavigate) {
-      onNavigate(`settings/${tab}`);
-    }
   };
 
   return (
