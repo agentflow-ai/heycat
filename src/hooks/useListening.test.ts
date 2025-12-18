@@ -175,7 +175,15 @@ describe("useListening", () => {
   });
 
   it("user sees error when enabling listening fails", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("Cannot enable while recording"));
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === "get_listening_status") {
+        return Promise.resolve({ enabled: false, active: false, micAvailable: true });
+      }
+      if (command === "enable_listening") {
+        return Promise.reject(new Error("Cannot enable while recording"));
+      }
+      return Promise.resolve(undefined);
+    });
     const { result } = renderHook(() => useListening());
 
     await act(async () => {

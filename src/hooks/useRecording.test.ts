@@ -91,7 +91,15 @@ describe("useRecording", () => {
   });
 
   it("user sees error when recording fails to start", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("Microphone not found"));
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === "get_recording_state") {
+        return Promise.resolve({ state: "Idle" });
+      }
+      if (command === "start_recording") {
+        return Promise.reject(new Error("Microphone not found"));
+      }
+      return Promise.resolve(undefined);
+    });
     const { result } = renderHook(() => useRecording());
 
     await act(async () => {

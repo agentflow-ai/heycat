@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Play, ArrowRight } from "lucide-react";
 import {
@@ -24,7 +24,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { isListening, enableListening, disableListening } = useListening({
     deviceName: settings.audio.selectedDevice,
   });
-  const { startRecording } = useRecording({
+  const { isRecording, startRecording, stopRecording } = useRecording({
     deviceName: settings.audio.selectedDevice,
   });
   const { models, downloadModel } = useMultiModelStatus();
@@ -60,8 +60,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const handleStartRecording = async () => {
-    await startRecording();
+  const handleRecordingToggle = async () => {
+    if (isRecording) {
+      await stopRecording();
+    } else {
+      await startRecording();
+    }
   };
 
   const handleDownloadModel = async () => {
@@ -70,6 +74,42 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const recentRecordings = recordings.slice(0, 5);
   const isModelDownloading = models.downloadState === "downloading";
+
+  // Double-escape detection for stopping recordings started via button
+  // Time window for double-tap detection (300ms, matching backend)
+  const DOUBLE_TAP_WINDOW_MS = 300;
+  const lastEscapeTime = useRef<number | null>(null);
+
+  const handleEscapeKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !isRecording) return;
+
+      const now = Date.now();
+      if (
+        lastEscapeTime.current !== null &&
+        now - lastEscapeTime.current < DOUBLE_TAP_WINDOW_MS
+      ) {
+        // Double-tap detected - stop recording
+        stopRecording();
+        lastEscapeTime.current = null;
+      } else {
+        // First tap - record time
+        lastEscapeTime.current = now;
+      }
+    },
+    [isRecording, stopRecording]
+  );
+
+  // Set up escape key listener when recording
+  useEffect(() => {
+    if (isRecording) {
+      window.addEventListener("keydown", handleEscapeKeyDown);
+      return () => {
+        window.removeEventListener("keydown", handleEscapeKeyDown);
+        lastEscapeTime.current = null;
+      };
+    }
+  }, [isRecording, handleEscapeKeyDown]);
 
   return (
     <div className="p-6 space-y-6">
@@ -155,7 +195,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
       {/* Quick Action Buttons */}
       <div className="flex flex-wrap gap-3">
-        <Button onClick={handleStartRecording}>Start Recording</Button>
+        <Button onClick={handleRecordingToggle}>
+          {isRecording ? "Stop Recording" : "Start Recording"}
+        </Button>
         <Button variant="secondary" onClick={() => onNavigate?.("commands")}>
           Train Command
         </Button>

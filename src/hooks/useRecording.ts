@@ -30,6 +30,11 @@ interface RecordingCancelledPayload {
   timestamp: string;
 }
 
+/** Response from get_recording_state command */
+interface RecordingStateResponse {
+  state: "Idle" | "Recording" | "Processing" | "Listening";
+}
+
 /** Options for the useRecording hook */
 export interface UseRecordingOptions {
   /** Device name to record from (null = system default) */
@@ -66,6 +71,21 @@ export function useRecording(
   );
   const [wasCancelled, setWasCancelled] = useState(false);
   const [cancelReason, setCancelReason] = useState<string | null>(null);
+
+  // Fetch initial recording state from backend on mount
+  useEffect(() => {
+    /* v8 ignore start -- @preserve */
+    async function fetchInitialState() {
+      try {
+        const status = await invoke<RecordingStateResponse>("get_recording_state");
+        setIsRecording(status.state === "Recording");
+      } catch {
+        // Silently handle error - state will be updated via events
+      }
+    }
+    fetchInitialState();
+    /* v8 ignore stop */
+  }, []);
 
   // Note: State updates happen via events, not command responses.
   // This ensures hotkey-triggered recordings update the UI correctly.

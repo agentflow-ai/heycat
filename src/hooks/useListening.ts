@@ -25,6 +25,13 @@ interface ListeningUnavailablePayload {
   timestamp: string;
 }
 
+/** Response from get_listening_status command */
+interface ListeningStatusResponse {
+  enabled: boolean;
+  active: boolean;
+  micAvailable: boolean;
+}
+
 /** Options for the useListening hook */
 export interface UseListeningOptions {
   /** Device name to listen from (null = system default) */
@@ -81,6 +88,22 @@ export function useListening(
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+    /* v8 ignore stop */
+  }, []);
+
+  // Fetch initial listening state from backend on mount
+  useEffect(() => {
+    /* v8 ignore start -- @preserve */
+    async function fetchInitialState() {
+      try {
+        const status = await invoke<ListeningStatusResponse>("get_listening_status");
+        setIsListening(status.enabled);
+        setIsMicAvailable(status.micAvailable);
+      } catch {
+        // Silently handle error - state will be updated via events
+      }
+    }
+    fetchInitialState();
     /* v8 ignore stop */
   }, []);
 
