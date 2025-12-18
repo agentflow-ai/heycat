@@ -1,0 +1,152 @@
+import { Pencil, X } from "lucide-react";
+import { Card, CardContent, Button, Toggle } from "../../components/ui";
+import type { CommandDto } from "../Commands";
+
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  open_app: "Open App",
+  type_text: "Type Text",
+  system_control: "System Control",
+  workflow: "Workflow",
+  custom: "Custom",
+};
+
+const ACTION_TYPE_COLORS: Record<string, string> = {
+  open_app: "bg-heycat-teal/10 text-heycat-teal",
+  type_text: "bg-heycat-purple/10 text-heycat-purple",
+  system_control: "bg-heycat-orange/10 text-heycat-orange",
+  workflow: "bg-info/10 text-info",
+  custom: "bg-text-secondary/10 text-text-secondary",
+};
+
+export interface CommandItemProps {
+  command: CommandDto;
+  onEdit: (command: CommandDto) => void;
+  onDelete: (id: string) => void;
+  onToggleEnabled: (command: CommandDto) => void;
+  isDeleting?: boolean;
+  onConfirmDelete?: (id: string) => void;
+  onCancelDelete?: () => void;
+}
+
+function getActionDescription(command: CommandDto): string {
+  switch (command.action_type) {
+    case "open_app":
+      return command.parameters.app
+        ? `Opens ${command.parameters.app}`
+        : "Opens an application";
+    case "type_text":
+      return command.parameters.text
+        ? `Types: ${command.parameters.text}`
+        : "Types text";
+    case "system_control":
+      return command.parameters.control
+        ? `${command.parameters.control.replace(/_/g, " ")}`
+        : "System control";
+    case "workflow":
+      return command.parameters.workflow
+        ? `Runs ${command.parameters.workflow}`
+        : "Runs a workflow";
+    case "custom":
+      return "Custom script";
+    default:
+      return "";
+  }
+}
+
+export function CommandItem({
+  command,
+  onEdit,
+  onDelete,
+  onToggleEnabled,
+  isDeleting = false,
+  onConfirmDelete,
+  onCancelDelete,
+}: CommandItemProps) {
+  const actionLabel =
+    ACTION_TYPE_LABELS[command.action_type] || command.action_type;
+  const badgeColor =
+    ACTION_TYPE_COLORS[command.action_type] ||
+    "bg-text-secondary/10 text-text-secondary";
+  const description = getActionDescription(command);
+
+  return (
+    <Card
+      className={`transition-opacity ${!command.enabled ? "opacity-60" : ""}`}
+      role="listitem"
+    >
+      <CardContent className="flex items-center gap-4 py-3">
+        {/* Toggle */}
+        <Toggle
+          checked={command.enabled}
+          onCheckedChange={() => onToggleEnabled(command)}
+          aria-label={`${command.enabled ? "Disable" : "Enable"} ${command.trigger}`}
+        />
+
+        {/* Command Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3">
+            {/* Trigger phrase in quotes */}
+            <span className="text-sm font-medium text-text-primary">
+              "{command.trigger}"
+            </span>
+            {/* Action type badge */}
+            <span
+              className={`px-2 py-0.5 text-xs font-medium rounded-full ${badgeColor}`}
+            >
+              {actionLabel}
+            </span>
+          </div>
+          {/* Description */}
+          {description && (
+            <p className="text-xs text-text-secondary mt-0.5 truncate">
+              {description}
+            </p>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          {isDeleting ? (
+            <>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => onConfirmDelete?.(command.id)}
+                aria-label="Confirm delete"
+              >
+                Confirm
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCancelDelete}
+                aria-label="Cancel delete"
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onEdit(command)}
+                aria-label={`Edit ${command.trigger}`}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(command.id)}
+                aria-label={`Delete ${command.trigger}`}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
