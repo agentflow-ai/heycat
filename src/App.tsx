@@ -7,6 +7,7 @@ import { TranscriptionNotification } from "./components/TranscriptionNotificatio
 import { AudioErrorDialog } from "./components/AudioErrorDialog";
 import { Sidebar, SidebarTab } from "./components/Sidebar";
 import { AppShell } from "./components/layout/AppShell";
+import { ToastProvider } from "./components/overlays";
 import { UIToggle } from "./components/dev";
 import { Dashboard } from "./pages";
 import { useTranscription } from "./hooks/useTranscription";
@@ -60,7 +61,7 @@ function App() {
   // New UI mode - render AppShell layout
   if (mode === "new") {
     return (
-      <>
+      <ToastProvider>
         <AppShell
           activeNavItem={navItem}
           onNavigate={setNavItem}
@@ -76,7 +77,7 @@ function App() {
           )}
         </AppShell>
         <UIToggle mode={mode} onToggle={toggle} />
-      </>
+      </ToastProvider>
     );
   }
 

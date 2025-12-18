@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-review
 created: 2025-12-17
 completed: null
 dependencies:
@@ -132,3 +132,69 @@ toast({
 
 - Test location: `src/components/overlays/__tests__/Toast.test.tsx`
 - Verification: [ ] Integration test passes
+
+## Review
+
+**Reviewed:** 2025-12-18
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Toast Container - Fixed position bottom-right | PASS | ToastContainer.tsx:30-35 uses `fixed bottom-4 right-4` |
+| Toast Container - Stacks vertically (newest on top) | PASS | ToastContainer.tsx:23 slices toasts, flex-col-reverse for newest on top |
+| Toast Container - Z-index above content but below modals | PASS | ToastContainer.tsx:34 sets `z-40` |
+| Toast Container - Max 3 visible toasts | PASS | ToastContainer.tsx:19-23 MAX_VISIBLE_TOASTS=3 enforced |
+| Toast Component - Icon on left | PASS | Toast.tsx:135-138 Icon rendered with proper positioning |
+| Toast Component - Title text (bold) | PASS | Toast.tsx:142 uses `font-medium` for title |
+| Toast Component - Description text (optional, truncated) | PASS | Toast.tsx:143-147 description with `line-clamp-2` |
+| Toast Component - Close X button on right | PASS | Toast.tsx:163-177 close button with X icon |
+| Toast Component - Action buttons (optional) | PASS | Toast.tsx:148-159 action button rendered conditionally |
+| Toast Types - Success (green) | PASS | Toast.tsx:37-39 text-success/border-l-success defined |
+| Toast Types - Error (red) | PASS | Toast.tsx:41-43 text-error/border-l-error defined |
+| Toast Types - Warning (amber) | PASS | Toast.tsx:45-47 text-warning/border-l-warning defined |
+| Toast Types - Info (blue) | PASS | Toast.tsx:49-51 text-info/border-l-info defined |
+| Animations - Slide-in from right | PASS | Toast.tsx:127 uses `animate-slide-in` class |
+| Animations - Slide-out to right | PASS | Toast.tsx:67-73, 125-126 exit animation with translate-x-full |
+| Animations - Smooth stacking | PASS | ToastContainer.tsx uses gap-3 with flex layout |
+| Auto-dismiss - Default 5 seconds | PASS | ToastProvider.tsx:60 default duration 5000ms |
+| Auto-dismiss - Configurable per toast | PASS | types.ts:24-25 duration parameter in ToastOptions |
+| Auto-dismiss - Pause timer on hover | PASS | Toast.tsx:76-108 pause logic with mouse enter/leave |
+| Auto-dismiss - No auto-dismiss for errors | PASS | Toast.tsx:78, ToastProvider.tsx:59 errors get duration=null |
+| Transcription Toast - Shows result preview | DEFERRED | Not implemented in this spec - will be in integration-and-cleanup |
+| Transcription Toast - Copy to Clipboard action | DEFERRED | Action button API exists (types.ts:8-11), integration deferred |
+| Transcription Toast - Click to expand | DEFERRED | Not implemented in this spec - will be in integration-and-cleanup |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Toast appears with slide-in animation | FAIL | Toast.test.tsx:32 - Test environment issue (document not defined) |
+| Toast auto-dismisses after timeout | MISSING | Not explicitly tested due to test environment issues |
+| Hover pauses auto-dismiss timer | MISSING | Not explicitly tested due to test environment issues |
+| Close button dismisses immediately | FAIL | Toast.test.tsx:47 - Test environment issue |
+| Multiple toasts stack correctly | FAIL | Toast.test.tsx:89 - Test environment issue |
+| Action buttons work | FAIL | Toast.test.tsx:69 - Test environment issue |
+| Error toasts don't auto-dismiss | MISSING | Not explicitly tested due to test environment issues |
+
+### Code Quality
+
+**Strengths:**
+- Well-structured component architecture with clear separation of concerns (Toast, ToastContainer, ToastProvider, useToast hook)
+- Comprehensive TypeScript types with proper interfaces
+- Proper accessibility attributes (aria-live, aria-label, role="alert")
+- Auto-dismiss logic correctly handles pause on hover with remaining time tracking
+- Error toasts properly configured to not auto-dismiss
+- Good code documentation with references to source of truth (ui.md)
+- Animation exit handling with proper timing before DOM removal
+
+**Concerns:**
+- ToastProvider is NOT wired into App.tsx - the component exists but is not used in production
+- Tests are failing due to test environment setup issues (document is not defined in jsdom)
+- No production usage of useToast hook anywhere in the codebase
+- Toast system is completely orphaned - not integrated into the application
+
+### Verdict
+
+**NEEDS_WORK** - ToastProvider not wired into App.tsx, toast system is not integrated into production code, tests failing due to environment setup issues.
