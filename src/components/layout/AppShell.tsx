@@ -1,8 +1,9 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useCallback } from "react";
 import { Header } from "./Header";
 import { Sidebar, type NavItem } from "./Sidebar";
 import { MainContent } from "./MainContent";
 import { Footer } from "./Footer";
+import { CommandPalette, useCommandPalette } from "../overlays";
 
 export interface AppShellProps {
   children: ReactNode;
@@ -48,6 +49,32 @@ export function AppShell({
   onSettingsClick,
   onHelpClick,
 }: AppShellProps) {
+  const { isOpen, open, close } = useCommandPalette({
+    onOpen: onCommandPaletteOpen,
+  });
+
+  const handleCommandExecute = useCallback(
+    (commandId: string) => {
+      switch (commandId) {
+        case "go-dashboard":
+          onNavigate?.("dashboard");
+          break;
+        case "go-recordings":
+          onNavigate?.("recordings");
+          break;
+        case "go-commands":
+          onNavigate?.("commands");
+          break;
+        case "go-settings":
+          onNavigate?.("settings");
+          break;
+        // Other commands (recording, listening, etc.) require hooks
+        // not available in AppShell - will be wired in future specs
+      }
+    },
+    [onNavigate]
+  );
+
   return (
     <div
       className="h-screen w-screen flex flex-col bg-background"
@@ -58,7 +85,7 @@ export function AppShell({
       <Header
         status={status}
         statusLabel={statusLabel}
-        onCommandPaletteOpen={onCommandPaletteOpen}
+        onCommandPaletteOpen={open}
         onSettingsClick={onSettingsClick}
         onHelpClick={onHelpClick}
       />
@@ -77,6 +104,11 @@ export function AppShell({
           />
         </div>
       </div>
+      <CommandPalette
+        isOpen={isOpen}
+        onClose={close}
+        onCommandExecute={handleCommandExecute}
+      />
     </div>
   );
 }
