@@ -312,7 +312,9 @@ pub fn run() {
             voice_commands::add_command,
             voice_commands::update_command,
             voice_commands::remove_command,
-            voice_commands::executor::test_command
+            voice_commands::executor::test_command,
+            commands::suspend_recording_shortcut,
+            commands::resume_recording_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -722,5 +722,65 @@ pub fn stop_audio_monitor(monitor_state: State<'_, AudioMonitorState>) -> Result
     monitor_state.stop()
 }
 
+// =============================================================================
+// Hotkey Management Commands
+// =============================================================================
+
+/// Type alias for hotkey service state
+pub type HotkeyServiceState = crate::hotkey::HotkeyService<crate::hotkey::TauriShortcutBackend>;
+
+/// Suspend the global recording shortcut
+///
+/// Temporarily unregisters the Cmd+Shift+R shortcut to allow the webview to capture
+/// keyboard events (e.g., when recording a new shortcut in settings).
+#[tauri::command]
+pub fn suspend_recording_shortcut(
+    service: State<'_, HotkeyServiceState>,
+) -> Result<(), String> {
+    crate::info!("Suspending recording shortcut...");
+    service
+        .unregister_recording_shortcut()
+        .map_err(|e| e.to_string())
+}
+
+/// Resume the global recording shortcut
+///
+/// Re-registers the Cmd+Shift+R shortcut after it was suspended.
+/// The callback will use the existing HotkeyIntegration state.
+#[tauri::command]
+pub fn resume_recording_shortcut(
+    app_handle: AppHandle,
+    service: State<'_, HotkeyServiceState>,
+    integration: State<'_, HotkeyIntegrationState>,
+    recording_state: State<'_, ProductionState>,
+) -> Result<(), String> {
+    crate::info!("Resuming recording shortcut...");
+
+    // Clone the Arcs for the callback closure
+    let integration_clone = integration.inner().clone();
+    let state_clone = recording_state.inner().clone();
+    let app_handle_clone = app_handle.clone();
+
+    service
+        .register_recording_shortcut(Box::new(move || {
+            crate::debug!("Hotkey pressed!");
+            match integration_clone.lock() {
+                Ok(mut guard) => {
+                    guard.handle_toggle(&state_clone);
+                }
+                Err(e) => {
+                    crate::error!("Failed to acquire integration lock: {}", e);
+                    let _ = app_handle_clone.emit(
+                        crate::events::event_names::RECORDING_ERROR,
+                        crate::events::RecordingErrorPayload {
+                            message: "Internal error: please restart the application".to_string(),
+                        },
+                    );
+                }
+            }
+        }))
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests;

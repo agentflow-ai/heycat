@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
 import { Button } from "../../components/ui";
 
@@ -51,15 +52,43 @@ export function ShortcutEditor({
 }: ShortcutEditorProps) {
   const [recording, setRecording] = useState(false);
   const [recordedShortcut, setRecordedShortcut] = useState<string | null>(null);
+  const [shortcutSuspended, setShortcutSuspended] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Reset state when modal opens
+  // Suspend global shortcut when entering recording mode
+  const suspendShortcut = useCallback(async () => {
+    if (shortcutSuspended) return;
+    try {
+      await invoke("suspend_recording_shortcut");
+      setShortcutSuspended(true);
+    } catch (error) {
+      console.error("Failed to suspend recording shortcut:", error);
+    }
+  }, [shortcutSuspended]);
+
+  // Resume global shortcut when exiting recording mode
+  const resumeShortcut = useCallback(async () => {
+    if (!shortcutSuspended) return;
+    try {
+      await invoke("resume_recording_shortcut");
+      setShortcutSuspended(false);
+    } catch (error) {
+      console.error("Failed to resume recording shortcut:", error);
+    }
+  }, [shortcutSuspended]);
+
+  // Reset state when modal opens/closes
   useEffect(() => {
     if (open) {
       setRecording(false);
       setRecordedShortcut(null);
+    } else {
+      // Ensure shortcut is resumed when modal closes
+      if (shortcutSuspended) {
+        resumeShortcut();
+      }
     }
-  }, [open]);
+  }, [open, shortcutSuspended, resumeShortcut]);
 
   // Handle keyboard events when recording
   const handleKeyDown = useCallback(
@@ -77,9 +106,11 @@ export function ShortcutEditor({
         const shortcut = formatKey(e);
         setRecordedShortcut(shortcut);
         setRecording(false);
+        // Resume the global shortcut after successful recording
+        resumeShortcut();
       }
     },
-    [recording]
+    [recording, resumeShortcut]
   );
 
   // Add/remove keyboard listener
@@ -190,7 +221,7 @@ export function ShortcutEditor({
             {recording ? (
               <span className="text-text-secondary">Press your shortcut...</span>
             ) : (
-              <kbd className="px-4 py-2 text-2xl font-mono bg-neutral-100 border border-border rounded-lg">
+              <kbd className="px-4 py-2 text-2xl font-mono bg-surface-elevated text-text-primary border border-border rounded-lg">
                 {displayShortcut}
               </kbd>
             )}
@@ -201,7 +232,9 @@ export function ShortcutEditor({
         <div className="flex items-center justify-between">
           <Button
             variant="secondary"
-            onClick={() => {
+            onClick={async () => {
+              // Suspend global shortcut before entering recording mode
+              await suspendShortcut();
               setRecording(true);
               setRecordedShortcut(null);
             }}
