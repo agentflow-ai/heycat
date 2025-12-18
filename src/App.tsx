@@ -8,6 +8,7 @@ import { AudioErrorDialog } from "./components/AudioErrorDialog";
 import { Sidebar, SidebarTab } from "./components/Sidebar";
 import { AppShell } from "./components/layout/AppShell";
 import { UIToggle } from "./components/dev";
+import { Dashboard } from "./pages";
 import { useTranscription } from "./hooks/useTranscription";
 import { useCatOverlay } from "./hooks/useCatOverlay";
 import { useAutoStartListening } from "./hooks/useAutoStartListening";
@@ -67,9 +68,12 @@ function App() {
           recordingDuration={isRecording ? recordingDuration : undefined}
           footerStateDescription="Ready for your command."
         >
-          <div className="flex items-center justify-center h-full text-text-secondary">
-            <p>New UI - Page content coming soon</p>
-          </div>
+          {navItem === "dashboard" && <Dashboard onNavigate={setNavItem} />}
+          {navItem !== "dashboard" && (
+            <div className="flex items-center justify-center h-full text-text-secondary">
+              <p>Page coming soon</p>
+            </div>
+          )}
         </AppShell>
         <UIToggle mode={mode} onToggle={toggle} />
       </>
