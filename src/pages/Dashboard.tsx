@@ -1,0 +1,281 @@
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Play, ArrowRight } from "lucide-react";
+import {
+  Card,
+  CardHeader,
+  CardContent,
+  Button,
+  Toggle,
+} from "../components/ui";
+import { useListening } from "../hooks/useListening";
+import { useRecording, type RecordingMetadata } from "../hooks/useRecording";
+import { useMultiModelStatus } from "../hooks/useMultiModelStatus";
+import { useSettings } from "../hooks/useSettings";
+import { formatDuration, formatDate, type RecordingInfo } from "../components/RecordingsView/RecordingsList";
+
+export interface DashboardProps {
+  /** Navigate to another page */
+  onNavigate?: (page: string) => void;
+}
+
+export function Dashboard({ onNavigate }: DashboardProps) {
+  const { settings } = useSettings();
+  const { isListening, enableListening, disableListening } = useListening({
+    deviceName: settings.audio.selectedDevice,
+  });
+  const { startRecording } = useRecording({
+    deviceName: settings.audio.selectedDevice,
+  });
+  const { models, downloadModel } = useMultiModelStatus();
+
+  // Recordings data
+  const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
+  const [recordingsLoading, setRecordingsLoading] = useState(true);
+
+  // Commands count (placeholder until commands system exists)
+  const [commandsCount] = useState(0);
+
+  // Fetch recordings on mount
+  useEffect(() => {
+    async function fetchRecordings() {
+      try {
+        setRecordingsLoading(true);
+        const result = await invoke<RecordingInfo[]>("list_recordings");
+        setRecordings(result);
+      } catch {
+        // Silently handle error - recordings list will be empty
+      } finally {
+        setRecordingsLoading(false);
+      }
+    }
+    fetchRecordings();
+  }, []);
+
+  const handleListeningToggle = async (checked: boolean) => {
+    if (checked) {
+      await enableListening();
+    } else {
+      await disableListening();
+    }
+  };
+
+  const handleStartRecording = async () => {
+    await startRecording();
+  };
+
+  const handleDownloadModel = async () => {
+    await downloadModel("tdt");
+  };
+
+  const recentRecordings = recordings.slice(0, 5);
+  const isModelDownloading = models.downloadState === "downloading";
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Page Header */}
+      <header>
+        <h1 className="text-2xl font-semibold text-text-primary">Dashboard</h1>
+        <p className="text-text-secondary mt-1">
+          Welcome back! Here's your HeyCat status.
+        </p>
+      </header>
+
+      {/* Status Cards Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Listening Card */}
+        <Card>
+          <CardHeader>
+            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+              Listening
+            </span>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <span className="text-sm text-text-primary">
+              {isListening ? "'Hey Cat' ready." : "Listening off"}
+            </span>
+            <Toggle
+              checked={isListening}
+              onCheckedChange={handleListeningToggle}
+              aria-label="Toggle listening mode"
+            />
+          </CardContent>
+        </Card>
+
+        {/* Recordings Card */}
+        <Card
+          variant="interactive"
+          onClick={() => onNavigate?.("recordings")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              onNavigate?.("recordings");
+            }
+          }}
+        >
+          <CardHeader>
+            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+              Recordings
+            </span>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <span className="text-lg font-medium text-text-primary">
+              {recordingsLoading ? "..." : `${recordings.length} recordings`}
+            </span>
+            <ArrowRight className="h-5 w-5 text-text-secondary" />
+          </CardContent>
+        </Card>
+
+        {/* Commands Card */}
+        <Card
+          variant="interactive"
+          onClick={() => onNavigate?.("commands")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              onNavigate?.("commands");
+            }
+          }}
+        >
+          <CardHeader>
+            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+              Commands
+            </span>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <span className="text-lg font-medium text-text-primary">
+              {commandsCount} active
+            </span>
+            <ArrowRight className="h-5 w-5 text-text-secondary" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Action Buttons */}
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={handleStartRecording}>Start Recording</Button>
+        <Button variant="secondary" onClick={() => onNavigate?.("commands")}>
+          Train Command
+        </Button>
+        {!models.isAvailable && (
+          <Button
+            variant="secondary"
+            onClick={handleDownloadModel}
+            loading={isModelDownloading}
+          >
+            {isModelDownloading
+              ? `Downloading... ${models.progress}%`
+              : "Download Model"}
+          </Button>
+        )}
+      </div>
+
+      {/* Recent Activity Section */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            Recent Activity
+          </h2>
+          {recordings.length > 0 && (
+            <button
+              type="button"
+              className="text-sm text-heycat-orange hover:text-heycat-orange-light transition-colors"
+              onClick={() => onNavigate?.("recordings")}
+            >
+              View all
+            </button>
+          )}
+        </div>
+
+        {recordingsLoading ? (
+          <div className="text-text-secondary text-sm">
+            Loading recordings...
+          </div>
+        ) : recentRecordings.length === 0 ? (
+          <Card className="text-center py-8">
+            <CardContent>
+              <p className="text-text-secondary">
+                No recordings yet. Click "Start Recording" or say "Hey Cat" to
+                get started!
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {recentRecordings.map((recording) => (
+              <div
+                key={recording.file_path}
+                className="flex items-center gap-3 p-3 bg-white rounded-lg border border-neutral-200 hover:border-neutral-300 transition-colors"
+              >
+                <button
+                  type="button"
+                  className="flex items-center justify-center w-8 h-8 rounded-full bg-heycat-cream text-heycat-orange hover:bg-heycat-orange hover:text-white transition-colors"
+                  aria-label={`Play ${recording.filename}`}
+                >
+                  <Play className="h-4 w-4" />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-text-primary truncate block">
+                    {recording.filename}
+                  </span>
+                  <span className="text-xs text-text-secondary">
+                    {formatDate(recording.created_at)}
+                  </span>
+                </div>
+                <span className="text-sm text-text-secondary">
+                  {formatDuration(recording.duration_secs)}
+                </span>
+                <TranscriptionBadge recording={recording} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Model not downloaded prompt */}
+        {!models.isAvailable && !recordingsLoading && (
+          <Card className="mt-4 border-heycat-orange/30 bg-heycat-cream/50">
+            <CardContent className="flex items-center gap-4 py-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-text-primary">
+                  Download the transcription model to enable voice commands
+                </p>
+                <p className="text-xs text-text-secondary mt-1">
+                  Required for transcribing recordings and voice activation
+                </p>
+              </div>
+              <Button onClick={handleDownloadModel} loading={isModelDownloading}>
+                {isModelDownloading
+                  ? `${models.progress}%`
+                  : "Download"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// Helper component for transcription status badge
+function TranscriptionBadge({ recording }: { recording: RecordingInfo }) {
+  // For now, we don't have transcription status in RecordingInfo
+  // This is a placeholder that can be enhanced when transcription tracking is added
+  const hasError = Boolean(recording.error);
+
+  if (hasError) {
+    return (
+      <span className="px-2 py-1 text-xs font-medium rounded-full bg-error/10 text-error">
+        Error
+      </span>
+    );
+  }
+
+  // Default to pending since we don't track transcription status yet
+  return (
+    <span className="px-2 py-1 text-xs font-medium rounded-full bg-neutral-100 text-text-secondary">
+      Pending
+    </span>
+  );
+}
