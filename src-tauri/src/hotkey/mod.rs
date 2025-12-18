@@ -63,7 +63,8 @@ pub trait ShortcutBackend {
 
 /// Service for managing hotkey registration
 pub struct HotkeyService<B: ShortcutBackend> {
-    backend: B,
+    /// The backend used for shortcut registration
+    pub backend: B,
 }
 
 impl<B: ShortcutBackend> HotkeyService<B> {

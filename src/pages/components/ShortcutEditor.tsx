@@ -8,11 +8,11 @@ export interface ShortcutEditorProps {
   onOpenChange: (open: boolean) => void;
   shortcutName: string;
   currentShortcut: string;
-  onSave: (newShortcut: string) => void;
+  onSave: (displayShortcut: string, backendShortcut: string) => void;
 }
 
-// Convert key event to display string
-function formatKey(e: KeyboardEvent): string {
+// Convert key event to display string (e.g., "⌘⇧R")
+function formatKeyForDisplay(e: KeyboardEvent): string {
   const parts: string[] = [];
 
   // Add modifiers in standard order
@@ -43,6 +43,32 @@ function formatKey(e: KeyboardEvent): string {
   return parts.join("");
 }
 
+// Convert key event to backend format (e.g., "CmdOrControl+Shift+R")
+function formatKeyForBackend(e: KeyboardEvent): string {
+  const parts: string[] = [];
+
+  // Add modifiers in standard order
+  if (e.metaKey || e.ctrlKey) parts.push("CmdOrControl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+
+  // Add the main key (excluding modifier keys themselves)
+  const key = e.key;
+  if (!["Meta", "Control", "Alt", "Shift"].includes(key)) {
+    // Normalize key names for the backend
+    const keyMap: Record<string, string> = {
+      ArrowUp: "Up",
+      ArrowDown: "Down",
+      ArrowLeft: "Left",
+      ArrowRight: "Right",
+      " ": "Space",
+    };
+    parts.push(keyMap[key] || key.toUpperCase());
+  }
+
+  return parts.join("+");
+}
+
 export function ShortcutEditor({
   open,
   onOpenChange,
@@ -51,7 +77,10 @@ export function ShortcutEditor({
   onSave,
 }: ShortcutEditorProps) {
   const [recording, setRecording] = useState(false);
-  const [recordedShortcut, setRecordedShortcut] = useState<string | null>(null);
+  const [recordedShortcut, setRecordedShortcut] = useState<{
+    display: string;
+    backend: string;
+  } | null>(null);
   const [shortcutSuspended, setShortcutSuspended] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -98,13 +127,15 @@ export function ShortcutEditor({
       e.preventDefault();
       e.stopPropagation();
 
-      // Only record if we have at least one modifier + a key
-      const hasModifier = e.metaKey || e.ctrlKey || e.altKey;
+      // Record any key (with or without modifiers)
+      // Skip if only a modifier key is pressed by itself
       const isModifierKey = ["Meta", "Control", "Alt", "Shift"].includes(e.key);
 
-      if (hasModifier && !isModifierKey) {
-        const shortcut = formatKey(e);
-        setRecordedShortcut(shortcut);
+      if (!isModifierKey) {
+        setRecordedShortcut({
+          display: formatKeyForDisplay(e),
+          backend: formatKeyForBackend(e),
+        });
         setRecording(false);
         // Resume the global shortcut after successful recording
         resumeShortcut();
@@ -151,8 +182,8 @@ export function ShortcutEditor({
 
   if (!open) return null;
 
-  const displayShortcut = recordedShortcut ?? currentShortcut;
-  const hasChanges = recordedShortcut !== null && recordedShortcut !== currentShortcut;
+  const displayShortcut = recordedShortcut?.display ?? currentShortcut;
+  const hasChanges = recordedShortcut !== null && recordedShortcut.display !== currentShortcut;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -248,7 +279,11 @@ export function ShortcutEditor({
               Cancel
             </Button>
             <Button
-              onClick={() => onSave(displayShortcut)}
+              onClick={() => {
+                if (recordedShortcut) {
+                  onSave(recordedShortcut.display, recordedShortcut.backend);
+                }
+              }}
               disabled={!hasChanges}
             >
               Save
@@ -258,7 +293,7 @@ export function ShortcutEditor({
 
         {/* Help text */}
         <p className="mt-4 text-xs text-text-secondary text-center">
-          Use a combination like ⌘⇧R (Command + Shift + R)
+          Press any key or combination (e.g., F1, ⌘R, ⌘⇧R)
         </p>
       </div>
     </div>

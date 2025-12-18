@@ -13,6 +13,7 @@ use logic::{
     transcribe_file_impl,
 };
 
+use crate::hotkey::ShortcutBackend;
 use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus, WakeWordEvent};
 
 use crate::events::{
@@ -745,8 +746,8 @@ pub fn suspend_recording_shortcut(
 
 /// Resume the global recording shortcut
 ///
-/// Re-registers the Cmd+Shift+R shortcut after it was suspended.
-/// The callback will use the existing HotkeyIntegration state.
+/// Re-registers the recording shortcut after it was suspended.
+/// Uses the shortcut from settings if available, otherwise uses the default.
 #[tauri::command]
 pub fn resume_recording_shortcut(
     app_handle: AppHandle,
@@ -754,7 +755,17 @@ pub fn resume_recording_shortcut(
     integration: State<'_, HotkeyIntegrationState>,
     recording_state: State<'_, ProductionState>,
 ) -> Result<(), String> {
-    crate::info!("Resuming recording shortcut...");
+    use tauri_plugin_store::StoreExt;
+
+    // Get shortcut from settings, or use default
+    let shortcut = app_handle
+        .store("settings.json")
+        .ok()
+        .and_then(|store| store.get("hotkey.recordingShortcut"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| crate::hotkey::RECORDING_SHORTCUT.to_string());
+
+    crate::info!("Resuming recording shortcut: {}", shortcut);
 
     // Clone the Arcs for the callback closure
     let integration_clone = integration.inner().clone();
@@ -762,7 +773,8 @@ pub fn resume_recording_shortcut(
     let app_handle_clone = app_handle.clone();
 
     service
-        .register_recording_shortcut(Box::new(move || {
+        .backend
+        .register(&shortcut, Box::new(move || {
             crate::debug!("Hotkey pressed!");
             match integration_clone.lock() {
                 Ok(mut guard) => {
@@ -780,6 +792,88 @@ pub fn resume_recording_shortcut(
             }
         }))
         .map_err(|e| e.to_string())
+}
+
+/// Update the global recording shortcut
+///
+/// Unregisters the current shortcut and registers a new one.
+/// The new shortcut is persisted to settings.
+#[tauri::command]
+pub fn update_recording_shortcut(
+    app_handle: AppHandle,
+    service: State<'_, HotkeyServiceState>,
+    integration: State<'_, HotkeyIntegrationState>,
+    recording_state: State<'_, ProductionState>,
+    new_shortcut: String,
+) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+
+    crate::info!("Updating recording shortcut to: {}", new_shortcut);
+
+    // Get current shortcut from settings to unregister it
+    let current_shortcut = app_handle
+        .store("settings.json")
+        .ok()
+        .and_then(|store| store.get("hotkey.recordingShortcut"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| crate::hotkey::RECORDING_SHORTCUT.to_string());
+
+    // Unregister current shortcut
+    if let Err(e) = service.backend.unregister(&current_shortcut) {
+        crate::warn!("Failed to unregister old shortcut '{}': {}", current_shortcut, e);
+        // Continue anyway - the old shortcut might not be registered
+    }
+
+    // Clone the Arcs for the callback closure
+    let integration_clone = integration.inner().clone();
+    let state_clone = recording_state.inner().clone();
+    let app_handle_clone = app_handle.clone();
+
+    // Register new shortcut
+    service
+        .backend
+        .register(&new_shortcut, Box::new(move || {
+            crate::debug!("Hotkey pressed!");
+            match integration_clone.lock() {
+                Ok(mut guard) => {
+                    guard.handle_toggle(&state_clone);
+                }
+                Err(e) => {
+                    crate::error!("Failed to acquire integration lock: {}", e);
+                    let _ = app_handle_clone.emit(
+                        crate::events::event_names::RECORDING_ERROR,
+                        crate::events::RecordingErrorPayload {
+                            message: "Internal error: please restart the application".to_string(),
+                        },
+                    );
+                }
+            }
+        }))
+        .map_err(|e| format!("Failed to register new shortcut: {}", e))?;
+
+    // Save to settings
+    if let Ok(store) = app_handle.store("settings.json") {
+        store.set("hotkey.recordingShortcut", serde_json::json!(new_shortcut));
+        if let Err(e) = store.save() {
+            crate::warn!("Failed to persist settings: {}", e);
+        }
+    }
+
+    crate::info!("Recording shortcut updated successfully to: {}", new_shortcut);
+    Ok(())
+}
+
+/// Get the current recording shortcut from settings
+#[tauri::command]
+pub fn get_recording_shortcut(app_handle: AppHandle) -> String {
+    use tauri_plugin_store::StoreExt;
+
+    app_handle
+        .store("settings.json")
+        .ok()
+        .and_then(|store| store.get("hotkey.recordingShortcut"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| crate::hotkey::RECORDING_SHORTCUT.to_string())
 }
 
 #[cfg(test)]

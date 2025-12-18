@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, LabeledToggle, Button } from "../../components/ui";
 import { useSettings } from "../../hooks/useSettings";
 import { useToast } from "../../components/overlays";
@@ -6,6 +7,16 @@ import { ShortcutEditor } from "./ShortcutEditor";
 
 export interface GeneralSettingsProps {
   className?: string;
+}
+
+// Convert backend shortcut format to display format
+function backendToDisplay(shortcut: string): string {
+  return shortcut
+    .replace(/CmdOrControl/gi, "⌘")
+    .replace(/Ctrl/gi, "⌃")
+    .replace(/Alt/gi, "⌥")
+    .replace(/Shift/gi, "⇧")
+    .replace(/\+/g, "");
 }
 
 export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
@@ -16,8 +27,22 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [notifications, setNotifications] = useState(true);
 
+  // Shortcut state
+  const [currentShortcut, setCurrentShortcut] = useState("⌘⇧R");
+
   // Shortcut editor modal state
   const [isShortcutEditorOpen, setIsShortcutEditorOpen] = useState(false);
+
+  // Load current shortcut from backend on mount
+  useEffect(() => {
+    invoke<string>("get_recording_shortcut")
+      .then((backendShortcut) => {
+        setCurrentShortcut(backendToDisplay(backendShortcut));
+      })
+      .catch((error) => {
+        console.error("Failed to get recording shortcut:", error);
+      });
+  }, []);
 
   const handleLaunchAtLoginChange = async (checked: boolean) => {
     setLaunchAtLogin(checked);
@@ -99,7 +124,7 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
               </div>
               <div className="flex items-center gap-2">
                 <kbd className="px-2 py-1 text-xs font-mono bg-surface border border-border rounded">
-                  ⌘⇧R
+                  {currentShortcut}
                 </kbd>
                 <Button
                   variant="ghost"
@@ -143,13 +168,24 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
         open={isShortcutEditorOpen}
         onOpenChange={setIsShortcutEditorOpen}
         shortcutName="Toggle Recording"
-        currentShortcut="⌘⇧R"
-        onSave={(newShortcut) => {
-          toast({
-            type: "success",
-            title: "Shortcut updated",
-            description: `Toggle Recording is now ${newShortcut}.`,
-          });
+        currentShortcut={currentShortcut}
+        onSave={async (displayShortcut, backendShortcut) => {
+          try {
+            await invoke("update_recording_shortcut", { newShortcut: backendShortcut });
+            setCurrentShortcut(displayShortcut);
+            toast({
+              type: "success",
+              title: "Shortcut updated",
+              description: `Toggle Recording is now ${displayShortcut}.`,
+            });
+          } catch (error) {
+            console.error("Failed to update shortcut:", error);
+            toast({
+              type: "error",
+              title: "Failed to update shortcut",
+              description: String(error),
+            });
+          }
           setIsShortcutEditorOpen(false);
         }}
       />

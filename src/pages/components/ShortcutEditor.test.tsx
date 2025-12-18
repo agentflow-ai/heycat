@@ -15,7 +15,7 @@ describe("ShortcutEditor", () => {
     onOpenChange: vi.fn(),
     shortcutName: "Toggle Recording",
     currentShortcut: "⌘⇧R",
-    onSave: vi.fn(),
+    onSave: vi.fn() as (displayShortcut: string, backendShortcut: string) => void,
   };
 
   beforeEach(() => {

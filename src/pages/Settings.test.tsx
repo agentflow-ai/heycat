@@ -4,7 +4,12 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Settings } from "./Settings";
 
 // Mock Tauri invoke
-const mockInvoke = vi.fn();
+const mockInvoke = vi.fn().mockImplementation((command: string) => {
+  if (command === "get_recording_shortcut") {
+    return Promise.resolve("CmdOrControl+Shift+R");
+  }
+  return Promise.resolve(undefined);
+});
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
