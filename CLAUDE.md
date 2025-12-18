@@ -22,7 +22,7 @@ IMPORTANT: You must use these to discover the stated topics. Dont assume things 
 **File:** docs/DEVELOPMENT.md
 
 ### Architecture
-**When:** Understanding project structure, frontend-backend communication, adding Tauri commands, searching for code or previous implementations
+**When:** Understanding project structure, frontend-backend communication, adding Tauri commands, searching for code or previous implementations. Use when planning new code, implementing code or updating code in the project. If you are working on a feature, spec or bug, you must read this.
 **File:** docs/ARCHITECTURE.md
 
 ### Agile Workflow
@@ -36,7 +36,7 @@ IMPORTANT: You must use these to discover the stated topics. Dont assume things 
 
 
 ### TCR (Test-Commit-Refactor) - Writing and Running tests
-**When:** Writing tests, Running tests, checking coverage, test-driven development
+**When:** Writing tests, Running tests, checking coverage, test-driven development. You will always run and write tests when working with feature specs or bugs, ensure to read this before you begin work on any such tasks.
 **File:** docs/TESTING.md
 
 ### Review Independence

@@ -272,3 +272,19 @@ body {
 .status-pill-breathe {
   animation: status-pill-breathe 2s ease-in-out infinite;
 }
+
+/* Toast Animations (ui.md 3.7) */
+@keyframes slide-in-from-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-from-right var(--duration-normal) var(--ease-out);
+}
