@@ -91,6 +91,7 @@ export function ShortcutEditor({
     backend: string;
   } | null>(null);
   const [shortcutSuspended, setShortcutSuspended] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
@@ -122,8 +123,16 @@ export function ShortcutEditor({
       // Start the backend keyboard capture
       await invoke("start_shortcut_recording");
       console.log("[ShortcutEditor] Backend keyboard capture started");
+      setPermissionError(null);
     } catch (error) {
       console.error("Failed to start keyboard capture:", error);
+      const errorMessage = String(error);
+
+      // Check if this is a permission error
+      if (errorMessage.includes("Input Monitoring permission")) {
+        setPermissionError(errorMessage);
+      }
+
       setRecording(false);
     }
   }, []);
@@ -138,12 +147,22 @@ export function ShortcutEditor({
     }
   }, []);
 
+  // Open System Preferences to Input Monitoring
+  const openInputMonitoringPreferences = useCallback(async () => {
+    try {
+      await invoke("open_input_monitoring_preferences");
+    } catch (error) {
+      console.error("Failed to open preferences:", error);
+    }
+  }, []);
+
   // Reset state when modal opens
   useEffect(() => {
     if (open) {
       setRecording(false);
       setRecordedShortcut(null);
       setShortcutSuspended(false);
+      setPermissionError(null);
     }
   }, [open]);
 
@@ -306,7 +325,9 @@ export function ShortcutEditor({
               ${
                 recording
                   ? "border-heycat-teal border-dashed animate-pulse"
-                  : "border-border"
+                  : permissionError
+                    ? "border-red-500"
+                    : "border-border"
               }
             `}
           >
@@ -319,6 +340,25 @@ export function ShortcutEditor({
             )}
           </div>
         </div>
+
+        {/* Permission Error */}
+        {permissionError && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <p className="text-sm text-red-400 mb-3">
+              Input Monitoring permission is required to capture the fn key.
+            </p>
+            <Button
+              variant="secondary"
+              onClick={openInputMonitoringPreferences}
+              className="w-full"
+            >
+              Open System Settings
+            </Button>
+            <p className="text-xs text-text-secondary mt-2 text-center">
+              After granting permission, restart the app and try again.
+            </p>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-between">

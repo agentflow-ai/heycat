@@ -247,6 +247,17 @@ fn run_capture_loop(
                 kCFRunLoopDefaultMode,
             );
             CFRelease(manager as *const c_void);
+
+            // kIOReturnNotPermitted = -536870203 (0xE00002C1)
+            // This means the app doesn't have Input Monitoring permission
+            const K_IO_RETURN_NOT_PERMITTED: i32 = -536870203;
+            if result == K_IO_RETURN_NOT_PERMITTED {
+                return Err(
+                    "Input Monitoring permission required. Please grant permission in System Settings > Privacy & Security > Input Monitoring, then restart the app."
+                        .to_string(),
+                );
+            }
+
             return Err(format!("Failed to open IOHIDManager: {}", result));
         }
 

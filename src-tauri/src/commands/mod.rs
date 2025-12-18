@@ -929,5 +929,33 @@ pub fn stop_shortcut_recording(
     Ok(())
 }
 
+/// Open System Preferences to the Input Monitoring pane
+///
+/// This allows users to grant the Input Monitoring permission required
+/// for fn key capture in the shortcut editor.
+#[tauri::command]
+pub fn open_input_monitoring_preferences() -> Result<(), String> {
+    use std::process::Command;
+
+    crate::info!("Opening Input Monitoring preferences...");
+
+    // Open System Preferences/Settings to Input Monitoring pane
+    // Works on macOS Ventura and later
+    let result = Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+        .spawn();
+
+    match result {
+        Ok(_) => {
+            crate::info!("Opened Input Monitoring preferences");
+            Ok(())
+        }
+        Err(e) => {
+            crate::error!("Failed to open preferences: {}", e);
+            Err(format!("Failed to open System Preferences: {}", e))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
