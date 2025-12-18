@@ -43,12 +43,14 @@ function formatKeyForDisplay(e: KeyboardEvent): string {
   return parts.join("");
 }
 
-// Convert key event to backend format (e.g., "CmdOrControl+Shift+R")
+// Convert key event to backend format (e.g., "Command+Shift+R")
+// Uses exact modifiers pressed, not CmdOrControl shorthand
 function formatKeyForBackend(e: KeyboardEvent): string {
   const parts: string[] = [];
 
-  // Add modifiers in standard order
-  if (e.metaKey || e.ctrlKey) parts.push("CmdOrControl");
+  // Add modifiers in standard order - use exact keys pressed
+  if (e.metaKey) parts.push("Command");  // Cmd key on Mac
+  if (e.ctrlKey) parts.push("Control");  // Ctrl key
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
 
@@ -144,8 +146,12 @@ export function ShortcutEditor({
   // Add/remove keyboard listener
   useEffect(() => {
     if (recording) {
+      console.log("[ShortcutEditor] Adding keydown listener, recording:", recording);
       window.addEventListener("keydown", handleKeyDown, true);
-      return () => window.removeEventListener("keydown", handleKeyDown, true);
+      return () => {
+        console.log("[ShortcutEditor] Removing keydown listener");
+        window.removeEventListener("keydown", handleKeyDown, true);
+      };
     }
   }, [recording, handleKeyDown]);
 
