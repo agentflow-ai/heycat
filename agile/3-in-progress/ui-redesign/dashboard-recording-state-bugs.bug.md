@@ -1,11 +1,12 @@
 ---
-status: pending
+status: completed
 severity: major
 origin: manual
 created: 2025-12-18
-completed: null
+completed: 2025-12-18
 parent_feature: "ui-redesign"
 parent_spec: null
+review_round: 1
 ---
 
 # Bug: Dashboard recording UI state issues
@@ -88,3 +89,109 @@ Multiple UI state synchronization issues on the new Dashboard page:
 ## Integration Test
 
 Test the full flow: start recording via dashboard → verify button state → stop via double-escape → verify button returns to start state
+
+## Review
+
+**Reviewed:** 2025-12-18
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Start Recording button changes to Stop Recording when clicked | PASS | Dashboard.tsx:198-199 uses `isRecording` state from `useRecording` hook and conditionally renders "Stop Recording" / "Start Recording" |
+| Double-escape hotkey stops recording regardless of how recording was started | PASS | Dashboard.tsx:78-112 implements frontend double-escape detection with 300ms window, calls `stopRecording()` |
+| Listening Mode toggle correctly reflects the actual listening state | PASS | useListening.ts:94-108 fetches initial state via `get_listening_status` on mount, Dashboard.tsx:138 binds toggle to `isListening` state |
+| Root cause addressed (not just symptoms) | PASS | All three root causes identified in bug description are addressed with proper fixes |
+| Tests added to prevent regression | PASS | useRecording.test.ts (double-tap-escape handling), useListening.test.ts (initial state fetch), Dashboard.test.tsx (button behavior) |
+| Related specs/features not broken | PASS | All 381 tests pass |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Recording state from events updates UI | PASS | src/hooks/useRecording.test.ts:141-180 |
+| Double-tap-escape cancellation handled | PASS | src/hooks/useRecording.test.ts:186-264 |
+| Initial listening state fetched on mount | PASS | src/hooks/useListening.test.ts:177-195 |
+| Start recording button triggers recording | PASS | src/pages/Dashboard.test.tsx:174-179 |
+| Listening toggle triggers enable/disable | PASS | src/pages/Dashboard.test.tsx:161-172 |
+
+### Code Quality
+
+**Strengths:**
+- Clean separation of concerns: hooks manage state, Dashboard handles UI and user interactions
+- Double-escape detection matches backend behavior (300ms window)
+- Initial state fetch prevents UI/backend state mismatch
+- Proper cleanup of keyboard event listeners on unmount
+
+**Concerns:**
+- None identified
+
+### Pre-Review Gate Results
+
+1. **Build Warning Check:** No warnings found (PASS)
+2. **Command Registration Check:** `get_listening_status` and `get_recording_state` registered in lib.rs:262,269 (PASS)
+3. **Event Subscription Check:** All events (recording_started, recording_stopped, listening_started, listening_stopped) have corresponding listeners in hooks (PASS)
+
+### Data Flow Verification
+
+**Bug 1 - Recording Button State:**
+```
+[UI: Click Start Recording]
+     |
+     v
+[Dashboard.tsx:63-69 handleRecordingToggle]
+     | calls startRecording() or stopRecording()
+     v
+[useRecording.ts:92-104] invoke("start_recording")
+     |
+     v
+[Backend] recording_started event
+     |
+     v
+[useRecording.ts:123-131] listen("recording_started")
+     | setIsRecording(true)
+     v
+[Dashboard.tsx:198-199] Button re-renders with "Stop Recording"
+```
+
+**Bug 2 - Double-Escape:**
+```
+[UI: Press Escape twice within 300ms]
+     |
+     v
+[Dashboard.tsx:83-101 handleEscapeKeyDown]
+     | detects double-tap, calls stopRecording()
+     v
+[useRecording.ts:106-116] invoke("stop_recording")
+     |
+     v
+[Backend] recording_stopped event
+     |
+     v
+[useRecording.ts:135-142] listen("recording_stopped")
+     | setIsRecording(false)
+     v
+[UI: Button returns to "Start Recording"]
+```
+
+**Bug 3 - Listening Toggle Initial State:**
+```
+[App Mount]
+     |
+     v
+[useListening.ts:95-108 fetchInitialState]
+     | invoke("get_listening_status")
+     v
+[Backend: get_listening_status_impl]
+     | returns { enabled, active, micAvailable }
+     v
+[useListening.ts:100-101] setIsListening(status.enabled)
+     |
+     v
+[Dashboard.tsx:138] Toggle checked={isListening}
+```
+
+### Verdict
+
+**APPROVED** - All three bugs have been properly fixed with root causes addressed. The implementation correctly uses React hooks for state management, adds proper initial state fetching from the backend, and implements frontend double-escape detection. All 381 tests pass, data flows are complete end-to-end, and no deferrals or hardcoded state values were found in production code.
