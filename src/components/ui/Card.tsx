@@ -9,30 +9,30 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 const variantStyles: Record<CardVariant, string> = {
   standard: `
-    bg-white
+    bg-surface
     rounded-[var(--radius-lg)]
     p-5
     shadow-sm
-    border border-neutral-200
+    border border-border
     transition-all duration-[var(--duration-normal)] ease-[var(--ease-default)]
-    hover:shadow-md hover:border-neutral-300
+    hover:shadow-md
   `,
   interactive: `
-    bg-white
+    bg-surface
     rounded-[var(--radius-lg)]
     p-5
     shadow-sm
-    border border-neutral-200
+    border border-border
     cursor-pointer
     transition-all duration-[var(--duration-normal)] ease-[var(--ease-default)]
     hover:shadow-lg hover:border-heycat-orange
   `,
   status: `
-    bg-white
+    bg-surface
     rounded-[var(--radius-lg)]
     p-5
     shadow-sm
-    border border-neutral-200
+    border border-border
     border-l-4
     transition-all duration-[var(--duration-normal)] ease-[var(--ease-default)]
   `,

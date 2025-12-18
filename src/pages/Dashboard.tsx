@@ -181,7 +181,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           {recordings.length > 0 && (
             <button
               type="button"
-              className="text-sm text-heycat-orange hover:text-heycat-orange-light transition-colors"
+              className="text-sm text-heycat-orange hover:text-heycat-orange-light bg-transparent border-none cursor-pointer transition-colors"
               onClick={() => onNavigate?.("recordings")}
             >
               View all
@@ -207,11 +207,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             {recentRecordings.map((recording) => (
               <div
                 key={recording.file_path}
-                className="flex items-center gap-3 p-3 bg-white rounded-lg border border-neutral-200 hover:border-neutral-300 transition-colors"
+                className="flex items-center gap-3 p-3 bg-surface rounded-lg border border-border hover:border-heycat-orange/50 transition-colors"
               >
                 <button
                   type="button"
-                  className="flex items-center justify-center w-8 h-8 rounded-full bg-heycat-cream text-heycat-orange hover:bg-heycat-orange hover:text-white transition-colors"
+                  className="flex items-center justify-center w-8 h-8 rounded-full bg-heycat-orange/20 text-heycat-orange hover:bg-heycat-orange hover:text-white transition-colors"
                   aria-label={`Play ${recording.filename}`}
                 >
                   <Play className="h-4 w-4" />

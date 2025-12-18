@@ -1,7 +1,7 @@
 ---
-status: in-progress
+status: completed
 created: 2025-12-17
-completed: null
+completed: 2025-12-18
 dependencies:
   - layout-shell
   - base-ui-components
@@ -153,41 +153,41 @@ RECENT ACTIVITY
 | Listening Toggle Integration | PASS | Dashboard.tsx:24-26,55-61 - useListening hook with deviceName |
 | Recording Count Integration | PASS | Dashboard.tsx:40-53 - invoke("list_recordings") fetches from backend |
 | Commands Count Integration | DEFERRED | Dashboard.tsx:37 - Hardcoded 0, useCommands hook doesn't exist yet |
-| Recent Recordings Integration | PASS | Dashboard.tsx:40-53 - useRecording hook used for recordings data |
+| Recent Recordings Integration | PASS | Dashboard.tsx:40-53 - Recordings data fetched via invoke("list_recordings") |
 
 ### Test Coverage Audit
 
 | Test Case | Status | Location |
 |-----------|--------|----------|
-| Dashboard renders with all sections | PASS | Dashboard.test.tsx:67-97 |
-| Status cards show correct counts | PASS | Dashboard.test.tsx:99-122 |
-| Listening toggle works | PASS | Dashboard.test.tsx:161-172 |
-| Quick action buttons trigger correct actions | PASS | Dashboard.test.tsx:174-188 |
-| Recent activity shows recordings | PASS | Dashboard.test.tsx:136-159 |
-| Empty state displays when no recordings | PASS | Dashboard.test.tsx:124-134 |
-| Navigation links work | PASS | Dashboard.test.tsx:190-229 |
+| Dashboard renders with all sections | PASS | Dashboard.test.tsx (9 tests passing) |
+| Status cards show correct counts | PASS | Dashboard.test.tsx (9 tests passing) |
+| Listening toggle works | PASS | Dashboard.test.tsx (9 tests passing) |
+| Quick action buttons trigger correct actions | PASS | Dashboard.test.tsx (9 tests passing) |
+| Recent activity shows recordings | PASS | Dashboard.test.tsx (9 tests passing) |
+| Empty state displays when no recordings | PASS | Dashboard.test.tsx (9 tests passing) |
+| Navigation links work | PASS | Dashboard.test.tsx (9 tests passing) |
 
 ### Code Quality
 
 **Strengths:**
 - Component properly uses all required hooks (useListening, useRecording, useMultiModelStatus, useSettings)
-- Backend command list_recordings is properly registered and tested
-- Tests pass (9/9) and follow TESTING.md guidelines focusing on user-visible behavior
+- Backend command list_recordings is properly registered in lib.rs:265
+- All tests pass (9/9) and follow TESTING.md guidelines
 - Proper error handling with silent fallback for recording fetch failures
 - Accessibility features present (aria-labels, keyboard navigation)
 - Responsive design implemented with Tailwind grid
 - Loading states and empty states properly handled
+- **FIXED: Dashboard now properly wired to App.tsx** - Component is imported (line 11) and rendered conditionally (line 71)
 
 **Concerns:**
-- **CRITICAL: Dashboard component is not wired up to App.tsx** - Component exists and is exported from src/pages/index.ts but is never imported or rendered in App.tsx. In the new UI mode (line 60-77 of App.tsx), the AppShell renders placeholder text "New UI - Page content coming soon" instead of the Dashboard component. This means the Dashboard code exists but is completely unreachable from production.
-- Commands count is hardcoded to 0 because useCommands hook doesn't exist - this is acceptable as a placeholder but noted as a deferral without a tracking spec reference
+- Commands count is hardcoded to 0 because useCommands hook doesn't exist - acceptable as placeholder but lacks tracking spec reference
 
 ### Frontend-Only Integration Check
 
 #### App Entry Point Verification
-- Dashboard component is exported from src/pages/index.ts
-- **FAIL:** Dashboard is NOT imported in src/App.tsx
-- **FAIL:** Dashboard is NOT rendered in App.tsx - line 70 shows placeholder text instead
+✅ Dashboard component is exported from src/pages/index.ts
+✅ Dashboard IS imported in src/App.tsx (line 11)
+✅ Dashboard IS rendered in App.tsx (line 71) when navItem === "dashboard"
 
 #### Data Flow Analysis
 
@@ -198,25 +198,25 @@ RECENT ACTIVITY
 [App.tsx] mode === "new"
      |
      v
-[AppShell] renders with navItem="dashboard"
+[AppShell] renders with navItem state
      |
      v
-[Placeholder Text] "New UI - Page content coming soon" ❌ SHOULD BE: <Dashboard onNavigate={setNavItem} />
+[Dashboard] navItem === "dashboard" → <Dashboard onNavigate={setNavItem} /> ✅
 ```
 
-**BROKEN LINK:** Dashboard component is never rendered in production code.
+**INTEGRATION VERIFIED:** Dashboard component is properly connected to production code.
 
 #### Production Call Sites
 
 | New Code | Type | Production Call Site | Reachable from main/UI? |
 |----------|------|---------------------|-------------------------|
-| Dashboard | component | **MISSING** - Not imported in App.tsx | **NO** - TEST-ONLY |
-| handleListeningToggle | fn | Dashboard.tsx:99 | NO (Dashboard unreachable) |
-| handleStartRecording | fn | Dashboard.tsx:158 | NO (Dashboard unreachable) |
-| handleDownloadModel | fn | Dashboard.tsx:68 | NO (Dashboard unreachable) |
-| TranscriptionBadge | component | Dashboard.tsx:230 | NO (Dashboard unreachable) |
+| Dashboard | component | App.tsx:71 | **YES** - Rendered in new UI mode |
+| handleListeningToggle | fn | Dashboard.tsx:55-61 | **YES** (via Dashboard) |
+| handleStartRecording | fn | Dashboard.tsx:63-65 | **YES** (via Dashboard) |
+| handleDownloadModel | fn | Dashboard.tsx:67-69 | **YES** (via Dashboard) |
+| TranscriptionBadge | component | Dashboard.tsx:262-281 | **YES** (via Dashboard) |
 
-**All Dashboard code is currently TEST-ONLY because the component is never rendered in production.**
+**All Dashboard code is reachable from production UI.**
 
 ### Automated Check Results
 
@@ -236,17 +236,8 @@ list_recordings command is properly registered in src-tauri/src/lib.rs:265
 ```
 No TODO/FIXME/HACK comments found in Dashboard implementation
 ```
-✅ PASS (Note: commands count placeholder is in code but not marked with TODO)
+✅ PASS (Note: commands count placeholder at line 37 is unmarked but acceptable)
 
 ### Verdict
 
-**NEEDS_WORK** - Dashboard component exists with full functionality and passing tests, but is completely disconnected from production code. The component is never imported or rendered in App.tsx, making all new code unreachable from the UI.
-
-**What failed:** Question 1 & 2 from review.md - Code is not wired up end-to-end. Dashboard component would have zero production impact if deployed.
-
-**Why it failed:** In App.tsx line 60-77, the new UI mode renders AppShell with placeholder text instead of the Dashboard component. Dashboard is exported but never imported.
-
-**How to fix:**
-1. Import Dashboard in App.tsx: `import { Dashboard } from "./pages";` (after line 18)
-2. Replace placeholder content (line 70-72) with: `<Dashboard onNavigate={setNavItem} />`
-3. Verify in browser that Dashboard renders when UI mode is toggled to "new"
+**APPROVED** - Dashboard component is fully implemented with all acceptance criteria met, comprehensive test coverage (9/9 passing), and proper end-to-end integration with App.tsx. The component is reachable from production UI when new mode is enabled. Commands count placeholder is acceptable as it will be implemented when the commands system is built.
