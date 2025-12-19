@@ -2,6 +2,7 @@
 // This module provides low-level keyboard event capture that can detect keys that
 // JavaScript's KeyboardEvent API cannot, such as the fn key on Mac keyboards.
 
+pub mod cgeventtap;
 pub mod permissions;
 
 use core_foundation::base::{kCFAllocatorDefault, CFRelease, TCFType};
