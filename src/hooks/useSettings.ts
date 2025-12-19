@@ -8,10 +8,16 @@ export interface ListeningSettings {
   autoStartOnLaunch: boolean;
 }
 
+/** Settings related to keyboard shortcuts */
+export interface ShortcutSettings {
+  distinguishLeftRight: boolean;
+}
+
 /** All application settings */
 export interface AppSettings {
   listening: ListeningSettings;
   audio: AudioSettings;
+  shortcuts: ShortcutSettings;
 }
 
 /** Default settings for fresh installations */
@@ -21,6 +27,9 @@ const DEFAULT_SETTINGS: AppSettings = {
     autoStartOnLaunch: false,
   },
   audio: DEFAULT_AUDIO_SETTINGS,
+  shortcuts: {
+    distinguishLeftRight: false,
+  },
 };
 
 /** Return type of the useSettings hook */
@@ -31,6 +40,7 @@ export interface UseSettingsReturn {
   updateListeningEnabled: (enabled: boolean) => Promise<void>;
   updateAutoStartListening: (enabled: boolean) => Promise<void>;
   updateAudioDevice: (deviceName: string | null) => Promise<void>;
+  updateDistinguishLeftRight: (enabled: boolean) => Promise<void>;
 }
 
 const STORE_FILE = "settings.json";
@@ -66,6 +76,9 @@ export function useSettings(): UseSettingsReturn {
         const audioSelectedDevice = await storeInstance.get<string | null>(
           "audio.selectedDevice"
         );
+        const distinguishLeftRight = await storeInstance.get<boolean>(
+          "shortcuts.distinguishLeftRight"
+        );
 
         setSettings({
           listening: {
@@ -76,6 +89,10 @@ export function useSettings(): UseSettingsReturn {
           audio: {
             selectedDevice:
               audioSelectedDevice ?? DEFAULT_SETTINGS.audio.selectedDevice,
+          },
+          shortcuts: {
+            distinguishLeftRight:
+              distinguishLeftRight ?? DEFAULT_SETTINGS.shortcuts.distinguishLeftRight,
           },
         });
         setIsLoading(false);
@@ -151,6 +168,25 @@ export function useSettings(): UseSettingsReturn {
     [store]
   );
 
+  const updateDistinguishLeftRight = useCallback(
+    async (enabled: boolean) => {
+      /* v8 ignore start -- @preserve */
+      if (!store) return;
+      try {
+        await store.set("shortcuts.distinguishLeftRight", enabled);
+        setSettings((prev) => ({
+          ...prev,
+          shortcuts: { ...prev.shortcuts, distinguishLeftRight: enabled },
+        }));
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+      /* v8 ignore stop */
+    },
+    [store]
+  );
+
   return {
     settings,
     isLoading,
@@ -158,5 +194,6 @@ export function useSettings(): UseSettingsReturn {
     updateListeningEnabled,
     updateAutoStartListening,
     updateAudioDevice,
+    updateDistinguishLeftRight,
   };
 }

@@ -20,7 +20,7 @@ function backendToDisplay(shortcut: string): string {
 }
 
 export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
-  const { settings, updateAutoStartListening } = useSettings();
+  const { settings, updateAutoStartListening, updateDistinguishLeftRight } = useSettings();
   const { toast } = useToast();
 
   // Local state for settings that don't have hooks yet
@@ -68,6 +68,15 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
       type: "success",
       title: "Setting saved",
       description: `Notifications ${checked ? "enabled" : "disabled"}.`,
+    });
+  };
+
+  const handleDistinguishLeftRightChange = async (checked: boolean) => {
+    await updateDistinguishLeftRight(checked);
+    toast({
+      type: "success",
+      title: "Setting saved",
+      description: `Left/Right modifier distinction ${checked ? "enabled" : "disabled"}.`,
     });
   };
 
@@ -158,6 +167,16 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
               <kbd className="px-2 py-1 text-xs font-mono bg-surface border border-border rounded">
                 ⌘K
               </kbd>
+            </div>
+
+            {/* Distinguish Left/Right Modifiers */}
+            <div className="pt-4 border-t border-border">
+              <LabeledToggle
+                label="Distinguish Left/Right Modifiers"
+                description="When enabled, Left-Command and Right-Command are treated as different keys"
+                checked={settings.shortcuts.distinguishLeftRight}
+                onCheckedChange={handleDistinguishLeftRightChange}
+              />
             </div>
           </CardContent>
         </Card>

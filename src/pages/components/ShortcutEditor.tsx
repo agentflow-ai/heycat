@@ -33,34 +33,79 @@ interface CapturedKeyEvent {
   is_media_key: boolean;
 }
 
+// Media key display mapping
+const mediaKeyMap: Record<string, string> = {
+  VolumeUp: "🔊",
+  VolumeDown: "🔉",
+  Mute: "🔇",
+  BrightnessUp: "🔆",
+  BrightnessDown: "🔅",
+  PlayPause: "⏯",
+  NextTrack: "⏭",
+  PreviousTrack: "⏮",
+  FastForward: "⏩",
+  Rewind: "⏪",
+  KeyboardBrightnessUp: "🔆⌨",
+  KeyboardBrightnessDown: "🔅⌨",
+};
+
+// Special key mappings for display
+const keyMap: Record<string, string> = {
+  Up: "↑",
+  Down: "↓",
+  Left: "←",
+  Right: "→",
+  Enter: "↵",
+  Backspace: "⌫",
+  Delete: "⌦",
+  Escape: "Esc",
+  Tab: "⇥",
+  Space: "Space",
+};
+
+// Format modifier with optional left/right distinction
+function formatModifier(
+  isPressed: boolean,
+  isLeft: boolean,
+  isRight: boolean,
+  symbol: string,
+  distinguishLeftRight: boolean
+): string {
+  if (!isPressed) return "";
+  if (!distinguishLeftRight) return symbol;
+  if (isLeft && !isRight) return `L${symbol}`;
+  if (isRight && !isLeft) return `R${symbol}`;
+  return symbol; // Both or neither - just show symbol
+}
+
 // Convert backend key event to display string (e.g., "fn⌘⇧R")
-function formatBackendKeyForDisplay(event: CapturedKeyEvent): string {
+function formatBackendKeyForDisplay(event: CapturedKeyEvent, distinguishLeftRight: boolean = false): string {
   const parts: string[] = [];
 
   // Add modifiers in standard order (fn first since it's special)
   if (event.fn_key) parts.push("fn");
-  if (event.command) parts.push("⌘");
-  if (event.control) parts.push("⌃");
-  if (event.alt) parts.push("⌥");
-  if (event.shift) parts.push("⇧");
+
+  const cmdDisplay = formatModifier(event.command, event.command_left, event.command_right, "⌘", distinguishLeftRight);
+  if (cmdDisplay) parts.push(cmdDisplay);
+
+  const ctrlDisplay = formatModifier(event.control, event.control_left, event.control_right, "⌃", distinguishLeftRight);
+  if (ctrlDisplay) parts.push(ctrlDisplay);
+
+  const altDisplay = formatModifier(event.alt, event.alt_left, event.alt_right, "⌥", distinguishLeftRight);
+  if (altDisplay) parts.push(altDisplay);
+
+  const shiftDisplay = formatModifier(event.shift, event.shift_left, event.shift_right, "⇧", distinguishLeftRight);
+  if (shiftDisplay) parts.push(shiftDisplay);
 
   // Add the main key (excluding modifier keys themselves)
   const isModifierKey = ["Command", "Control", "Alt", "Shift", "fn"].includes(event.key_name);
   if (!isModifierKey) {
-    // Special key mappings for display
-    const keyMap: Record<string, string> = {
-      Up: "↑",
-      Down: "↓",
-      Left: "←",
-      Right: "→",
-      Enter: "↵",
-      Backspace: "⌫",
-      Delete: "⌦",
-      Escape: "Esc",
-      Tab: "⇥",
-      Space: "Space",
-    };
-    parts.push(keyMap[event.key_name] || event.key_name);
+    // Check if it's a media key first
+    if (event.is_media_key && mediaKeyMap[event.key_name]) {
+      parts.push(mediaKeyMap[event.key_name]);
+    } else {
+      parts.push(keyMap[event.key_name] || event.key_name);
+    }
   }
 
   return parts.join("");
@@ -85,6 +130,17 @@ function formatBackendKeyForBackend(event: CapturedKeyEvent): string {
   }
 
   return parts.join("+");
+}
+
+// Check if event represents a valid hotkey (modifier-only or has a main key)
+function isValidHotkey(event: CapturedKeyEvent): boolean {
+  const hasModifier = event.fn_key || event.command || event.control || event.alt || event.shift;
+  const isModifierKey = ["Command", "Control", "Alt", "Shift", "fn"].includes(event.key_name);
+  const hasMainKey = !isModifierKey;
+  const isMediaKey = event.is_media_key;
+
+  // Valid if: has a main key, OR is a media key, OR is modifier-only with at least one modifier
+  return hasMainKey || isMediaKey || hasModifier;
 }
 
 export function ShortcutEditor({
@@ -203,11 +259,8 @@ export function ShortcutEditor({
         // Only process key press events (not releases)
         if (!keyEvent.pressed) return;
 
-        // Check if this is just a modifier key by itself
-        const isModifierKey = ["Command", "Control", "Alt", "Shift", "fn"].includes(keyEvent.key_name);
-
-        if (!isModifierKey) {
-          // Non-modifier key pressed - record the shortcut
+        // Accept any valid hotkey: non-modifier key, media key, or modifier-only
+        if (isValidHotkey(keyEvent)) {
           const display = formatBackendKeyForDisplay(keyEvent);
           const backend = formatBackendKeyForBackend(keyEvent);
           console.log("[ShortcutEditor] Recording shortcut - display:", display, "backend:", backend);

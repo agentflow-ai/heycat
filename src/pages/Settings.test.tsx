@@ -46,12 +46,16 @@ vi.mock("../hooks/useSettings", () => ({
       audio: {
         selectedDevice: null,
       },
+      shortcuts: {
+        distinguishLeftRight: false,
+      },
     },
     isLoading: false,
     error: null,
     updateListeningEnabled: vi.fn(),
     updateAutoStartListening: mockUpdateAutoStartListening,
     updateAudioDevice: mockUpdateAudioDevice,
+    updateDistinguishLeftRight: vi.fn(),
   }),
 }));
 
