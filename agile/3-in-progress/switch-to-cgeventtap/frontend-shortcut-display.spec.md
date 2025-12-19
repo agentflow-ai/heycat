@@ -1,7 +1,7 @@
 ---
-status: in-progress
+status: completed
 created: 2025-12-19
-completed: null
+completed: 2025-12-19
 dependencies:
   - replace-iokit-hid
 ---
@@ -162,16 +162,16 @@ Add to GeneralSettings.tsx:
 ## Review
 
 **Reviewed:** 2025-12-19
-**Reviewer:** Claude
+**Reviewer:** Claude (Round 2)
 
 ### Acceptance Criteria Verification
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | CapturedKeyEvent TypeScript interface updated with new fields | PASS | ShortcutEditor.tsx:16-34 - Interface includes all new fields: command_left/right, control_left/right, alt_left/right, shift_left/right, is_media_key |
-| Modifier-only hotkeys allowed (just pressing Command is valid) | PASS | ShortcutEditor.tsx:136-144 - isValidHotkey function accepts modifier-only hotkeys. Line 263: modifier-only events are processed |
+| Modifier-only hotkeys allowed (just pressing Command is valid) | PASS | ShortcutEditor.tsx:136-144 - isValidHotkey function accepts modifier-only hotkeys. Line 265: modifier-only events are processed |
 | Media keys displayed with human-readable names/symbols | PASS | ShortcutEditor.tsx:37-50 - mediaKeyMap with symbols. Lines 104-106: media key display logic |
-| Left/Right modifier distinction shown when enabled | FAIL | ShortcutEditor.tsx:264 - formatBackendKeyForDisplay called without distinguishLeftRight parameter, always defaults to false |
+| Left/Right modifier distinction shown when enabled | PASS | ShortcutEditor.tsx:266-267 - formatBackendKeyForDisplay called with distinguishLeftRight from settings. useSettings hook imported at line 6 |
 | User toggle to treat left/right modifiers as same | PASS | GeneralSettings.tsx:173-180 - Toggle present. useSettings.ts:171-188 - State management implemented |
 | All new key types display correctly in ShortcutEditor | PASS | ShortcutEditor.tsx:82-112 - formatBackendKeyForDisplay handles all key types including media keys, modifiers, and special keys |
 | Shortcut display in GeneralSettings shows all key types correctly | PASS | GeneralSettings.tsx:135-136 - Displays currentShortcut using backendToDisplay |
@@ -180,16 +180,16 @@ Add to GeneralSettings.tsx:
 
 | Test Case | Status | Location |
 |-----------|--------|----------|
-| Press "A" alone → displays "A" | MISSING | No dedicated test for "A" alone without modifiers |
+| Press "A" alone → displays "A" | PASS | ShortcutEditor.test.tsx:539-582 |
 | Press "Space" alone → displays "Space" | PASS | ShortcutEditor.test.tsx:428-471 |
 | Press Command alone → displays "⌘" (not ignored) | PASS | ShortcutEditor.test.tsx:248-291 |
 | Press fn alone → displays "fn" | PASS | ShortcutEditor.test.tsx:383-426 |
 | Press Volume Up → displays "🔊" or "Volume Up" | PASS | ShortcutEditor.test.tsx:338-381 |
 | Press Play/Pause → displays "⏯" or "Play/Pause" | PASS | ShortcutEditor.test.tsx:293-336 |
-| Press Left-Command → displays "L⌘" or "⌘" based on toggle | MISSING | No test verifying left/right distinction display |
+| Press Left-Command → displays "L⌘" or "⌘" based on toggle | PASS | ShortcutEditor.test.tsx:584-680 |
 | Press Cmd+Shift+A → displays "⌘⇧A" | PASS | ShortcutEditor.test.tsx:473-516 |
-| Toggle "Distinguish L/R" off → Left-Cmd shows as "⌘" | MISSING | No test for toggle behavior |
-| Toggle "Distinguish L/R" on → Left-Cmd shows as "L⌘" | MISSING | No test for toggle behavior |
+| Toggle "Distinguish L/R" off → Left-Cmd shows as "⌘" | PASS | ShortcutEditor.test.tsx:584-632 |
+| Toggle "Distinguish L/R" on → Left-Cmd shows as "L⌘" | PASS | ShortcutEditor.test.tsx:634-680 |
 
 ### Code Quality
 
@@ -200,14 +200,10 @@ Add to GeneralSettings.tsx:
 - Clean separation of display vs backend format conversion
 - Settings persistence implemented correctly with Tauri store
 - Toggle UI properly integrated in GeneralSettings
-
-**Concerns:**
-- **CRITICAL:** ShortcutEditor.tsx line 264 calls `formatBackendKeyForDisplay(keyEvent)` without passing the `distinguishLeftRight` setting, so the left/right modifier distinction will never be shown to the user regardless of the toggle setting
-- ShortcutEditor component does not access the settings hook to read the `distinguishLeftRight` value
-- Missing tests for left/right modifier display behavior with toggle on/off
-- Missing test for pressing "A" alone without modifiers
-- The toggle exists and persists but is not functionally connected to the display logic
+- useSettings hook properly imported and used in ShortcutEditor
+- distinguishLeftRight setting correctly wired to formatBackendKeyForDisplay
+- Complete test coverage for all specified test cases including L/R toggle behavior
 
 ### Verdict
 
-**NEEDS_WORK** - Left/Right modifier distinction toggle not wired to display logic
+**APPROVED**
