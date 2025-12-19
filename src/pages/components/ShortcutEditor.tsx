@@ -12,16 +12,25 @@ export interface ShortcutEditorProps {
   onSave: (displayShortcut: string, backendShortcut: string) => void;
 }
 
-// Backend captured key event structure
+// Backend captured key event structure (expanded with left/right modifiers and media key support)
 interface CapturedKeyEvent {
   key_code: number;
   key_name: string;
   fn_key: boolean;
   command: boolean;
+  command_left: boolean;
+  command_right: boolean;
   control: boolean;
+  control_left: boolean;
+  control_right: boolean;
   alt: boolean;
+  alt_left: boolean;
+  alt_right: boolean;
   shift: boolean;
+  shift_left: boolean;
+  shift_right: boolean;
   pressed: boolean;
+  is_media_key: boolean;
 }
 
 // Convert backend key event to display string (e.g., "fn⌘⇧R")
@@ -129,7 +138,7 @@ export function ShortcutEditor({
       const errorMessage = String(error);
 
       // Check if this is a permission error
-      if (errorMessage.includes("Input Monitoring permission")) {
+      if (errorMessage.includes("Accessibility permission")) {
         setPermissionError(errorMessage);
       }
 
@@ -147,10 +156,10 @@ export function ShortcutEditor({
     }
   }, []);
 
-  // Open System Preferences to Input Monitoring
-  const openInputMonitoringPreferences = useCallback(async () => {
+  // Open System Preferences to Accessibility
+  const openAccessibilityPreferences = useCallback(async () => {
     try {
-      await invoke("open_input_monitoring_preferences");
+      await invoke("open_accessibility_preferences");
     } catch (error) {
       console.error("Failed to open preferences:", error);
     }
@@ -345,11 +354,11 @@ export function ShortcutEditor({
         {permissionError && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
             <p className="text-sm text-red-400 mb-3">
-              Input Monitoring permission is required to capture the fn key.
+              Accessibility permission is required to capture fn key and media keys.
             </p>
             <Button
               variant="secondary"
-              onClick={openInputMonitoringPreferences}
+              onClick={openAccessibilityPreferences}
               className="w-full"
             >
               Open System Settings

@@ -324,7 +324,7 @@ pub fn run() {
             commands::get_recording_shortcut,
             commands::start_shortcut_recording,
             commands::stop_shortcut_recording,
-            commands::open_input_monitoring_preferences
+            commands::open_accessibility_preferences
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -885,11 +885,12 @@ pub type KeyboardCaptureState = Arc<Mutex<crate::keyboard_capture::KeyboardCaptu
 
 /// Start capturing keyboard events for shortcut recording
 ///
-/// This uses IOKit HID to capture all keyboard events including the fn key,
+/// This uses CGEventTap to capture all keyboard events including the fn key,
+/// media keys (volume, brightness, playback), and left/right modifier distinction,
 /// which JavaScript's KeyboardEvent API cannot detect. Captured keys are
 /// emitted via the "shortcut_key_captured" event.
 ///
-/// Requires Input Monitoring permission on macOS.
+/// Requires Accessibility permission on macOS (System Settings > Privacy & Security > Accessibility).
 #[tauri::command]
 pub fn start_shortcut_recording(
     app_handle: AppHandle,
@@ -929,32 +930,21 @@ pub fn stop_shortcut_recording(
     Ok(())
 }
 
-/// Open System Preferences to the Input Monitoring pane
+/// Open System Preferences to the Accessibility pane
 ///
-/// This allows users to grant the Input Monitoring permission required
-/// for fn key capture in the shortcut editor.
+/// This allows users to grant the Accessibility permission required
+/// for fn key and media key capture in the shortcut editor.
 #[tauri::command]
-pub fn open_input_monitoring_preferences() -> Result<(), String> {
-    use std::process::Command;
+pub fn open_accessibility_preferences() -> Result<(), String> {
+    crate::info!("Opening Accessibility preferences...");
 
-    crate::info!("Opening Input Monitoring preferences...");
+    crate::keyboard_capture::permissions::open_accessibility_settings().map_err(|e| {
+        crate::error!("Failed to open preferences: {}", e);
+        e
+    })?;
 
-    // Open System Preferences/Settings to Input Monitoring pane
-    // Works on macOS Ventura and later
-    let result = Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
-        .spawn();
-
-    match result {
-        Ok(_) => {
-            crate::info!("Opened Input Monitoring preferences");
-            Ok(())
-        }
-        Err(e) => {
-            crate::error!("Failed to open preferences: {}", e);
-            Err(format!("Failed to open System Preferences: {}", e))
-        }
-    }
+    crate::info!("Opened Accessibility preferences");
+    Ok(())
 }
 
 #[cfg(test)]
