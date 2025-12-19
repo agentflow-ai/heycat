@@ -245,7 +245,7 @@ describe("ShortcutEditor", () => {
       expect(screen.getByText("Press your shortcut...")).toBeDefined();
     });
 
-    it("ignores modifier-only key events", async () => {
+    it("accepts modifier-only key events as valid hotkeys", async () => {
       let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
       mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
         capturedCallback = callback;
@@ -261,22 +261,258 @@ describe("ShortcutEditor", () => {
         expect(capturedCallback).toBeDefined();
       });
 
-      // Simulate backend emitting a modifier-only event
+      // Simulate backend emitting a modifier-only event (Command key alone)
       capturedCallback?.({
         payload: {
           key_code: 0xE3,
           key_name: "Command",
           fn_key: false,
           command: true,
+          command_left: true,
+          command_right: false,
           control: false,
+          control_left: false,
+          control_right: false,
           alt: false,
+          alt_left: false,
+          alt_right: false,
           shift: false,
+          shift_left: false,
+          shift_right: false,
           pressed: true,
+          is_media_key: false,
         },
       });
 
-      // Should still be recording (modifier-only events are ignored)
-      expect(screen.getByText("Press your shortcut...")).toBeDefined();
+      // Should record modifier-only as valid hotkey
+      await waitFor(() => {
+        expect(screen.getByText("⌘")).toBeDefined();
+      });
+    });
+
+    it("displays media keys with symbols", async () => {
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate backend emitting a Play/Pause media key event
+      capturedCallback?.({
+        payload: {
+          key_code: 0x34,
+          key_name: "PlayPause",
+          fn_key: false,
+          command: false,
+          command_left: false,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: true,
+        },
+      });
+
+      // Should display media key symbol
+      await waitFor(() => {
+        expect(screen.getByText("⏯")).toBeDefined();
+      });
+    });
+
+    it("displays Volume Up media key", async () => {
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate backend emitting Volume Up media key event
+      capturedCallback?.({
+        payload: {
+          key_code: 0x48,
+          key_name: "VolumeUp",
+          fn_key: false,
+          command: false,
+          command_left: false,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: true,
+        },
+      });
+
+      // Should display Volume Up symbol
+      await waitFor(() => {
+        expect(screen.getByText("🔊")).toBeDefined();
+      });
+    });
+
+    it("displays fn key modifier", async () => {
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate fn key alone pressed
+      capturedCallback?.({
+        payload: {
+          key_code: 0x3F,
+          key_name: "fn",
+          fn_key: true,
+          command: false,
+          command_left: false,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display fn
+      await waitFor(() => {
+        expect(screen.getByText("fn")).toBeDefined();
+      });
+    });
+
+    it("displays Space key correctly", async () => {
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate Space key pressed
+      capturedCallback?.({
+        payload: {
+          key_code: 0x31,
+          key_name: "Space",
+          fn_key: false,
+          command: false,
+          command_left: false,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display "Space"
+      await waitFor(() => {
+        expect(screen.getByText("Space")).toBeDefined();
+      });
+    });
+
+    it("displays complex shortcut with multiple modifiers", async () => {
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate Cmd+Shift+A
+      capturedCallback?.({
+        payload: {
+          key_code: 0x00,
+          key_name: "A",
+          fn_key: false,
+          command: true,
+          command_left: true,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: true,
+          shift_left: true,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display "⌘⇧A"
+      await waitFor(() => {
+        expect(screen.getByText("⌘⇧A")).toBeDefined();
+      });
     });
   });
 });
