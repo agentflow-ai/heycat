@@ -13,8 +13,6 @@ pub mod permissions;
 pub use cgeventtap::CapturedKeyEvent;
 
 use cgeventtap::CGEventTapCapture;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 /// Handle to the keyboard capture system
 ///

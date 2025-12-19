@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: in-review
 created: 2025-12-19
 completed: null
 dependencies:
@@ -100,3 +100,86 @@ Preserve:
 
 - Test location: Manual testing via integration-test spec
 - Verification: [ ] Integration test passes
+
+## Review
+
+**Reviewed:** 2025-12-19
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| KeyboardCapture struct uses CGEventTap internally instead of IOKit HID | PASS | src-tauri/src/keyboard_capture/mod.rs:24-26 - KeyboardCapture wraps CGEventTapCapture |
+| CapturedKeyEvent struct EXPANDED with new fields (left/right modifiers, is_media_key) | PASS | src-tauri/src/keyboard_capture/cgeventtap.rs:96-133 - All new fields present (command_left, command_right, control_left, control_right, alt_left, alt_right, shift_left, shift_right, is_media_key) |
+| Permission check uses Accessibility instead of Input Monitoring | PASS | src-tauri/src/keyboard_capture/permissions.rs:20-23 - AXIsProcessTrusted() used, no Input Monitoring references |
+| Error messages updated to reference Accessibility permission | PASS | src-tauri/src/keyboard_capture/permissions.rs:59 - Error message references "System Settings > Privacy & Security > Accessibility" |
+| IOKit HID code removed from keyboard_capture module | PASS | No IOKit HID imports found (grep returned 0 files with IOHIDDevice/IOHIDManager) |
+| commands/mod.rs updated to use new permission handling | PASS | src-tauri/src/commands/mod.rs:893 - Comment updated to reference Accessibility permission |
+| Existing start_shortcut_recording/stop_shortcut_recording commands work unchanged | PASS | src-tauri/src/commands/mod.rs:895-917 - Commands preserved, working with CGEventTap internally |
+| Media keys captured and emitted correctly | PASS | src-tauri/src/keyboard_capture/cgeventtap.rs:49-66 - Media key constants and handling implemented, test at keyboard_capture/tests.rs:150-174 |
+| Left/Right modifier distinction available in events | PASS | src-tauri/src/keyboard_capture/cgeventtap.rs:107-127 - All left/right modifier fields in struct, device flags at lines 39-47 |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Start/stop keyboard capture works with new implementation | PASS | src-tauri/src/keyboard_capture/mod.rs:77-87 - test_keyboard_capture_new_not_running, test_keyboard_capture_stop_when_not_running |
+| CapturedKeyEvent emitted with expanded structure | PASS | src-tauri/src/keyboard_capture/mod.rs:90-118 - test_captured_key_event_has_expanded_fields |
+| Permission error message mentions Accessibility (not Input Monitoring) | PASS | src-tauri/src/keyboard_capture/permissions.rs:93-98 - test_accessibility_permission_error_display |
+| Compiles without IOKit HID imports in keyboard_capture | PASS | cargo check succeeded, no IOKit imports found |
+| Media key events have is_media_key=true | PASS | src-tauri/src/keyboard_capture/mod.rs:150-174 - test_captured_key_event_media_key |
+| Left-Command has command_left=true, Right-Command has command_right=true | PASS | src-tauri/src/keyboard_capture/mod.rs:90-118 - test shows command_left:true, command_right:false distinction |
+
+**Additional Tests:** 32 tests passing in keyboard_capture module (27 from cgeventtap, 5 from permissions/mod)
+
+### Integration Verification
+
+**Data Flow Trace:**
+```
+[User clicks Edit in ShortcutEditor]
+     ↓
+[ShortcutEditor.tsx:133] invoke("start_shortcut_recording")
+     ↓
+[commands/mod.rs:895] start_shortcut_recording command
+     ↓
+[keyboard_capture/mod.rs:42] KeyboardCapture::start()
+     ↓
+[cgeventtap.rs] CGEventTapCapture captures events
+     ↓
+[commands/mod.rs:910] emit("shortcut_key_captured", event)
+     ↓
+[ShortcutEditor.tsx:197] listen<CapturedKeyEvent>("shortcut_key_captured")
+     ↓
+[ShortcutEditor.tsx:200] Update UI with captured key
+```
+
+**Wiring Verification:**
+- ✅ KeyboardCapture called from production code (commands/mod.rs:901)
+- ✅ CapturedKeyEvent emitted AND listened to (emit at commands/mod.rs:910, listen at ShortcutEditor.tsx:197)
+- ✅ Frontend type definition matches backend (ShortcutEditor.tsx:16-34 has all new fields)
+- ✅ Commands registered in invoke_handler (both start/stop_shortcut_recording in lib.rs)
+
+### Code Quality
+
+**Strengths:**
+- Clean abstraction: KeyboardCapture maintains same public API while swapping implementation
+- Comprehensive test coverage: 32 passing tests covering all key functionality
+- Proper error handling: Accessibility permission errors provide clear user guidance
+- Type safety: Frontend TypeScript interface matches backend Rust struct exactly
+- Complete IOKit removal: 513 lines of IOKit code removed, no dead code remaining
+- Full backward compatibility: Existing commands work unchanged
+
+**Concerns:**
+- **MUST FIX**: Unused imports in src-tauri/src/keyboard_capture/mod.rs:16-17
+  - Line 16: `use std::sync::atomic::{AtomicBool, Ordering};` - AtomicBool and Ordering not used
+  - Line 17: `use std::sync::Arc;` - Arc not used
+  - These imports were from the old IOKit implementation and should be removed
+
+### Verdict
+
+**NEEDS_WORK** - Unused imports must be removed before approval
+
+**Issue:** Build warnings present - unused imports AtomicBool, Ordering, and Arc in keyboard_capture/mod.rs
+
+**Fix Required:** Remove lines 16-17 from src-tauri/src/keyboard_capture/mod.rs (or just the unused imports from those lines)
