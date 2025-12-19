@@ -4,17 +4,26 @@
 // - Regular keys (letters, numbers, symbols, special keys)
 // - Modifier keys with left/right distinction
 // - fn/Globe key via FlagsChanged
+// - Media keys (volume, brightness, play/pause) via NSSystemDefined
 // - Full modifier state tracking
 //
 // CGEventTap requires Accessibility permission (System Settings > Privacy & Security > Accessibility)
 
 use super::permissions::{check_accessibility_permission, AccessibilityPermissionError};
+#[allow(deprecated)]
+use cocoa::appkit::NSEvent;
+#[allow(deprecated)]
+use cocoa::base::nil;
 use core_foundation::base::TCFType;
+use core_foundation::mach_port::{CFMachPort, CFMachPortRef};
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop, CFRunLoopStop};
 use core_graphics::event::{
-    CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions,
-    CGEventTapPlacement, CGEventType,
+    CGEvent, CGEventFlags, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+    CGEventTapProxy, CGEventType,
 };
+use foreign_types::ForeignType;
+use std::ffi::c_void;
+use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -36,6 +45,53 @@ const NX_DEVICELALTKEYMASK: u64 = 0x00000020;
 const NX_DEVICERALTKEYMASK: u64 = 0x00000040;
 const NX_DEVICELCMDKEYMASK: u64 = 0x00000008;
 const NX_DEVICERCMDKEYMASK: u64 = 0x00000010;
+
+// NSSystemDefined event constants (from IOKit/hidsystem)
+const NX_SYSDEFINED: u32 = 14; // NSSystemDefined event type
+const NX_SUBTYPE_AUX_CONTROL_BUTTONS: i16 = 8; // Media key subtype
+
+// Media key codes (from IOKit/hidsystem/ev_keymap.h NX_KEYTYPE_*)
+const NX_KEYTYPE_SOUND_UP: u32 = 0;
+const NX_KEYTYPE_SOUND_DOWN: u32 = 1;
+const NX_KEYTYPE_BRIGHTNESS_UP: u32 = 2;
+const NX_KEYTYPE_BRIGHTNESS_DOWN: u32 = 3;
+const NX_KEYTYPE_MUTE: u32 = 7;
+const NX_KEYTYPE_PLAY: u32 = 16;
+const NX_KEYTYPE_NEXT: u32 = 17;
+const NX_KEYTYPE_PREVIOUS: u32 = 18;
+const NX_KEYTYPE_FAST: u32 = 19;
+const NX_KEYTYPE_REWIND: u32 = 20;
+const NX_KEYTYPE_ILLUMINATION_UP: u32 = 21;
+const NX_KEYTYPE_ILLUMINATION_DOWN: u32 = 22;
+
+/// CGEventMask type for raw FFI
+type CGEventMask = u64;
+
+/// Internal callback type for raw FFI
+type CGEventTapCallBackInternal = unsafe extern "C" fn(
+    proxy: CGEventTapProxy,
+    event_type: CGEventType,
+    event: *mut c_void,
+    user_info: *mut c_void,
+) -> *mut c_void;
+
+/// Wrapper for boxed callback closure
+type CGEventTapCallBackFn<'a> =
+    Box<dyn Fn(CGEventTapProxy, CGEventType, &CGEvent) -> Option<CGEvent> + 'a>;
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventTapCreate(
+        tap: CGEventTapLocation,
+        place: CGEventTapPlacement,
+        options: CGEventTapOptions,
+        events_of_interest: CGEventMask,
+        callback: CGEventTapCallBackInternal,
+        user_info: *mut c_void,
+    ) -> CFMachPortRef;
+
+    fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+}
 
 /// Captured key event with full modifier information including left/right distinction
 #[derive(Debug, Clone, serde::Serialize)]
@@ -226,38 +282,73 @@ impl Drop for CGEventTapCapture {
     }
 }
 
+/// Internal callback for raw CGEventTap FFI
+unsafe extern "C" fn cg_event_tap_callback_internal(
+    _proxy: CGEventTapProxy,
+    event_type: CGEventType,
+    event_ref: *mut c_void,
+    user_info: *mut c_void,
+) -> *mut c_void {
+    let callback = user_info as *mut CGEventTapCallBackFn;
+    let event = CGEvent::from_ptr(event_ref as *mut _);
+    let new_event = (*callback)(_proxy, event_type, &event);
+    let event = match new_event {
+        Some(new_event) => new_event,
+        None => event,
+    };
+    ManuallyDrop::new(event).as_ptr() as *mut c_void
+}
+
 /// Run the CGEventTap capture loop
 fn run_cgeventtap_loop(
     running: Arc<AtomicBool>,
     state: Arc<Mutex<CaptureState>>,
 ) -> Result<(), String> {
-    // Create event types for keyboard events
-    let events_of_interest = vec![
-        CGEventType::KeyDown,
-        CGEventType::KeyUp,
-        CGEventType::FlagsChanged,
-    ];
+    // Create event mask including KeyDown, KeyUp, FlagsChanged, and NSSystemDefined (for media keys)
+    // CGEventType values: KeyDown=10, KeyUp=11, FlagsChanged=12, NSSystemDefined=14
+    let event_mask: CGEventMask = (1 << CGEventType::KeyDown as u64)
+        | (1 << CGEventType::KeyUp as u64)
+        | (1 << CGEventType::FlagsChanged as u64)
+        | (1 << NX_SYSDEFINED as u64); // NSSystemDefined for media keys
 
     // Clone state for the callback
     let callback_state = state.clone();
 
-    // Create the event tap with callback
-    let event_tap = CGEventTap::new(
-        CGEventTapLocation::HID,
-        CGEventTapPlacement::HeadInsertEventTap,
-        CGEventTapOptions::ListenOnly,
-        events_of_interest,
-        move |_proxy, event_type, event| {
-            handle_cg_event(event_type, event, &callback_state);
-            // Return None to pass the event through unchanged
-            None
-        },
-    )
-    .map_err(|_| "Failed to create CGEventTap. Ensure Accessibility permission is granted.")?;
+    // Create boxed callback closure
+    let callback: CGEventTapCallBackFn = Box::new(move |_proxy, event_type, event| {
+        handle_cg_event(event_type, event, &callback_state);
+        // Return None to pass the event through unchanged
+        None
+    });
+    let cb = Box::new(callback);
+    let cbr = Box::into_raw(cb);
+
+    // Create the event tap with raw FFI (to support NSSystemDefined event type)
+    let event_tap_ref = unsafe {
+        CGEventTapCreate(
+            CGEventTapLocation::HID,
+            CGEventTapPlacement::HeadInsertEventTap,
+            CGEventTapOptions::ListenOnly,
+            event_mask,
+            cg_event_tap_callback_internal,
+            cbr as *mut c_void,
+        )
+    };
+
+    if event_tap_ref.is_null() {
+        // Clean up the callback box before returning error
+        unsafe {
+            let _ = Box::from_raw(cbr);
+        }
+        return Err(
+            "Failed to create CGEventTap. Ensure Accessibility permission is granted.".to_string(),
+        );
+    }
+
+    let mach_port = unsafe { CFMachPort::wrap_under_create_rule(event_tap_ref) };
 
     // Get the run loop source from the event tap
-    let run_loop_source = event_tap
-        .mach_port
+    let run_loop_source = mach_port
         .create_runloop_source(0)
         .map_err(|_| "Failed to create run loop source")?;
 
@@ -271,9 +362,11 @@ fn run_cgeventtap_loop(
     run_loop.add_source(&run_loop_source, unsafe { kCFRunLoopCommonModes });
 
     // Enable the event tap
-    event_tap.enable();
+    unsafe {
+        CGEventTapEnable(mach_port.as_concrete_TypeRef(), true);
+    }
 
-    crate::info!("CGEventTap keyboard capture started");
+    crate::info!("CGEventTap keyboard capture started (with media key support)");
 
     // Run the loop until stopped
     while running.load(Ordering::SeqCst) {
@@ -284,8 +377,13 @@ fn run_cgeventtap_loop(
         );
     }
 
-    // Cleanup: remove from run loop (event tap is dropped automatically)
+    // Cleanup: remove from run loop
     run_loop.remove_source(&run_loop_source, unsafe { kCFRunLoopCommonModes });
+
+    // Clean up the callback box
+    unsafe {
+        let _ = Box::from_raw(cbr);
+    }
 
     crate::info!("CGEventTap keyboard capture stopped");
     Ok(())
@@ -378,6 +476,58 @@ fn handle_cg_event(
                 is_media_key: false,
             }
         }
+        14 => {
+            // NSSystemDefined - handle media keys via NSEvent
+            // We need to convert CGEvent to NSEvent to extract data1 and subtype
+            #[allow(deprecated)]
+            let cg_event_ptr = event.as_ptr() as *mut c_void;
+
+            #[allow(deprecated)]
+            unsafe {
+                let ns_event: cocoa::base::id = NSEvent::eventWithCGEvent_(nil, cg_event_ptr);
+                if ns_event == nil {
+                    return;
+                }
+
+                let subtype = NSEvent::subtype(ns_event) as i16;
+                if subtype != NX_SUBTYPE_AUX_CONTROL_BUTTONS {
+                    return; // Not a media key event
+                }
+
+                let data1 = NSEvent::data1(ns_event);
+
+                // Extract key code and state from data1
+                // data1 format: upper 16 bits = key code, lower 16 bits = flags
+                let key_code = ((data1 as u64 & 0xFFFF0000) >> 16) as u32;
+                let key_flags = (data1 as u64 & 0x0000FFFF) as u32;
+
+                // Key state: ((flags & 0xFF00) >> 8) == 0xA means pressed, 0xB means released
+                let key_state = (key_flags & 0xFF00) >> 8;
+                let pressed = key_state == 0x0A;
+
+                let key_name = media_keycode_to_name(key_code);
+
+                CapturedKeyEvent {
+                    key_code,
+                    key_name,
+                    fn_key,
+                    command,
+                    command_left,
+                    command_right,
+                    control,
+                    control_left,
+                    control_right,
+                    alt,
+                    alt_left,
+                    alt_right,
+                    shift,
+                    shift_left,
+                    shift_right,
+                    pressed,
+                    is_media_key: true,
+                }
+            }
+        }
         _ => return,
     };
 
@@ -439,6 +589,26 @@ fn determine_modifier_key_state(key_code: u32, flags: u64) -> (String, bool) {
             (flags & CG_EVENT_FLAG_MASK_SECONDARY_FN) != 0,
         ),
         _ => (format!("Modifier({})", key_code), true),
+    }
+}
+
+/// Convert media key code to human-readable name
+/// Media key codes are from IOKit/hidsystem/ev_keymap.h (NX_KEYTYPE_*)
+fn media_keycode_to_name(key_code: u32) -> String {
+    match key_code {
+        NX_KEYTYPE_SOUND_UP => "VolumeUp".to_string(),
+        NX_KEYTYPE_SOUND_DOWN => "VolumeDown".to_string(),
+        NX_KEYTYPE_MUTE => "Mute".to_string(),
+        NX_KEYTYPE_BRIGHTNESS_UP => "BrightnessUp".to_string(),
+        NX_KEYTYPE_BRIGHTNESS_DOWN => "BrightnessDown".to_string(),
+        NX_KEYTYPE_PLAY => "PlayPause".to_string(),
+        NX_KEYTYPE_NEXT => "NextTrack".to_string(),
+        NX_KEYTYPE_PREVIOUS => "PreviousTrack".to_string(),
+        NX_KEYTYPE_FAST => "FastForward".to_string(),
+        NX_KEYTYPE_REWIND => "Rewind".to_string(),
+        NX_KEYTYPE_ILLUMINATION_UP => "KeyboardBrightnessUp".to_string(),
+        NX_KEYTYPE_ILLUMINATION_DOWN => "KeyboardBrightnessDown".to_string(),
+        _ => format!("MediaKey({})", key_code),
     }
 }
 
@@ -741,5 +911,78 @@ mod tests {
         let mut capture = CGEventTapCapture::new();
         // Stopping when not running should be a no-op
         assert!(capture.stop().is_ok());
+    }
+
+    #[test]
+    fn test_media_keycode_to_name_volume() {
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_SOUND_UP), "VolumeUp");
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_SOUND_DOWN), "VolumeDown");
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_MUTE), "Mute");
+    }
+
+    #[test]
+    fn test_media_keycode_to_name_brightness() {
+        assert_eq!(
+            media_keycode_to_name(NX_KEYTYPE_BRIGHTNESS_UP),
+            "BrightnessUp"
+        );
+        assert_eq!(
+            media_keycode_to_name(NX_KEYTYPE_BRIGHTNESS_DOWN),
+            "BrightnessDown"
+        );
+    }
+
+    #[test]
+    fn test_media_keycode_to_name_playback() {
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_PLAY), "PlayPause");
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_NEXT), "NextTrack");
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_PREVIOUS), "PreviousTrack");
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_FAST), "FastForward");
+        assert_eq!(media_keycode_to_name(NX_KEYTYPE_REWIND), "Rewind");
+    }
+
+    #[test]
+    fn test_media_keycode_to_name_keyboard_backlight() {
+        assert_eq!(
+            media_keycode_to_name(NX_KEYTYPE_ILLUMINATION_UP),
+            "KeyboardBrightnessUp"
+        );
+        assert_eq!(
+            media_keycode_to_name(NX_KEYTYPE_ILLUMINATION_DOWN),
+            "KeyboardBrightnessDown"
+        );
+    }
+
+    #[test]
+    fn test_media_keycode_to_name_unknown() {
+        assert_eq!(media_keycode_to_name(255), "MediaKey(255)");
+    }
+
+    #[test]
+    fn test_captured_key_event_media_key() {
+        let event = CapturedKeyEvent {
+            key_code: NX_KEYTYPE_SOUND_UP,
+            key_name: "VolumeUp".to_string(),
+            fn_key: false,
+            command: false,
+            command_left: false,
+            command_right: false,
+            control: false,
+            control_left: false,
+            control_right: false,
+            alt: false,
+            alt_left: false,
+            alt_right: false,
+            shift: false,
+            shift_left: false,
+            shift_right: false,
+            pressed: true,
+            is_media_key: true,
+        };
+
+        assert_eq!(event.key_code, 0);
+        assert_eq!(event.key_name, "VolumeUp");
+        assert!(event.pressed);
+        assert!(event.is_media_key);
     }
 }
