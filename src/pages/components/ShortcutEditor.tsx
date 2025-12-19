@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { X } from "lucide-react";
 import { Button } from "../../components/ui";
+import { useSettings } from "../../hooks/useSettings";
 
 export interface ShortcutEditorProps {
   open: boolean;
@@ -150,6 +151,7 @@ export function ShortcutEditor({
   currentShortcut,
   onSave,
 }: ShortcutEditorProps) {
+  const { settings } = useSettings();
   const [recording, setRecording] = useState(false);
   const [recordedShortcut, setRecordedShortcut] = useState<{
     display: string;
@@ -261,7 +263,8 @@ export function ShortcutEditor({
 
         // Accept any valid hotkey: non-modifier key, media key, or modifier-only
         if (isValidHotkey(keyEvent)) {
-          const display = formatBackendKeyForDisplay(keyEvent);
+          const distinguishLeftRight = settings.shortcuts?.distinguishLeftRight ?? false;
+          const display = formatBackendKeyForDisplay(keyEvent, distinguishLeftRight);
           const backend = formatBackendKeyForBackend(keyEvent);
           console.log("[ShortcutEditor] Recording shortcut - display:", display, "backend:", backend);
           setRecordedShortcut({ display, backend });

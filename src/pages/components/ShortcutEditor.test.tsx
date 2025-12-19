@@ -16,6 +16,25 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: (...args: unknown[]) => mockListen(...args),
 }));
 
+// Mock useSettings hook - can be overridden per test
+const mockSettings = {
+  listening: { enabled: false, autoStartOnLaunch: false },
+  audio: { selectedDevice: null },
+  shortcuts: { distinguishLeftRight: false },
+};
+
+vi.mock("../../hooks/useSettings", () => ({
+  useSettings: () => ({
+    settings: mockSettings,
+    isLoading: false,
+    error: null,
+    updateListeningEnabled: vi.fn(),
+    updateAutoStartListening: vi.fn(),
+    updateAudioDevice: vi.fn(),
+    updateDistinguishLeftRight: vi.fn(),
+  }),
+}));
+
 describe("ShortcutEditor", () => {
   const defaultProps = {
     open: true,
@@ -29,6 +48,8 @@ describe("ShortcutEditor", () => {
     vi.clearAllMocks();
     mockInvoke.mockResolvedValue(undefined);
     mockListen.mockResolvedValue(mockUnlisten);
+    // Reset mock settings to default
+    mockSettings.shortcuts.distinguishLeftRight = false;
   });
 
   describe("Theming", () => {
@@ -512,6 +533,197 @@ describe("ShortcutEditor", () => {
       // Should display "⌘⇧A"
       await waitFor(() => {
         expect(screen.getByText("⌘⇧A")).toBeDefined();
+      });
+    });
+
+    it("displays A alone without modifiers", async () => {
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate pressing just "A" without any modifiers
+      capturedCallback?.({
+        payload: {
+          key_code: 0x00,
+          key_name: "A",
+          fn_key: false,
+          command: false,
+          command_left: false,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display just "A"
+      await waitFor(() => {
+        expect(screen.getByText("A")).toBeDefined();
+      });
+    });
+
+    it("displays Left-Command as ⌘ when distinguish toggle is off", async () => {
+      // Ensure toggle is off (default)
+      mockSettings.shortcuts.distinguishLeftRight = false;
+
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate pressing Left-Command only
+      capturedCallback?.({
+        payload: {
+          key_code: 0xE3,
+          key_name: "Command",
+          fn_key: false,
+          command: true,
+          command_left: true,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display "⌘" (not "L⌘") when toggle is off
+      await waitFor(() => {
+        expect(screen.getByText("⌘")).toBeDefined();
+      });
+      // Should NOT have the L prefix
+      expect(screen.queryByText("L⌘")).toBeNull();
+    });
+
+    it("displays Left-Command as L⌘ when distinguish toggle is on", async () => {
+      // Enable distinguish left/right toggle
+      mockSettings.shortcuts.distinguishLeftRight = true;
+
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate pressing Left-Command only
+      capturedCallback?.({
+        payload: {
+          key_code: 0xE3,
+          key_name: "Command",
+          fn_key: false,
+          command: true,
+          command_left: true,
+          command_right: false,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display "L⌘" when toggle is on
+      await waitFor(() => {
+        expect(screen.getByText("L⌘")).toBeDefined();
+      });
+    });
+
+    it("displays Right-Command as R⌘ when distinguish toggle is on", async () => {
+      // Enable distinguish left/right toggle
+      mockSettings.shortcuts.distinguishLeftRight = true;
+
+      let capturedCallback: ((event: { payload: unknown }) => void) | undefined;
+      mockListen.mockImplementation((_eventName: string, callback: (event: { payload: unknown }) => void) => {
+        capturedCallback = callback;
+        return Promise.resolve(mockUnlisten);
+      });
+
+      const user = userEvent.setup();
+      render(<ShortcutEditor {...defaultProps} />);
+
+      await user.click(screen.getByRole("button", { name: "Record New Shortcut" }));
+
+      await waitFor(() => {
+        expect(capturedCallback).toBeDefined();
+      });
+
+      // Simulate pressing Right-Command only
+      capturedCallback?.({
+        payload: {
+          key_code: 0xE7,
+          key_name: "Command",
+          fn_key: false,
+          command: true,
+          command_left: false,
+          command_right: true,
+          control: false,
+          control_left: false,
+          control_right: false,
+          alt: false,
+          alt_left: false,
+          alt_right: false,
+          shift: false,
+          shift_left: false,
+          shift_right: false,
+          pressed: true,
+          is_media_key: false,
+        },
+      });
+
+      // Should display "R⌘" when toggle is on
+      await waitFor(() => {
+        expect(screen.getByText("R⌘")).toBeDefined();
       });
     });
   });
