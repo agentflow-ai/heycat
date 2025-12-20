@@ -51,7 +51,6 @@ vi.mock("../hooks/useSettings", () => ({
       },
     },
     isLoading: false,
-    error: null,
     updateListeningEnabled: vi.fn(),
     updateAutoStartListening: mockUpdateAutoStartListening,
     updateAudioDevice: mockUpdateAudioDevice,

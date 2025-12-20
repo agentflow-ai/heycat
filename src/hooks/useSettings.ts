@@ -1,6 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
-import { load, Store } from "@tauri-apps/plugin-store";
+import { load } from "@tauri-apps/plugin-store";
 import { AudioSettings, DEFAULT_AUDIO_SETTINGS } from "../types/audio";
+import {
+  useAppStore,
+  useSettingsCache,
+  useIsSettingsLoaded,
+} from "../stores/appStore";
 
 /** Settings related to listening mode */
 export interface ListeningSettings {
@@ -21,7 +25,7 @@ export interface AppSettings {
 }
 
 /** Default settings for fresh installations */
-const DEFAULT_SETTINGS: AppSettings = {
+export const DEFAULT_SETTINGS: AppSettings = {
   listening: {
     enabled: false,
     autoStartOnLaunch: false,
@@ -36,7 +40,6 @@ const DEFAULT_SETTINGS: AppSettings = {
 export interface UseSettingsReturn {
   settings: AppSettings;
   isLoading: boolean;
-  error: string | null;
   updateListeningEnabled: (enabled: boolean) => Promise<void>;
   updateAutoStartListening: (enabled: boolean) => Promise<void>;
   updateAudioDevice: (deviceName: string | null) => Promise<void>;
@@ -46,151 +49,128 @@ export interface UseSettingsReturn {
 const STORE_FILE = "settings.json";
 
 /**
- * Custom hook for managing persistent application settings
- * Uses Tauri's store plugin to persist settings across sessions
+ * Initialize settings from Tauri Store into Zustand on app startup.
+ * Called once from AppInitializer before the app renders.
+ *
+ * This loads all settings from persistent storage into the Zustand store,
+ * allowing synchronous access throughout the app.
+ */
+export async function initializeSettings(): Promise<void> {
+  /* v8 ignore start -- @preserve */
+  const store = await load(STORE_FILE);
+  const setSettings = useAppStore.getState().setSettings;
+
+  // Load existing settings or use defaults
+  const listeningEnabled = await store.get<boolean>("listening.enabled");
+  const autoStartOnLaunch = await store.get<boolean>(
+    "listening.autoStartOnLaunch"
+  );
+  const audioSelectedDevice = await store.get<string | null>(
+    "audio.selectedDevice"
+  );
+  const distinguishLeftRight = await store.get<boolean>(
+    "shortcuts.distinguishLeftRight"
+  );
+
+  const settings: AppSettings = {
+    listening: {
+      enabled: listeningEnabled ?? DEFAULT_SETTINGS.listening.enabled,
+      autoStartOnLaunch:
+        autoStartOnLaunch ?? DEFAULT_SETTINGS.listening.autoStartOnLaunch,
+    },
+    audio: {
+      selectedDevice:
+        audioSelectedDevice ?? DEFAULT_SETTINGS.audio.selectedDevice,
+    },
+    shortcuts: {
+      distinguishLeftRight:
+        distinguishLeftRight ?? DEFAULT_SETTINGS.shortcuts.distinguishLeftRight,
+    },
+  };
+
+  setSettings(settings);
+  /* v8 ignore stop */
+}
+
+/**
+ * Update a specific setting in both Zustand (immediate) and Tauri Store (persistence).
+ * The dual-write ensures UI updates instantly while settings persist for backend access.
+ */
+async function updateSettingInBothStores<K extends keyof AppSettings>(
+  key: K,
+  nestedKey: keyof AppSettings[K],
+  value: AppSettings[K][keyof AppSettings[K]]
+): Promise<void> {
+  /* v8 ignore start -- @preserve */
+  // Get current settings from Zustand
+  const currentSettings = useAppStore.getState().settingsCache;
+  if (!currentSettings) return;
+
+  // Update Zustand immediately for fast UI response
+  const updatedCategory = {
+    ...currentSettings[key],
+    [nestedKey]: value,
+  };
+  useAppStore.getState().updateSetting(key, updatedCategory);
+
+  // Persist to Tauri Store for backend access and restart persistence
+  const store = await load(STORE_FILE);
+  await store.set(`${key}.${String(nestedKey)}`, value);
+  await store.save();
+  /* v8 ignore stop */
+}
+
+/**
+ * Custom hook for accessing and updating application settings.
+ *
+ * Settings are stored in:
+ * - Zustand (in-memory): For fast synchronous reads from React components
+ * - Tauri Store (persistent): For backend access and restart persistence
+ *
+ * The hook reads from Zustand and writes to both stores, ensuring:
+ * - Immediate UI updates (Zustand)
+ * - Persistence across restarts (Tauri Store)
+ * - Backend can read settings directly from Tauri Store
  */
 export function useSettings(): UseSettingsReturn {
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [store, setStore] = useState<Store | null>(null);
+  const settingsCache = useSettingsCache();
+  const isSettingsLoaded = useIsSettingsLoaded();
 
-  // Initialize store and load settings on mount
-  useEffect(() => {
-    let mounted = true;
+  // Use cached settings or defaults if not yet loaded
+  const settings = settingsCache ?? DEFAULT_SETTINGS;
+  const isLoading = !isSettingsLoaded;
 
-    /* v8 ignore start -- @preserve */
-    const initStore = async () => {
-      try {
-        const storeInstance = await load(STORE_FILE);
-        if (!mounted) return;
-        setStore(storeInstance);
+  const updateListeningEnabled = async (enabled: boolean): Promise<void> => {
+    await updateSettingInBothStores("listening", "enabled", enabled);
+  };
 
-        // Load existing settings or use defaults
-        const listeningEnabled = await storeInstance.get<boolean>(
-          "listening.enabled"
-        );
-        const autoStartOnLaunch = await storeInstance.get<boolean>(
-          "listening.autoStartOnLaunch"
-        );
-        const audioSelectedDevice = await storeInstance.get<string | null>(
-          "audio.selectedDevice"
-        );
-        const distinguishLeftRight = await storeInstance.get<boolean>(
-          "shortcuts.distinguishLeftRight"
-        );
+  const updateAutoStartListening = async (enabled: boolean): Promise<void> => {
+    await updateSettingInBothStores(
+      "listening",
+      "autoStartOnLaunch",
+      enabled
+    );
+  };
 
-        setSettings({
-          listening: {
-            enabled: listeningEnabled ?? DEFAULT_SETTINGS.listening.enabled,
-            autoStartOnLaunch:
-              autoStartOnLaunch ?? DEFAULT_SETTINGS.listening.autoStartOnLaunch,
-          },
-          audio: {
-            selectedDevice:
-              audioSelectedDevice ?? DEFAULT_SETTINGS.audio.selectedDevice,
-          },
-          shortcuts: {
-            distinguishLeftRight:
-              distinguishLeftRight ?? DEFAULT_SETTINGS.shortcuts.distinguishLeftRight,
-          },
-        });
-        setIsLoading(false);
-      } catch (e) {
-        if (!mounted) return;
-        setError(e instanceof Error ? e.message : String(e));
-        setIsLoading(false);
-      }
-    };
+  const updateAudioDevice = async (
+    deviceName: string | null
+  ): Promise<void> => {
+    await updateSettingInBothStores("audio", "selectedDevice", deviceName);
+  };
 
-    initStore();
-    /* v8 ignore stop */
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const updateListeningEnabled = useCallback(
-    async (enabled: boolean) => {
-      /* v8 ignore start -- @preserve */
-      if (!store) return;
-      try {
-        await store.set("listening.enabled", enabled);
-        setSettings((prev) => ({
-          ...prev,
-          listening: { ...prev.listening, enabled },
-        }));
-        setError(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      /* v8 ignore stop */
-    },
-    [store]
-  );
-
-  const updateAutoStartListening = useCallback(
-    async (enabled: boolean) => {
-      /* v8 ignore start -- @preserve */
-      if (!store) return;
-      try {
-        await store.set("listening.autoStartOnLaunch", enabled);
-        setSettings((prev) => ({
-          ...prev,
-          listening: { ...prev.listening, autoStartOnLaunch: enabled },
-        }));
-        setError(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      /* v8 ignore stop */
-    },
-    [store]
-  );
-
-  const updateAudioDevice = useCallback(
-    async (deviceName: string | null) => {
-      /* v8 ignore start -- @preserve */
-      if (!store) return;
-      try {
-        await store.set("audio.selectedDevice", deviceName);
-        setSettings((prev) => ({
-          ...prev,
-          audio: { ...prev.audio, selectedDevice: deviceName },
-        }));
-        setError(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      /* v8 ignore stop */
-    },
-    [store]
-  );
-
-  const updateDistinguishLeftRight = useCallback(
-    async (enabled: boolean) => {
-      /* v8 ignore start -- @preserve */
-      if (!store) return;
-      try {
-        await store.set("shortcuts.distinguishLeftRight", enabled);
-        setSettings((prev) => ({
-          ...prev,
-          shortcuts: { ...prev.shortcuts, distinguishLeftRight: enabled },
-        }));
-        setError(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-      /* v8 ignore stop */
-    },
-    [store]
-  );
+  const updateDistinguishLeftRight = async (
+    enabled: boolean
+  ): Promise<void> => {
+    await updateSettingInBothStores(
+      "shortcuts",
+      "distinguishLeftRight",
+      enabled
+    );
+  };
 
   return {
     settings,
     isLoading,
-    error,
     updateListeningEnabled,
     updateAutoStartListening,
     updateAudioDevice,

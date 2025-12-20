@@ -16,7 +16,10 @@ vi.mock("./hooks/useAutoStartListening");
 vi.mock("./hooks/useListening");
 vi.mock("./hooks/useRecording");
 vi.mock("./hooks/useMultiModelStatus");
-vi.mock("./hooks/useSettings");
+vi.mock("./hooks/useSettings", () => ({
+  useSettings: vi.fn(),
+  initializeSettings: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
@@ -85,7 +88,6 @@ describe("App Integration", () => {
       shortcuts: { distinguishLeftRight: false },
     },
     isLoading: false,
-    error: null,
     updateListeningEnabled: vi.fn(),
     updateAutoStartListening: vi.fn(),
     updateAudioDevice: vi.fn(),

@@ -7,20 +7,28 @@ import { queryClient } from "./lib/queryClient";
 import { router } from "./routes";
 import { setupEventBridge } from "./lib/eventBridge";
 import { useAppStore } from "./stores/appStore";
+import { initializeSettings } from "./hooks/useSettings";
 import { ToastProvider } from "./components/overlays";
 
 /**
- * Component that initializes the Event Bridge on mount and cleans up on unmount.
+ * Component that initializes app state on mount:
+ * 1. Loads settings from Tauri Store into Zustand
+ * 2. Sets up the Event Bridge for backend events
+ *
  * This is placed inside the QueryClientProvider so it has access to the query client.
  */
 function AppInitializer({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cleanup: (() => void) | undefined;
 
-    // Initialize event bridge with query client and store
-    const store = useAppStore.getState();
-    setupEventBridge(queryClient, store).then((cleanupFn) => {
-      cleanup = cleanupFn;
+    // Initialize settings from Tauri Store into Zustand
+    // This happens before event bridge setup to ensure settings are available
+    initializeSettings().then(() => {
+      // Initialize event bridge with query client and store
+      const store = useAppStore.getState();
+      setupEventBridge(queryClient, store).then((cleanupFn) => {
+        cleanup = cleanupFn;
+      });
     });
 
     return () => {
