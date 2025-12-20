@@ -282,14 +282,15 @@ describe("ShortcutEditor", () => {
         expect(capturedCallback).toBeDefined();
       });
 
-      // Simulate backend emitting a modifier-only event (Command key alone)
+      // Simulate backend emitting a modifier-only event (Command key release)
+      // Modifier-only shortcuts are captured on key RELEASE (pressed=false)
       capturedCallback?.({
         payload: {
           key_code: 0xE3,
           key_name: "Command",
           fn_key: false,
-          command: true,
-          command_left: true,
+          command: false, // Key is being released, so modifier is no longer held
+          command_left: false,
           command_right: false,
           control: false,
           control_left: false,
@@ -300,7 +301,7 @@ describe("ShortcutEditor", () => {
           shift: false,
           shift_left: false,
           shift_right: false,
-          pressed: true,
+          pressed: false, // Release event
           is_media_key: false,
         },
       });
@@ -417,12 +418,12 @@ describe("ShortcutEditor", () => {
         expect(capturedCallback).toBeDefined();
       });
 
-      // Simulate fn key alone pressed
+      // Simulate fn key release (modifier-only shortcuts are captured on release)
       capturedCallback?.({
         payload: {
           key_code: 0x3F,
           key_name: "fn",
-          fn_key: true,
+          fn_key: false, // Key is being released
           command: false,
           command_left: false,
           command_right: false,
@@ -435,7 +436,7 @@ describe("ShortcutEditor", () => {
           shift: false,
           shift_left: false,
           shift_right: false,
-          pressed: true,
+          pressed: false, // Release event
           is_media_key: false,
         },
       });
@@ -600,14 +601,14 @@ describe("ShortcutEditor", () => {
         expect(capturedCallback).toBeDefined();
       });
 
-      // Simulate pressing Left-Command only
+      // Simulate releasing Left-Command (modifier-only shortcuts are captured on release)
       capturedCallback?.({
         payload: {
           key_code: 0xE3,
           key_name: "Command",
           fn_key: false,
-          command: true,
-          command_left: true,
+          command: false, // Key is being released
+          command_left: true, // Left was the one pressed
           command_right: false,
           control: false,
           control_left: false,
@@ -618,7 +619,7 @@ describe("ShortcutEditor", () => {
           shift: false,
           shift_left: false,
           shift_right: false,
-          pressed: true,
+          pressed: false, // Release event
           is_media_key: false,
         },
       });
@@ -650,14 +651,14 @@ describe("ShortcutEditor", () => {
         expect(capturedCallback).toBeDefined();
       });
 
-      // Simulate pressing Left-Command only
+      // Simulate releasing Left-Command (modifier-only shortcuts are captured on release)
       capturedCallback?.({
         payload: {
           key_code: 0xE3,
           key_name: "Command",
           fn_key: false,
-          command: true,
-          command_left: true,
+          command: false, // Key is being released
+          command_left: true, // Left was the one pressed
           command_right: false,
           control: false,
           control_left: false,
@@ -668,7 +669,7 @@ describe("ShortcutEditor", () => {
           shift: false,
           shift_left: false,
           shift_right: false,
-          pressed: true,
+          pressed: false, // Release event
           is_media_key: false,
         },
       });
@@ -698,15 +699,15 @@ describe("ShortcutEditor", () => {
         expect(capturedCallback).toBeDefined();
       });
 
-      // Simulate pressing Right-Command only
+      // Simulate releasing Right-Command (modifier-only shortcuts are captured on release)
       capturedCallback?.({
         payload: {
           key_code: 0xE7,
           key_name: "Command",
           fn_key: false,
-          command: true,
+          command: false, // Key is being released
           command_left: false,
-          command_right: true,
+          command_right: true, // Right was the one pressed
           control: false,
           control_left: false,
           control_right: false,
@@ -716,7 +717,7 @@ describe("ShortcutEditor", () => {
           shift: false,
           shift_left: false,
           shift_right: false,
-          pressed: true,
+          pressed: false, // Release event
           is_media_key: false,
         },
       });

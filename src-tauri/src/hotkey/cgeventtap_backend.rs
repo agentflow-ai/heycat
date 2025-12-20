@@ -151,6 +151,26 @@ fn normalize_key_name(name: &str) -> String {
     }
 }
 
+/// Check if an event represents a modifier key press that matches the spec
+/// This is used for modifier-only shortcuts (e.g., just "fn" or "Command+Shift")
+fn is_modifier_key_event(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
+    // The event's key_name tells us what key was actually pressed
+    // For modifier-only shortcuts, the pressed key must BE a modifier
+
+    // Check if the key pressed matches the required modifiers
+    match event.key_name.as_str() {
+        "fn" => spec.fn_key,
+        "Command" => spec.command,
+        "Control" => spec.control,
+        "Alt" => spec.alt,
+        "Shift" => spec.shift,
+        // CapsLock is technically a modifier but not typically used in shortcuts
+        "CapsLock" => false,
+        // Any other key is not a modifier
+        _ => false,
+    }
+}
+
 /// Check if a captured key event matches a shortcut spec
 pub fn matches_shortcut(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
     // Only match on key press, not release
@@ -179,8 +199,9 @@ pub fn matches_shortcut(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
     match (&spec.key_name, spec.is_media_key) {
         (None, _) => {
             // Modifier-only shortcut - match when the modifier key itself is pressed
-            // This only triggers when we're looking for modifier-only and the event is for a modifier
-            true
+            // We must verify the actual key pressed IS a modifier key, not just any key
+            // with modifier flags set (e.g., arrow keys have fn flag set on macOS)
+            is_modifier_key_event(event, spec)
         }
         (Some(key_name), true) => {
             // Media key - must be a media key event with matching name
@@ -553,6 +574,119 @@ mod tests {
         assert_eq!(normalize_key_name("Esc"), "Escape");
         assert_eq!(normalize_key_name("F5"), "F5");
         assert_eq!(normalize_key_name("f12"), "F12");
+    }
+
+    #[test]
+    fn test_matches_shortcut_fn_only_with_fn_key() {
+        // fn-only shortcut should match when fn key itself is pressed
+        let spec = parse_shortcut("fn").unwrap();
+        let event = CapturedKeyEvent {
+            key_code: 63, // fn key
+            key_name: "fn".to_string(),
+            fn_key: true,
+            command: false,
+            command_left: false,
+            command_right: false,
+            control: false,
+            control_left: false,
+            control_right: false,
+            alt: false,
+            alt_left: false,
+            alt_right: false,
+            shift: false,
+            shift_left: false,
+            shift_right: false,
+            pressed: true,
+            is_media_key: false,
+        };
+        assert!(matches_shortcut(&event, &spec));
+    }
+
+    #[test]
+    fn test_matches_shortcut_fn_only_rejects_arrow_keys() {
+        // fn-only shortcut should NOT match arrow keys even though they have fn flag
+        let spec = parse_shortcut("fn").unwrap();
+
+        // Test all arrow keys - they all have fn_key=true on macOS but should not trigger
+        for (key_code, key_name) in [(123, "Left"), (124, "Right"), (125, "Down"), (126, "Up")] {
+            let event = CapturedKeyEvent {
+                key_code,
+                key_name: key_name.to_string(),
+                fn_key: true, // macOS sets this flag for arrow keys!
+                command: false,
+                command_left: false,
+                command_right: false,
+                control: false,
+                control_left: false,
+                control_right: false,
+                alt: false,
+                alt_left: false,
+                alt_right: false,
+                shift: false,
+                shift_left: false,
+                shift_right: false,
+                pressed: true,
+                is_media_key: false,
+            };
+            assert!(
+                !matches_shortcut(&event, &spec),
+                "Arrow key '{}' should not trigger fn-only shortcut",
+                key_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_matches_shortcut_command_only() {
+        // Command-only shortcut should match when Command key is pressed
+        let spec = parse_shortcut("Command").unwrap();
+        let event = CapturedKeyEvent {
+            key_code: 55, // Left Command
+            key_name: "Command".to_string(),
+            fn_key: false,
+            command: true,
+            command_left: true,
+            command_right: false,
+            control: false,
+            control_left: false,
+            control_right: false,
+            alt: false,
+            alt_left: false,
+            alt_right: false,
+            shift: false,
+            shift_left: false,
+            shift_right: false,
+            pressed: true,
+            is_media_key: false,
+        };
+        assert!(matches_shortcut(&event, &spec));
+    }
+
+    #[test]
+    fn test_matches_shortcut_modifier_only_rejects_regular_keys() {
+        // Modifier-only shortcuts should not match regular keys
+        let spec = parse_shortcut("Command").unwrap();
+        let event = CapturedKeyEvent {
+            key_code: 0, // A key
+            key_name: "A".to_string(),
+            fn_key: false,
+            command: true, // Command is held
+            command_left: true,
+            command_right: false,
+            control: false,
+            control_left: false,
+            control_right: false,
+            alt: false,
+            alt_left: false,
+            alt_right: false,
+            shift: false,
+            shift_left: false,
+            shift_right: false,
+            pressed: true,
+            is_media_key: false,
+        };
+        // Should NOT match - we want Command key itself, not Command+A
+        assert!(!matches_shortcut(&event, &spec));
     }
 
     #[test]

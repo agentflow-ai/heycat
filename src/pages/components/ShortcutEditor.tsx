@@ -313,7 +313,7 @@ export function ShortcutEditor({
       }
       stopCapture();
     };
-  }, [recording, startCapture, stopCapture]);
+  }, [recording, startCapture, stopCapture, settings]);
 
   // Handle click outside to close
   useEffect(() => {
