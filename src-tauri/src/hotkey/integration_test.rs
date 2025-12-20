@@ -1162,3 +1162,95 @@ fn test_cancel_recording_can_restart_after_cancel() {
     assert_eq!(state.lock().unwrap().get_state(), RecordingState::Recording);
     assert_eq!(emitter.started_count(), 2);
 }
+
+// === Escape Registration Failure Tests ===
+
+/// Mock shortcut backend that always fails registration
+struct FailingShortcutBackend {
+    unregister_attempts: Arc<Mutex<Vec<String>>>,
+}
+
+impl FailingShortcutBackend {
+    fn new() -> Self {
+        Self {
+            unregister_attempts: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Get the number of unregister attempts
+    fn unregister_attempt_count(&self) -> usize {
+        self.unregister_attempts.lock().unwrap().len()
+    }
+}
+
+impl crate::hotkey::ShortcutBackend for FailingShortcutBackend {
+    fn register(&self, _shortcut: &str, _callback: Box<dyn Fn() + Send + Sync>) -> Result<(), String> {
+        Err("Registration always fails".to_string())
+    }
+
+    fn unregister(&self, shortcut: &str) -> Result<(), String> {
+        self.unregister_attempts.lock().unwrap().push(shortcut.to_string());
+        Err("Nothing to unregister".to_string())
+    }
+}
+
+#[test]
+fn test_escape_registered_false_when_registration_fails() {
+    // When registration fails, escape_registered should remain false
+    ensure_test_model_files();
+
+    let emitter = MockEmitter::new();
+    let backend = Arc::new(FailingShortcutBackend::new());
+    let callback_count = Arc::new(Mutex::new(0));
+    let callback_count_clone = callback_count.clone();
+
+    let mut integration: TestIntegration =
+        HotkeyIntegration::with_debounce(emitter.clone(), 0)
+            .with_shortcut_backend(backend.clone())
+            .with_escape_callback(Arc::new(move || {
+                *callback_count_clone.lock().unwrap() += 1;
+            }));
+    let state = Mutex::new(RecordingManager::new());
+
+    // Start recording - this triggers register_escape_listener which will fail
+    integration.handle_toggle(&state);
+    assert_eq!(state.lock().unwrap().get_state(), RecordingState::Recording);
+
+    // Recording should still work even though Escape registration failed
+    // This verifies the system is resilient to registration failures
+    assert_eq!(emitter.started_count(), 1);
+}
+
+#[test]
+fn test_unregister_not_called_when_registration_failed() {
+    // When registration fails, unregister should not be called on stop
+    // (avoids spurious warnings in logs)
+    ensure_test_model_files();
+
+    let emitter = MockEmitter::new();
+    let backend = Arc::new(FailingShortcutBackend::new());
+    let callback_count = Arc::new(Mutex::new(0));
+    let callback_count_clone = callback_count.clone();
+
+    let mut integration: TestIntegration =
+        HotkeyIntegration::with_debounce(emitter.clone(), 0)
+            .with_shortcut_backend(backend.clone())
+            .with_escape_callback(Arc::new(move || {
+                *callback_count_clone.lock().unwrap() += 1;
+            }));
+    let state = Mutex::new(RecordingManager::new());
+
+    // Start recording - registration will fail
+    integration.handle_toggle(&state);
+
+    // Stop recording - unregister should NOT be called since registration failed
+    integration.handle_toggle(&state);
+    assert_eq!(state.lock().unwrap().get_state(), RecordingState::Idle);
+
+    // Verify unregister was not attempted (escape_registered stayed false)
+    assert_eq!(
+        backend.unregister_attempt_count(),
+        0,
+        "Unregister should not be called when registration failed"
+    );
+}
