@@ -176,7 +176,6 @@ pub fn run() {
 
             // Create a wrapper to pass to HotkeyIntegration (it needs owned value, not Arc)
             let recording_emitter = commands::TauriEventEmitter::new(app.handle().clone());
-            let command_emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
 
             // Create shortcut backend for Escape key registration (used by HotkeyIntegration)
             // Uses platform-specific backend: CGEventTap on macOS, Tauri on Windows/Linux
@@ -200,19 +199,23 @@ pub fn run() {
                 .with_transcription_emitter(emitter)
                 .with_recording_state(recording_state.clone())
                 .with_listening_state(listening_state)
-                .with_command_emitter(command_emitter)
                 .with_listening_pipeline(listening_pipeline.clone())
                 .with_recording_detectors(recording_detectors.clone())
                 .with_shortcut_backend(escape_backend)
                 .with_transcription_callback(transcription_callback);
 
-            // Wire up voice command integration if available (still needed for HotkeyIntegration's silence detection callback)
+            // Wire up voice command integration using grouped config if available
+            // (still needed for HotkeyIntegration's silence detection callback)
             if let (Some(registry), Some(matcher), Some(dispatcher)) = (command_registry, command_matcher, action_dispatcher) {
+                let command_emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
                 integration_builder = integration_builder
-                    .with_command_registry(registry)
-                    .with_command_matcher(matcher)
-                    .with_action_dispatcher(dispatcher);
-                debug!("Voice command integration wired up");
+                    .with_voice_commands(hotkey::integration::VoiceCommandConfig {
+                        registry,
+                        matcher,
+                        dispatcher,
+                        emitter: Some(command_emitter),
+                    });
+                debug!("Voice command integration wired up using grouped config");
             }
 
             let integration = Arc::new(Mutex::new(integration_builder));

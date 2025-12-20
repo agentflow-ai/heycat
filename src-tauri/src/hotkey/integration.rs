@@ -105,20 +105,6 @@ pub struct TranscriptionConfig<T: TranscriptionEventEmitter + ListeningEventEmit
     pub callback: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
-/// Configuration for audio capture capabilities
-///
-/// Groups fields related to audio capture and recording management.
-pub struct AudioConfig<R: RecordingEventEmitter> {
-    /// Handle to the audio capture thread
-    pub thread: Arc<AudioThreadHandle>,
-    /// Recording state manager for tracking recording status and buffer
-    pub recording_state: Arc<Mutex<RecordingManager>>,
-    /// Event emitter for recording events
-    pub recording_emitter: R,
-    /// Optional detectors for silence-based auto-stop
-    pub detectors: Option<Arc<Mutex<RecordingDetectors>>>,
-}
-
 /// Configuration for silence detection during recording
 ///
 /// Controls whether and how silence detection triggers auto-stop.
@@ -460,6 +446,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     }
 
     /// Add voice command registry for command matching (builder pattern)
+    ///
+    /// Note: Prefer `with_voice_commands()` for new code. This method is kept for
+    /// backward compatibility and alternative builder patterns.
+    #[allow(dead_code)]
     pub fn with_command_registry(mut self, registry: Arc<Mutex<CommandRegistry>>) -> Self {
         if let Some(ref mut config) = self.voice_commands {
             config.registry = registry;
@@ -477,6 +467,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     }
 
     /// Add command matcher for voice command matching (builder pattern)
+    ///
+    /// Note: Prefer `with_voice_commands()` for new code. This method is kept for
+    /// backward compatibility and alternative builder patterns.
+    #[allow(dead_code)]
     pub fn with_command_matcher(mut self, matcher: Arc<CommandMatcher>) -> Self {
         if let Some(ref mut config) = self.voice_commands {
             config.matcher = matcher;
@@ -487,6 +481,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     }
 
     /// Add action dispatcher for executing matched commands (builder pattern)
+    ///
+    /// Note: Prefer `with_voice_commands()` for new code. This method is kept for
+    /// backward compatibility and alternative builder patterns.
+    #[allow(dead_code)]
     pub fn with_action_dispatcher(mut self, dispatcher: Arc<ActionDispatcher>) -> Self {
         if let Some(ref mut config) = self.voice_commands {
             config.dispatcher = dispatcher;
@@ -496,6 +494,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     }
 
     /// Add command event emitter for voice command events (builder pattern)
+    ///
+    /// Note: Prefer `with_voice_commands()` for new code. This method is kept for
+    /// backward compatibility and alternative builder patterns.
+    #[allow(dead_code)]
     pub fn with_command_emitter(mut self, emitter: Arc<C>) -> Self {
         if let Some(ref mut config) = self.voice_commands {
             config.emitter = Some(emitter);
@@ -563,8 +565,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
 
     /// Add complete escape key configuration (builder pattern)
     ///
-    /// This is the preferred way to configure escape key handling. All components
-    /// are provided together to ensure consistency.
+    /// This is the preferred way to configure escape key handling when all components
+    /// are known upfront. For cases where the callback needs to capture a reference to
+    /// the integration itself, use `with_shortcut_backend()` followed by `set_escape_callback()`.
+    #[allow(dead_code)]
     pub fn with_escape(mut self, config: EscapeKeyConfig) -> Self {
         self.escape = Some(config);
         self

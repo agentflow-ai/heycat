@@ -3,6 +3,13 @@ status: in-progress
 created: 2025-12-20
 completed: null
 dependencies: ["deduplicate-transcription-callbacks"]
+review_round: 1
+review_history:
+  - round: 1
+    date: 2025-12-20
+    verdict: NEEDS_WORK
+    failedCriteria: ["Builder pattern updated to work with new structure"]
+    concerns: ["**CRITICAL**: AudioConfig is defined but never constructed (dead code warning)", "**CRITICAL**: with_voice_commands and with_escape methods are never used (dead code warning)", "**Architecture incomplete**: Production code in lib.rs still uses scattered individual builder methods instead of grouped configs", "**Partial migration**: Only TranscriptionConfig and SilenceDetectionConfig are partially integrated; AudioConfig, VoiceCommandConfig, EscapeKeyConfig are orphaned", "**Spec vs implementation mismatch**: Spec shows clean builder with `.with_audio(AudioConfig{...})` but implementation never migrates to this pattern"]
 ---
 
 # Spec: Refactor HotkeyIntegration Config
@@ -258,3 +265,104 @@ toggle_recording()
     │     └── self.transcription.*            ← TranscriptionConfig (all together)
     └── 2 config structs, clear ownership
 ```
+
+## Review
+
+**Reviewed:** 2025-12-20
+**Reviewer:** Claude
+
+### Pre-Review Gates
+
+#### 1. Build Warning Check
+```
+warning: struct `AudioConfig` is never constructed
+   --> src/hotkey/integration.rs:111:12
+    |
+111 | pub struct AudioConfig<R: RecordingEventEmitter> {
+
+warning: methods `with_voice_commands` and `with_escape` are never used
+   --> src/hotkey/integration.rs:457:12
+    |
+354 | impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
+```
+**FAIL**: New config structs and builder methods have dead code warnings.
+
+### Manual Review
+
+#### 1. Is the code wired up end-to-end?
+
+**FAIL**: The refactoring is incomplete. Config structs were created but not used in production:
+
+| New Code | Type | Production Call Site | Reachable from main/UI? |
+|----------|------|---------------------|-------------------------|
+| AudioConfig | struct | NONE | TEST-ONLY |
+| VoiceCommandConfig | struct | integration.rs only | NO (not constructed) |
+| EscapeKeyConfig | struct | integration.rs only | NO (not constructed) |
+| with_voice_commands | method | NONE | NO |
+| with_escape | method | NONE | NO |
+
+Production code in `src-tauri/src/lib.rs:192-215` still uses the old individual builder methods:
+- `.with_audio_thread()` instead of `.with_audio(AudioConfig{...})`
+- `.with_command_registry()`, `.with_command_matcher()`, `.with_action_dispatcher()` instead of `.with_voice_commands(VoiceCommandConfig{...})`
+- `.with_shortcut_backend()`, `.with_escape_callback()` instead of `.with_escape(EscapeKeyConfig{...})`
+
+#### 2. What would break if this code was deleted?
+
+**AudioConfig struct**: Nothing would break - it's never constructed.
+**VoiceCommandConfig/EscapeKeyConfig**: Only internal helper logic would break, not production usage.
+**with_voice_commands/with_escape methods**: Nothing - they're unused (dead code).
+
+#### 3. Where does the data flow?
+
+The struct fields remain scattered in production:
+- `HotkeyIntegration` still stores `audio_thread`, `recording_state`, `recording_detectors` as separate fields (NOT in `AudioConfig`)
+- Voice command fields still separate (NOT in `VoiceCommandConfig`)
+- Escape fields still separate (NOT in `EscapeKeyConfig`)
+
+The refactoring added config structs but didn't migrate the actual struct fields or update production call sites.
+
+#### 4. Are there any deferrals?
+
+No TODOs/FIXMEs found related to this spec.
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Related fields grouped into logical sub-structs | PARTIAL | Structs created but AudioConfig never constructed; VoiceCommandConfig/EscapeKeyConfig exist but production uses individual methods |
+| Builder pattern updated to work with new structure | FAIL | with_voice_commands/with_escape methods exist but unused; production still uses old .with_command_registry() etc. |
+| All existing tests pass | PASS | 41 tests pass |
+| No functional behavior changes | PASS | Tests verify behavior unchanged |
+| Documentation updated if needed | DEFERRED | Extensive data flow diagrams added to spec |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Existing HotkeyIntegration tests pass unchanged | PASS | src-tauri/src/hotkey/integration_test.rs (41 tests) |
+| Builder pattern works correctly with new structure | FAIL | Production doesn't use new builder methods |
+| Default values preserved for all fields | PASS | Tests verify behavior unchanged |
+
+### Code Quality
+
+**Strengths:**
+- Config structs are well-documented with clear purpose
+- Tests continue to pass, proving no functional regressions
+- SilenceDetectionConfig is actually used and has Default impl
+- TranscriptionConfig groups related fields logically
+
+**Concerns:**
+- **CRITICAL**: AudioConfig is defined but never constructed (dead code warning)
+- **CRITICAL**: with_voice_commands and with_escape methods are never used (dead code warning)
+- **Architecture incomplete**: Production code in lib.rs still uses scattered individual builder methods instead of grouped configs
+- **Partial migration**: Only TranscriptionConfig and SilenceDetectionConfig are partially integrated; AudioConfig, VoiceCommandConfig, EscapeKeyConfig are orphaned
+- **Spec vs implementation mismatch**: Spec shows clean builder with `.with_audio(AudioConfig{...})` but implementation never migrates to this pattern
+
+### Verdict
+
+**NEEDS_WORK** - Refactoring is incomplete. Config structs were created but production code was not migrated to use them. The builder pattern still uses individual methods (.with_audio_thread, .with_command_registry) instead of grouped configs (.with_audio, .with_voice_commands). This creates dead code and doesn't achieve the maintainability goal of the spec.
+
+**Required fixes:**
+1. Either complete the migration by updating lib.rs:192-215 to use AudioConfig, VoiceCommandConfig, EscapeKeyConfig constructors
+2. OR remove the unused structs/methods and adjust the spec to a more incremental approach
+3. Resolve all dead_code warnings by either using the code or removing it
