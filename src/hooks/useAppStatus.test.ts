@@ -26,12 +26,12 @@ describe("useAppStatus", () => {
     // Default: all idle
     mockUseRecording.mockReturnValue({
       isRecording: false,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
     mockUseTranscription.mockReturnValue({
       isTranscribing: false,
@@ -79,12 +79,12 @@ describe("useAppStatus", () => {
     });
     mockUseRecording.mockReturnValue({
       isRecording: true,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
 
     const { result } = renderHook(() => useAppStatus());
@@ -114,12 +114,12 @@ describe("useAppStatus", () => {
   it("returns recording over processing (highest priority)", () => {
     mockUseRecording.mockReturnValue({
       isRecording: true,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
     mockUseTranscription.mockReturnValue({
       isTranscribing: true,
@@ -135,12 +135,12 @@ describe("useAppStatus", () => {
   it("exposes first available error from hooks", () => {
     mockUseRecording.mockReturnValue({
       isRecording: false,
+      isProcessing: false,
       error: "Recording error",
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
 
     const { result } = renderHook(() => useAppStatus());
@@ -150,12 +150,12 @@ describe("useAppStatus", () => {
   it("exposes individual state booleans", () => {
     mockUseRecording.mockReturnValue({
       isRecording: true,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
     mockUseTranscription.mockReturnValue({
       isTranscribing: true,

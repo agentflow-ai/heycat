@@ -85,12 +85,12 @@ describe("useCatOverlay", () => {
     });
     mockUseRecording.mockReturnValue({
       isRecording: false,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
   });
 
@@ -251,12 +251,12 @@ describe("useCatOverlay", () => {
   it("overlayMode is 'recording' when isRecording is true", async () => {
     mockUseRecording.mockReturnValue({
       isRecording: true,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
 
     const { result } = renderHook(() => useCatOverlay());
@@ -267,12 +267,12 @@ describe("useCatOverlay", () => {
   it("overlayMode is 'recording' even when isListening is also true (recording takes precedence)", async () => {
     mockUseRecording.mockReturnValue({
       isRecording: true,
+      isProcessing: false,
       error: null,
       startRecording: vi.fn(),
       stopRecording: vi.fn(),
-      lastRecording: null,
-      wasCancelled: false,
-      cancelReason: null,
+      isStarting: false,
+      isStopping: false,
     });
 
     const { result } = renderHook(() => useCatOverlay());

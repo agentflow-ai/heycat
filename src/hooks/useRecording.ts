@@ -1,33 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { queryKeys } from "../lib/queryKeys";
 
 /** Metadata returned when recording stops */
 export interface RecordingMetadata {
   duration_secs: number;
   file_path: string;
   sample_count: number;
-}
-
-/** Payload for recording_started event */
-interface RecordingStartedPayload {
-  timestamp: string;
-}
-
-/** Payload for recording_stopped event */
-interface RecordingStoppedPayload {
-  metadata: RecordingMetadata;
-}
-
-/** Payload for recording_error event */
-interface RecordingErrorPayload {
-  message: string;
-}
-
-/** Payload for recording_cancelled event */
-interface RecordingCancelledPayload {
-  reason: string;
-  timestamp: string;
 }
 
 /** Response from get_recording_state command */
@@ -41,22 +20,72 @@ export interface UseRecordingOptions {
   deviceName?: string | null;
 }
 
-/** Return type of the useRecording hook */
+/** Return type of the useRecordingState hook */
+export interface UseRecordingStateResult {
+  isRecording: boolean;
+  isProcessing: boolean;
+  isLoading: boolean;
+  error: Error | null;
+}
+
+/** Return type of the useRecording hook (backward compatible) */
 export interface UseRecordingResult {
   isRecording: boolean;
+  isProcessing: boolean;
   error: string | null;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
-  lastRecording: RecordingMetadata | null;
-  /** True if the last recording was cancelled (not stopped normally) */
-  wasCancelled: boolean;
-  /** Reason for cancellation (e.g., "double-tap-escape"), null if not cancelled */
-  cancelReason: string | null;
+  isStarting: boolean;
+  isStopping: boolean;
 }
 
 /**
- * Custom hook for managing recording state
- * Provides methods to start/stop recording and listens to backend events
+ * Hook for reading recording state using Tanstack Query.
+ * Uses Event Bridge for cache invalidation on recording_started/recording_stopped events.
+ */
+export function useRecordingState(): UseRecordingStateResult {
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.tauri.getRecordingState,
+    queryFn: () => invoke<RecordingStateResponse>("get_recording_state"),
+  });
+
+  return {
+    isRecording: data?.state === "Recording",
+    isProcessing: data?.state === "Processing",
+    isLoading,
+    error: error instanceof Error ? error : error ? new Error(String(error)) : null,
+  };
+}
+
+/**
+ * Mutation hook for starting recording.
+ * Event Bridge handles cache invalidation on recording_started event.
+ */
+export function useStartRecording() {
+  return useMutation({
+    mutationFn: (deviceName?: string) =>
+      invoke("start_recording", { deviceName }),
+    // No onSuccess invalidation - Event Bridge handles this via recording_started
+  });
+}
+
+/**
+ * Mutation hook for stopping recording.
+ * Event Bridge handles cache invalidation on recording_stopped event.
+ */
+export function useStopRecording() {
+  return useMutation({
+    mutationFn: () => invoke("stop_recording"),
+    // No onSuccess invalidation - Event Bridge handles this via recording_stopped
+  });
+}
+
+/**
+ * Custom hook for managing recording state (backward compatible).
+ * Combines query and mutation hooks for convenience.
+ *
+ * State updates happen via Event Bridge, not command responses.
+ * This ensures hotkey-triggered recordings update the UI correctly.
  *
  * @param options Configuration options including device selection
  */
@@ -64,121 +93,41 @@ export function useRecording(
   options: UseRecordingOptions = {}
 ): UseRecordingResult {
   const { deviceName } = options;
-  const [isRecording, setIsRecording] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastRecording, setLastRecording] = useState<RecordingMetadata | null>(
-    null
-  );
-  const [wasCancelled, setWasCancelled] = useState(false);
-  const [cancelReason, setCancelReason] = useState<string | null>(null);
+  const { isRecording, isProcessing, error } = useRecordingState();
+  const startMutation = useStartRecording();
+  const stopMutation = useStopRecording();
 
-  // Fetch initial recording state from backend on mount
-  useEffect(() => {
-    /* v8 ignore start -- @preserve */
-    async function fetchInitialState() {
-      try {
-        const status = await invoke<RecordingStateResponse>("get_recording_state");
-        setIsRecording(status.state === "Recording");
-      } catch {
-        // Silently handle error - state will be updated via events
-      }
-    }
-    fetchInitialState();
-    /* v8 ignore stop */
-  }, []);
-
-  // Note: State updates happen via events, not command responses.
-  // This ensures hotkey-triggered recordings update the UI correctly.
-  const startRecording = useCallback(async () => {
-    setError(null);
-    /* v8 ignore start -- @preserve */
+  const startRecording = async () => {
     try {
-      await invoke("start_recording", {
-        deviceName: deviceName ?? undefined,
-      });
-      // State will be updated by recording_started event
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await startMutation.mutateAsync(deviceName ?? undefined);
+      // State will be updated by Event Bridge on recording_started event
+    } catch {
+      // Error is captured in mutation state
     }
-    /* v8 ignore stop */
-  }, [deviceName]);
+  };
 
-  const stopRecording = useCallback(async () => {
-    setError(null);
-    /* v8 ignore start -- @preserve */
+  const stopRecording = async () => {
     try {
-      await invoke<RecordingMetadata>("stop_recording");
-      // State will be updated by recording_stopped event
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await stopMutation.mutateAsync();
+      // State will be updated by Event Bridge on recording_stopped event
+    } catch {
+      // Error is captured in mutation state
     }
-    /* v8 ignore stop */
-  }, []);
+  };
 
-  useEffect(() => {
-    const unlistenFns: UnlistenFn[] = [];
-
-    /* v8 ignore start -- @preserve */
-    const setupListeners = async () => {
-      const unlistenStarted = await listen<RecordingStartedPayload>(
-        "recording_started",
-        () => {
-          setIsRecording(true);
-          setError(null);
-          // Reset cancelled state when new recording starts
-          setWasCancelled(false);
-          setCancelReason(null);
-        }
-      );
-      unlistenFns.push(unlistenStarted);
-
-      const unlistenStopped = await listen<RecordingStoppedPayload>(
-        "recording_stopped",
-        (event) => {
-          setIsRecording(false);
-          setLastRecording(event.payload.metadata);
-          setError(null);
-        }
-      );
-      unlistenFns.push(unlistenStopped);
-
-      const unlistenError = await listen<RecordingErrorPayload>(
-        "recording_error",
-        (event) => {
-          setError(event.payload.message);
-        }
-      );
-      unlistenFns.push(unlistenError);
-
-      const unlistenCancelled = await listen<RecordingCancelledPayload>(
-        "recording_cancelled",
-        (event) => {
-          setIsRecording(false);
-          setWasCancelled(true);
-          setCancelReason(event.payload.reason);
-          setError(null);
-        }
-      );
-      unlistenFns.push(unlistenCancelled);
-    };
-
-    setupListeners();
-    /* v8 ignore stop */
-
-    return () => {
-      /* v8 ignore start -- @preserve */
-      unlistenFns.forEach((unlisten) => unlisten());
-      /* v8 ignore stop */
-    };
-  }, []);
+  // Combine errors: query error, or mutation errors
+  const combinedError = error?.message
+    ?? (startMutation.error instanceof Error ? startMutation.error.message : null)
+    ?? (stopMutation.error instanceof Error ? stopMutation.error.message : null)
+    ?? null;
 
   return {
     isRecording,
-    error,
+    isProcessing,
+    error: combinedError,
     startRecording,
     stopRecording,
-    lastRecording,
-    wasCancelled,
-    cancelReason,
+    isStarting: startMutation.isPending,
+    isStopping: stopMutation.isPending,
   };
 }

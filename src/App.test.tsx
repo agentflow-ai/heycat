@@ -52,12 +52,12 @@ describe("App Integration", () => {
 
   const defaultRecordingMock: useRecordingModule.UseRecordingResult = {
     isRecording: false,
+    isProcessing: false,
     error: null,
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
-    lastRecording: null,
-    wasCancelled: false,
-    cancelReason: null,
+    isStarting: false,
+    isStopping: false,
   };
 
   const defaultMultiModelStatusMock: useMultiModelStatusModule.UseMultiModelStatusResult = {
