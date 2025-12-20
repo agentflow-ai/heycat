@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { queryKeys } from "../lib/queryKeys";
 
 /** Types of models that can be downloaded */
 export type ModelType = "tdt";
@@ -25,12 +27,6 @@ export interface ModelFileDownloadProgressPayload {
   totalBytes: number;
 }
 
-/** Payload for model_download_completed event */
-interface ModelDownloadCompletedPayload {
-  modelType: string;
-  modelPath: string;
-}
-
 /** Return type of the useMultiModelStatus hook */
 export interface UseMultiModelStatusResult {
   /** Status for the TDT model */
@@ -38,109 +34,67 @@ export interface UseMultiModelStatusResult {
   /** Function to start downloading the model */
   downloadModel: (modelType: ModelType) => Promise<void>;
   /** Function to refresh model status */
-  refreshStatus: () => Promise<void>;
+  refreshStatus: () => void;
 }
-
-const initialModelStatus: ModelStatus = {
-  isAvailable: false,
-  downloadState: "idle",
-  progress: 0,
-  error: null,
-};
 
 /**
  * Custom hook for managing TDT model status
- * Provides methods to check availability and trigger download
+ * Uses Tanstack Query for model availability, local state for download progress
  */
 export function useMultiModelStatus(): UseMultiModelStatusResult {
-  const [models, setModels] = useState<ModelStatus>({ ...initialModelStatus });
+  const queryClient = useQueryClient();
 
-  const updateModelStatus = useCallback(
-    (_modelType: ModelType, updates: Partial<ModelStatus>) => {
-      setModels((prev) => ({
-        ...prev,
-        ...updates,
-      }));
+  // Download progress is transient UI state (updated at high frequency)
+  const [downloadState, setDownloadState] = useState<DownloadState>("idle");
+  const [progress, setProgress] = useState(0);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // Query for model availability (server state)
+  const { data: isAvailable = false } = useQuery({
+    queryKey: queryKeys.tauri.checkModelStatus("tdt"),
+    queryFn: () => invoke<boolean>("check_parakeet_model_status", { modelType: "tdt" }),
+  });
+
+  // Mutation for triggering download
+  const downloadMutation = useMutation({
+    mutationFn: (modelType: ModelType) => invoke("download_model", { modelType }),
+    onMutate: () => {
+      setDownloadState("downloading");
+      setProgress(0);
+      setDownloadError(null);
     },
-    []
-  );
-
-  const refreshStatus = useCallback(async () => {
-    /* v8 ignore start -- @preserve */
-    try {
-      const tdtAvailable = await invoke<boolean>("check_parakeet_model_status", { modelType: "tdt" });
-
-      setModels((prev) => ({
-        ...prev,
-        isAvailable: tdtAvailable,
-        downloadState: tdtAvailable ? "completed" : prev.downloadState,
-      }));
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      setModels((prev) => ({
-        ...prev,
-        error: errorMsg,
-      }));
-    }
-    /* v8 ignore stop */
-  }, []);
-
-  const downloadModel = useCallback(
-    async (modelType: ModelType) => {
-      updateModelStatus(modelType, {
-        error: null,
-        downloadState: "downloading",
-        progress: 0,
-      });
-      /* v8 ignore start -- @preserve */
-      try {
-        await invoke("download_model", { modelType });
-        // State will be updated by model_download_completed event
-      } catch (e) {
-        updateModelStatus(modelType, {
-          downloadState: "error",
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-      /* v8 ignore stop */
+    onError: (error) => {
+      setDownloadState("error");
+      setDownloadError(error instanceof Error ? error.message : String(error));
     },
-    [updateModelStatus]
-  );
+    // Success is handled by the model_download_completed event via Event Bridge
+  });
 
+  // Listen for download progress events (high-frequency UI updates)
   useEffect(() => {
     const unlistenFns: UnlistenFn[] = [];
 
-    /* v8 ignore start -- @preserve */
     const setupListeners = async () => {
-      // Check initial model status
-      await refreshStatus();
-
-      // Listen for download progress
+      // Listen for download progress (transient state, not in Query)
       const unlistenProgress = await listen<ModelFileDownloadProgressPayload>(
         "model_file_download_progress",
         (event) => {
-          const modelType = event.payload.modelType as ModelType;
-          if (modelType === "tdt") {
-            updateModelStatus(modelType, {
-              progress: event.payload.percent,
-            });
+          if (event.payload.modelType === "tdt") {
+            setProgress(event.payload.percent);
           }
         }
       );
       unlistenFns.push(unlistenProgress);
 
-      // Listen for download completion
-      const unlistenCompleted = await listen<ModelDownloadCompletedPayload>(
+      // Listen for download completion to update local state
+      // (Query invalidation is handled by Event Bridge)
+      const unlistenCompleted = await listen<{ modelType: string }>(
         "model_download_completed",
         (event) => {
-          const modelType = event.payload.modelType as ModelType;
-          if (modelType === "tdt") {
-            updateModelStatus(modelType, {
-              isAvailable: true,
-              downloadState: "completed",
-              progress: 100,
-              error: null,
-            });
+          if (event.payload.modelType === "tdt") {
+            setDownloadState("completed");
+            setProgress(100);
+            setDownloadError(null);
           }
         }
       );
@@ -148,17 +102,35 @@ export function useMultiModelStatus(): UseMultiModelStatusResult {
     };
 
     setupListeners();
-    /* v8 ignore stop */
 
     return () => {
-      /* v8 ignore start -- @preserve */
       unlistenFns.forEach((unlisten) => unlisten());
-      /* v8 ignore stop */
     };
-  }, [refreshStatus, updateModelStatus]);
+  }, []);
+
+  // Derive download state from query data when model is already available
+  const effectiveDownloadState: DownloadState = isAvailable && downloadState === "idle"
+    ? "completed"
+    : downloadState;
+
+  const downloadModel = useCallback(
+    async (modelType: ModelType) => {
+      await downloadMutation.mutateAsync(modelType);
+    },
+    [downloadMutation]
+  );
+
+  const refreshStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.tauri.checkModelStatus("tdt") });
+  }, [queryClient]);
 
   return {
-    models,
+    models: {
+      isAvailable,
+      downloadState: effectiveDownloadState,
+      progress,
+      error: downloadError,
+    },
     downloadModel,
     refreshStatus,
   };

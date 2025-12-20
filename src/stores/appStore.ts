@@ -2,6 +2,17 @@ import { create } from "zustand";
 import type { AppSettings } from "../hooks/useSettings";
 
 /**
+ * Transcription state for the current/most recent transcription.
+ * This is transient UI state updated via events.
+ */
+export interface TranscriptionState {
+  isTranscribing: boolean;
+  transcribedText: string | null;
+  error: string | null;
+  durationMs: number | null;
+}
+
+/**
  * Global app state managed by Zustand.
  *
  * IMPORTANT: This store holds CLIENT state only. Server state (recordings,
@@ -11,12 +22,14 @@ import type { AppSettings } from "../hooks/useSettings";
  * - overlayMode: Current overlay visibility state (e.g., "recording", "commands")
  * - settingsCache: In-memory cache of settings from Tauri Store
  * - isSettingsLoaded: Hydration flag indicating settings have been loaded
+ * - transcription: Current transcription state (updated via events)
  */
 export interface AppState {
   // Client state only - NO server state here
   overlayMode: string | null;
   settingsCache: AppSettings | null;
   isSettingsLoaded: boolean;
+  transcription: TranscriptionState;
 
   // Actions
   setOverlayMode: (mode: string | null) => void;
@@ -25,12 +38,23 @@ export interface AppState {
     key: K,
     value: AppSettings[K]
   ) => void;
+  transcriptionStarted: () => void;
+  transcriptionCompleted: (text: string, durationMs: number) => void;
+  transcriptionError: (error: string) => void;
 }
+
+const initialTranscriptionState: TranscriptionState = {
+  isTranscribing: false,
+  transcribedText: null,
+  error: null,
+  durationMs: null,
+};
 
 export const useAppStore = create<AppState>((set) => ({
   overlayMode: null,
   settingsCache: null,
   isSettingsLoaded: false,
+  transcription: initialTranscriptionState,
 
   setOverlayMode: (mode) => set({ overlayMode: mode }),
 
@@ -43,6 +67,35 @@ export const useAppStore = create<AppState>((set) => ({
         ? { ...state.settingsCache, [key]: value }
         : null,
     })),
+
+  transcriptionStarted: () =>
+    set({
+      transcription: {
+        isTranscribing: true,
+        transcribedText: null,
+        error: null,
+        durationMs: null,
+      },
+    }),
+
+  transcriptionCompleted: (text, durationMs) =>
+    set({
+      transcription: {
+        isTranscribing: false,
+        transcribedText: text,
+        error: null,
+        durationMs,
+      },
+    }),
+
+  transcriptionError: (error) =>
+    set((state) => ({
+      transcription: {
+        ...state.transcription,
+        isTranscribing: false,
+        error,
+      },
+    })),
 }));
 
 // Optimized selectors - components using these will only re-render
@@ -50,3 +103,4 @@ export const useAppStore = create<AppState>((set) => ({
 export const useOverlayMode = () => useAppStore((s) => s.overlayMode);
 export const useSettingsCache = () => useAppStore((s) => s.settingsCache);
 export const useIsSettingsLoaded = () => useAppStore((s) => s.isSettingsLoaded);
+export const useTranscriptionState = () => useAppStore((s) => s.transcription);

@@ -5,6 +5,7 @@ import {
   useOverlayMode,
   useSettingsCache,
   useIsSettingsLoaded,
+  useTranscriptionState,
 } from "../appStore";
 import type { AppSettings } from "../../hooks/useSettings";
 
@@ -14,6 +15,13 @@ const mockSettings: AppSettings = {
   shortcuts: { distinguishLeftRight: true },
 };
 
+const initialTranscriptionState = {
+  isTranscribing: false,
+  transcribedText: null,
+  error: null,
+  durationMs: null,
+};
+
 describe("appStore", () => {
   beforeEach(() => {
     // Reset store to initial state before each test
@@ -21,6 +29,7 @@ describe("appStore", () => {
       overlayMode: null,
       settingsCache: null,
       isSettingsLoaded: false,
+      transcription: initialTranscriptionState,
     });
   });
 
@@ -108,6 +117,68 @@ describe("appStore", () => {
       const { result } = renderHook(() => useIsSettingsLoaded());
 
       expect(result.current).toBe(true);
+    });
+
+    it("useTranscriptionState returns only transcription slice", () => {
+      const transcription = {
+        isTranscribing: true,
+        transcribedText: "Hello",
+        error: null,
+        durationMs: 100,
+      };
+      useAppStore.setState({ transcription });
+      const { result } = renderHook(() => useTranscriptionState());
+
+      expect(result.current).toEqual(transcription);
+    });
+  });
+
+  describe("transcription state", () => {
+    it("transcriptionStarted sets isTranscribing and clears previous state", () => {
+      const { result } = renderHook(() => useAppStore());
+
+      act(() => {
+        result.current.transcriptionStarted();
+      });
+
+      expect(result.current.transcription).toEqual({
+        isTranscribing: true,
+        transcribedText: null,
+        error: null,
+        durationMs: null,
+      });
+    });
+
+    it("transcriptionCompleted sets result and clears isTranscribing", () => {
+      useAppStore.setState({
+        transcription: { ...initialTranscriptionState, isTranscribing: true },
+      });
+      const { result } = renderHook(() => useAppStore());
+
+      act(() => {
+        result.current.transcriptionCompleted("Hello world", 1234);
+      });
+
+      expect(result.current.transcription).toEqual({
+        isTranscribing: false,
+        transcribedText: "Hello world",
+        error: null,
+        durationMs: 1234,
+      });
+    });
+
+    it("transcriptionError sets error and clears isTranscribing", () => {
+      useAppStore.setState({
+        transcription: { ...initialTranscriptionState, isTranscribing: true },
+      });
+      const { result } = renderHook(() => useAppStore());
+
+      act(() => {
+        result.current.transcriptionError("Model not loaded");
+      });
+
+      expect(result.current.transcription.isTranscribing).toBe(false);
+      expect(result.current.transcription.error).toBe("Model not loaded");
     });
   });
 });

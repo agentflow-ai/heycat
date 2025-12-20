@@ -28,7 +28,9 @@ export const eventNames = {
   LISTENING_STOPPED: "listening_stopped",
 
   // Transcription events
+  TRANSCRIPTION_STARTED: "transcription_started",
   TRANSCRIPTION_COMPLETED: "transcription_completed",
+  TRANSCRIPTION_ERROR: "transcription_error",
 
   // Model events
   MODEL_DOWNLOAD_COMPLETED: "model_download_completed",
@@ -42,6 +44,17 @@ export const eventNames = {
  * The mode can be null to indicate no overlay should be shown.
  */
 export type OverlayModePayload = string | null;
+
+/** Payload for transcription_completed event */
+export interface TranscriptionCompletedPayload {
+  text: string;
+  duration_ms: number;
+}
+
+/** Payload for transcription_error event */
+export interface TranscriptionErrorPayload {
+  error: string;
+}
 
 /**
  * Sets up the central event bridge that routes Tauri events to state managers.
@@ -59,7 +72,7 @@ export type OverlayModePayload = string | null;
  */
 export async function setupEventBridge(
   queryClient: QueryClient,
-  store: Pick<AppState, "setOverlayMode">
+  store: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError">
 ): Promise<() => void> {
   const unlistenFns: UnlistenFn[] = [];
 
@@ -92,14 +105,7 @@ export async function setupEventBridge(
     })
   );
 
-  // Transcription events - invalidate recordings list
-  unlistenFns.push(
-    await listen(eventNames.TRANSCRIPTION_COMPLETED, () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.listRecordings,
-      });
-    })
-  );
+  // Note: TRANSCRIPTION_COMPLETED is handled below with store update AND query invalidation
 
   // Listening state events - invalidate listening status query
   unlistenFns.push(
@@ -136,6 +142,29 @@ export async function setupEventBridge(
   unlistenFns.push(
     await listen<OverlayModePayload>(eventNames.OVERLAY_MODE, (event) => {
       store.setOverlayMode(event.payload);
+    })
+  );
+
+  // Transcription events - update Zustand store directly
+  unlistenFns.push(
+    await listen(eventNames.TRANSCRIPTION_STARTED, () => {
+      store.transcriptionStarted();
+    })
+  );
+
+  unlistenFns.push(
+    await listen<TranscriptionCompletedPayload>(eventNames.TRANSCRIPTION_COMPLETED, (event) => {
+      store.transcriptionCompleted(event.payload.text, event.payload.duration_ms);
+      // Also invalidate recordings list since transcription produces a recording
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tauri.listRecordings,
+      });
+    })
+  );
+
+  unlistenFns.push(
+    await listen<TranscriptionErrorPayload>(eventNames.TRANSCRIPTION_ERROR, (event) => {
+      store.transcriptionError(event.payload.error);
     })
   );
 

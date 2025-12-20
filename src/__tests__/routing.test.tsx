@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { router } from "../routes";
 import { ToastProvider } from "../components/overlays";
 
@@ -65,13 +66,23 @@ function createTestRouter(initialPath: string) {
 }
 
 /**
- * Renders the router with required providers (ToastProvider).
+ * Renders the router with required providers (QueryClientProvider, ToastProvider).
  */
 function renderWithProviders(testRouter: ReturnType<typeof createMemoryRouter>) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  });
   return render(
-    <ToastProvider>
-      <RouterProvider router={testRouter} />
-    </ToastProvider>
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
+        <RouterProvider router={testRouter} />
+      </ToastProvider>
+    </QueryClientProvider>
   );
 }
 

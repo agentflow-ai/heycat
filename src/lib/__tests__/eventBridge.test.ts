@@ -34,7 +34,7 @@ function emitMockEvent(eventName: string, payload: unknown = {}) {
 
 describe("eventBridge", () => {
   let queryClient: QueryClient;
-  let mockStore: Pick<AppState, "setOverlayMode">;
+  let mockStore: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError">;
 
   beforeEach(() => {
     eventHandlers.clear();
@@ -46,6 +46,9 @@ describe("eventBridge", () => {
     });
     mockStore = {
       setOverlayMode: vi.fn() as AppState["setOverlayMode"],
+      transcriptionStarted: vi.fn() as AppState["transcriptionStarted"],
+      transcriptionCompleted: vi.fn() as AppState["transcriptionCompleted"],
+      transcriptionError: vi.fn() as AppState["transcriptionError"],
     };
   });
 
@@ -65,7 +68,9 @@ describe("eventBridge", () => {
       expect(eventHandlers.has(eventNames.RECORDING_STARTED)).toBe(true);
       expect(eventHandlers.has(eventNames.RECORDING_STOPPED)).toBe(true);
       expect(eventHandlers.has(eventNames.RECORDING_ERROR)).toBe(true);
+      expect(eventHandlers.has(eventNames.TRANSCRIPTION_STARTED)).toBe(true);
       expect(eventHandlers.has(eventNames.TRANSCRIPTION_COMPLETED)).toBe(true);
+      expect(eventHandlers.has(eventNames.TRANSCRIPTION_ERROR)).toBe(true);
       expect(eventHandlers.has(eventNames.LISTENING_STARTED)).toBe(true);
       expect(eventHandlers.has(eventNames.LISTENING_STOPPED)).toBe(true);
       expect(eventHandlers.has(eventNames.MODEL_DOWNLOAD_COMPLETED)).toBe(true);
@@ -75,8 +80,8 @@ describe("eventBridge", () => {
     it("cleanup function unsubscribes all listeners", async () => {
       const cleanup = await setupEventBridge(queryClient, mockStore);
 
-      // Should have registered 8 listeners
-      expect(mockUnlistenFns.length).toBe(8);
+      // Should have registered 10 listeners (7 server state + 3 UI state)
+      expect(mockUnlistenFns.length).toBe(10);
 
       // Call cleanup
       cleanup();
@@ -147,16 +152,43 @@ describe("eventBridge", () => {
     });
   });
 
-  describe("transcription events trigger query invalidation", () => {
-    it("transcription_completed invalidates listRecordings query", async () => {
+  describe("transcription events update store and query", () => {
+    it("transcription_started updates store", async () => {
+      await setupEventBridge(queryClient, mockStore);
+
+      emitMockEvent(eventNames.TRANSCRIPTION_STARTED);
+
+      expect(mockStore.transcriptionStarted).toHaveBeenCalled();
+    });
+
+    it("transcription_completed updates store and invalidates listRecordings query", async () => {
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
       await setupEventBridge(queryClient, mockStore);
 
-      emitMockEvent(eventNames.TRANSCRIPTION_COMPLETED);
+      emitMockEvent(eventNames.TRANSCRIPTION_COMPLETED, {
+        text: "Hello world",
+        duration_ms: 1234,
+      });
 
+      expect(mockStore.transcriptionCompleted).toHaveBeenCalledWith(
+        "Hello world",
+        1234
+      );
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: queryKeys.tauri.listRecordings,
       });
+    });
+
+    it("transcription_error updates store", async () => {
+      await setupEventBridge(queryClient, mockStore);
+
+      emitMockEvent(eventNames.TRANSCRIPTION_ERROR, {
+        error: "Model not loaded",
+      });
+
+      expect(mockStore.transcriptionError).toHaveBeenCalledWith(
+        "Model not loaded"
+      );
     });
   });
 

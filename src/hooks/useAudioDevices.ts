@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { AudioInputDevice } from "../types/audio";
+import { queryKeys } from "../lib/queryKeys";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 5000;
 
@@ -15,12 +16,12 @@ export interface UseAudioDevicesResult {
   devices: AudioInputDevice[];
   isLoading: boolean;
   error: Error | null;
-  refresh: () => void;
+  refetch: () => void;
 }
 
 /**
  * Hook for fetching available audio input devices from the backend.
- * Automatically loads devices on mount and provides a refresh function.
+ * Uses Tanstack Query for caching and automatic refetching.
  * Re-fetches on window focus and periodically when autoRefresh is enabled.
  */
 export function useAudioDevices(
@@ -29,60 +30,24 @@ export function useAudioDevices(
   const { autoRefresh = true, refreshInterval = DEFAULT_REFRESH_INTERVAL_MS } =
     options;
 
-  const [devices, setDevices] = useState<AudioInputDevice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const isFirstFetch = useRef(true);
+  const queryClient = useQueryClient();
 
-  const fetchDevices = useCallback(async () => {
-    // Only set loading on first fetch to avoid UI flickering on refresh
-    if (isFirstFetch.current) {
-      setIsLoading(true);
-    }
-    setError(null);
-    try {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: queryKeys.tauri.listAudioDevices,
+    queryFn: async () => {
       const result = await invoke<AudioInputDevice[]>("list_audio_devices");
-      setDevices((prev) => {
-        // Log changes for debugging
-        if (JSON.stringify(prev) !== JSON.stringify(result)) {
-          console.log("[AudioDevices] Device list changed:", result);
-        }
-        return result;
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error(String(e)));
-    } finally {
-      setIsLoading(false);
-      isFirstFetch.current = false;
-    }
-  }, []);
+      return result;
+    },
+    refetchInterval: autoRefresh ? refreshInterval : false,
+    refetchOnWindowFocus: true,
+  });
 
-  // Initial fetch
-  useEffect(() => {
-    fetchDevices();
-  }, [fetchDevices]);
-
-  // Refresh on window focus
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log("[AudioDevices] Window focused, refreshing devices");
-      fetchDevices();
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [fetchDevices]);
-
-  // Periodic refresh when autoRefresh enabled
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const interval = setInterval(() => {
-      fetchDevices();
-    }, refreshInterval);
-
-    return () => clearInterval(interval);
-  }, [autoRefresh, refreshInterval, fetchDevices]);
-
-  return { devices, isLoading, error, refresh: fetchDevices };
+  return {
+    devices: data ?? [],
+    isLoading,
+    error: error instanceof Error ? error : error ? new Error(String(error)) : null,
+    refetch: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listAudioDevices });
+    },
+  };
 }
