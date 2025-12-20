@@ -34,7 +34,7 @@ const mockUpdateAutoStartListening = vi.fn();
 const mockUpdateAudioDevice = vi.fn();
 const mockDownloadModel = vi.fn();
 const mockRefreshStatus = vi.fn();
-const mockRefreshDevices = vi.fn();
+const mockRefetchDevices = vi.fn();
 
 vi.mock("../hooks/useSettings", () => ({
   useSettings: () => ({
@@ -67,7 +67,7 @@ vi.mock("../hooks/useAudioDevices", () => ({
     ],
     isLoading: false,
     error: null,
-    refresh: mockRefreshDevices,
+    refetch: mockRefetchDevices,
   }),
 }));
 
@@ -237,7 +237,7 @@ describe("Settings Page", () => {
       await user.click(screen.getByRole("tab", { name: "Audio" }));
       await user.click(screen.getByRole("button", { name: /Refresh/i }));
 
-      expect(mockRefreshDevices).toHaveBeenCalled();
+      expect(mockRefetchDevices).toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "info",

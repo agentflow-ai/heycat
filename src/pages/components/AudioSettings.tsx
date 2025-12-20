@@ -27,7 +27,7 @@ function getLevelIndicator(level: number): { text: string; color: string } {
 
 export function AudioSettings({ className = "" }: AudioSettingsProps) {
   const { settings, updateAudioDevice } = useSettings();
-  const { devices, isLoading, error, refresh } = useAudioDevices();
+  const { devices, isLoading, error, refetch } = useAudioDevices();
   const { toast } = useToast();
 
   // Monitor audio level for the selected device
@@ -52,7 +52,7 @@ export function AudioSettings({ className = "" }: AudioSettingsProps) {
   };
 
   const handleRefresh = () => {
-    refresh();
+    refetch();
     toast({
       type: "info",
       title: "Refreshing devices",
@@ -114,7 +114,7 @@ export function AudioSettings({ className = "" }: AudioSettingsProps) {
                   <button
                     type="button"
                     className="underline hover:no-underline"
-                    onClick={refresh}
+                    onClick={refetch}
                   >
                     Retry
                   </button>
