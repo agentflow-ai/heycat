@@ -1,74 +1,55 @@
 /* v8 ignore file -- @preserve */
-import { useState, useEffect } from "react";
-import { AppShell } from "./components/layout/AppShell";
+import { useEffect, type ReactNode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { RouterProvider } from "react-router-dom";
+import { queryClient } from "./lib/queryClient";
+import { router } from "./routes";
+import { setupEventBridge } from "./lib/eventBridge";
+import { useAppStore } from "./stores/appStore";
 import { ToastProvider } from "./components/overlays";
-import { Dashboard, Commands, Recordings, Settings } from "./pages";
-import { useCatOverlay } from "./hooks/useCatOverlay";
-import { useAutoStartListening } from "./hooks/useAutoStartListening";
-import { useAppStatus } from "./hooks/useAppStatus";
-import { useRecording } from "./hooks/useRecording";
-import { useListening } from "./hooks/useListening";
-import { useSettings } from "./hooks/useSettings";
 
-function App() {
-  const { status: appStatus, isRecording } = useAppStatus();
-  const [navItem, setNavItem] = useState("dashboard");
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const { isListening } = useCatOverlay();
-  useAutoStartListening();
-
-  // Get settings for device name
-  const { settings } = useSettings();
-
-  // Get recording actions
-  const { startRecording, stopRecording } = useRecording({
-    deviceName: settings.audio.selectedDevice,
-  });
-
-  // Get listening actions
-  const { enableListening, disableListening } = useListening({
-    deviceName: settings.audio.selectedDevice,
-  });
-
-  // Track recording duration
+/**
+ * Component that initializes the Event Bridge on mount and cleans up on unmount.
+ * This is placed inside the QueryClientProvider so it has access to the query client.
+ */
+function AppInitializer({ children }: { children: ReactNode }) {
   useEffect(() => {
-    if (!isRecording) {
-      setRecordingDuration(0);
-      return;
-    }
-    setRecordingDuration(0);
-    const interval = setInterval(() => {
-      setRecordingDuration((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isRecording]);
+    let cleanup: (() => void) | undefined;
 
+    // Initialize event bridge with query client and store
+    const store = useAppStore.getState();
+    setupEventBridge(queryClient, store).then((cleanupFn) => {
+      cleanup = cleanupFn;
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, []);
+
+  return <>{children}</>;
+}
+
+/**
+ * Root App component with provider hierarchy.
+ *
+ * Provider order (outermost to innermost):
+ * 1. QueryClientProvider - Tanstack Query for server state caching
+ * 2. ToastProvider - Toast notifications
+ * 3. AppInitializer - Event Bridge setup
+ * 4. RouterProvider - React Router for navigation
+ */
+function App() {
   return (
-    <ToastProvider>
-      <AppShell
-        activeNavItem={navItem}
-        onNavigate={setNavItem}
-        status={appStatus}
-        recordingDuration={isRecording ? recordingDuration : undefined}
-        footerStateDescription="Ready for your command."
-        isListening={isListening}
-        isRecording={isRecording}
-        onStartRecording={startRecording}
-        onStopRecording={stopRecording}
-        onEnableListening={enableListening}
-        onDisableListening={disableListening}
-      >
-        {navItem === "dashboard" && <Dashboard onNavigate={setNavItem} />}
-        {navItem === "commands" && <Commands onNavigate={setNavItem} />}
-        {navItem === "recordings" && <Recordings onNavigate={setNavItem} />}
-        {navItem === "settings" && <Settings onNavigate={setNavItem} />}
-        {navItem !== "dashboard" && navItem !== "commands" && navItem !== "recordings" && navItem !== "settings" && (
-          <div className="flex items-center justify-center h-full text-text-secondary">
-            <p>Page coming soon</p>
-          </div>
-        )}
-      </AppShell>
-    </ToastProvider>
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
+        <AppInitializer>
+          <RouterProvider router={router} />
+        </AppInitializer>
+      </ToastProvider>
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   );
 }
 

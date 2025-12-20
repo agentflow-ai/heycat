@@ -4,7 +4,7 @@ import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { router } from "../routes";
 import { ToastProvider } from "../components/overlays";
 
-// Mock Tauri APIs used by page components
+// Mock Tauri APIs used by page components and RootLayout
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
@@ -20,6 +20,32 @@ vi.mock("@tauri-apps/plugin-store", () => ({
     save: vi.fn().mockResolvedValue(undefined),
     onKeyChange: vi.fn().mockResolvedValue(() => {}),
   }),
+}));
+
+// Mock webviewWindow API used by useCatOverlay
+vi.mock("@tauri-apps/api/webviewWindow", () => {
+  const MockWebviewWindow = function () {
+    return {
+      once: vi.fn().mockResolvedValue(undefined),
+      emit: vi.fn().mockResolvedValue(undefined),
+      show: vi.fn().mockResolvedValue(undefined),
+      hide: vi.fn().mockResolvedValue(undefined),
+      setPosition: vi.fn().mockResolvedValue(undefined),
+      setIgnoreCursorEvents: vi.fn().mockResolvedValue(undefined),
+    };
+  };
+  MockWebviewWindow.getByLabel = vi.fn().mockResolvedValue(null);
+  return { WebviewWindow: MockWebviewWindow };
+});
+
+// Mock window API used by useCatOverlay
+vi.mock("@tauri-apps/api/window", () => ({
+  primaryMonitor: vi.fn().mockResolvedValue({
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
+  }),
+  LogicalPosition: vi.fn().mockImplementation((x, y) => ({ x, y })),
 }));
 
 beforeEach(() => {

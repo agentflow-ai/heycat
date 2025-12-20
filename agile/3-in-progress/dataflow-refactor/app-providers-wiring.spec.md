@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 created: 2025-12-20
 completed: null
 dependencies: ["query-infrastructure", "zustand-store", "event-bridge", "router-setup"]

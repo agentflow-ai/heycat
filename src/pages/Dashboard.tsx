@@ -12,14 +12,18 @@ import { useListening } from "../hooks/useListening";
 import { useRecording } from "../hooks/useRecording";
 import { useMultiModelStatus } from "../hooks/useMultiModelStatus";
 import { useSettings } from "../hooks/useSettings";
+import { useRouteContext } from "../routes";
 import { formatDuration, formatDate, type RecordingInfo } from "./components/RecordingItem";
 
 export interface DashboardProps {
-  /** Navigate to another page */
+  /** Navigate to another page (deprecated: use useRouteContext instead) */
   onNavigate?: (page: string) => void;
 }
 
-export function Dashboard({ onNavigate }: DashboardProps) {
+export function Dashboard({ onNavigate: onNavigateProp }: DashboardProps) {
+  // Use route context for navigation, fall back to prop for backward compatibility
+  const routeContext = useRouteContext();
+  const onNavigate = onNavigateProp ?? routeContext?.onNavigate;
   const { settings } = useSettings();
   const { isListening, enableListening, disableListening } = useListening({
     deviceName: settings.audio.selectedDevice,
