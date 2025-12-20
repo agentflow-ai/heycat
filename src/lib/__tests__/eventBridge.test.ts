@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { setupEventBridge, eventNames } from "../eventBridge";
 import { queryKeys } from "../queryKeys";
+import type { AppState } from "../../stores/appStore";
 
 // Store event handlers registered via listen()
 type EventCallback = (event: { payload: unknown }) => void;
@@ -33,7 +34,7 @@ function emitMockEvent(eventName: string, payload: unknown = {}) {
 
 describe("eventBridge", () => {
   let queryClient: QueryClient;
-  let mockStore: { setOverlayMode: ReturnType<typeof vi.fn> };
+  let mockStore: Pick<AppState, "setOverlayMode">;
 
   beforeEach(() => {
     eventHandlers.clear();
@@ -44,7 +45,7 @@ describe("eventBridge", () => {
       },
     });
     mockStore = {
-      setOverlayMode: vi.fn(),
+      setOverlayMode: vi.fn() as AppState["setOverlayMode"],
     };
   });
 

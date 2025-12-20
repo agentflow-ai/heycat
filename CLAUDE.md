@@ -16,6 +16,7 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 ## Key Entry Points
 
 IMPORTANT: You must use these to discover the stated topics. Dont assume things within the areas each entry point describes.
+You may never use npm or npx, always use bun or bunx.
 
 ### Development
 **When:** Starting dev server, building, type-checking, setting up prerequisites
