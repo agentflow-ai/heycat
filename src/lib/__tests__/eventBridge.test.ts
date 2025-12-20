@@ -34,7 +34,7 @@ function emitMockEvent(eventName: string, payload: unknown = {}) {
 
 describe("eventBridge", () => {
   let queryClient: QueryClient;
-  let mockStore: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError">;
+  let mockStore: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError" | "wakeWordDetected" | "clearWakeWord">;
 
   beforeEach(() => {
     eventHandlers.clear();
@@ -49,6 +49,8 @@ describe("eventBridge", () => {
       transcriptionStarted: vi.fn() as AppState["transcriptionStarted"],
       transcriptionCompleted: vi.fn() as AppState["transcriptionCompleted"],
       transcriptionError: vi.fn() as AppState["transcriptionError"],
+      wakeWordDetected: vi.fn() as AppState["wakeWordDetected"],
+      clearWakeWord: vi.fn() as AppState["clearWakeWord"],
     };
   });
 
@@ -73,6 +75,8 @@ describe("eventBridge", () => {
       expect(eventHandlers.has(eventNames.TRANSCRIPTION_ERROR)).toBe(true);
       expect(eventHandlers.has(eventNames.LISTENING_STARTED)).toBe(true);
       expect(eventHandlers.has(eventNames.LISTENING_STOPPED)).toBe(true);
+      expect(eventHandlers.has(eventNames.LISTENING_UNAVAILABLE)).toBe(true);
+      expect(eventHandlers.has(eventNames.WAKE_WORD_DETECTED)).toBe(true);
       expect(eventHandlers.has(eventNames.MODEL_DOWNLOAD_COMPLETED)).toBe(true);
       expect(eventHandlers.has(eventNames.OVERLAY_MODE)).toBe(true);
     });
@@ -80,8 +84,8 @@ describe("eventBridge", () => {
     it("cleanup function unsubscribes all listeners", async () => {
       const cleanup = await setupEventBridge(queryClient, mockStore);
 
-      // Should have registered 10 listeners (7 server state + 3 UI state)
-      expect(mockUnlistenFns.length).toBe(10);
+      // Should have registered 12 listeners (8 server state + 4 UI state)
+      expect(mockUnlistenFns.length).toBe(12);
 
       // Call cleanup
       cleanup();
@@ -149,6 +153,36 @@ describe("eventBridge", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: queryKeys.tauri.getListeningStatus,
       });
+    });
+
+    it("listening_unavailable invalidates getListeningStatus query", async () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      await setupEventBridge(queryClient, mockStore);
+
+      emitMockEvent(eventNames.LISTENING_UNAVAILABLE);
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: queryKeys.tauri.getListeningStatus,
+      });
+    });
+  });
+
+  describe("wake word events update store", () => {
+    it("wake_word_detected updates store and auto-clears after 500ms", async () => {
+      vi.useFakeTimers();
+      await setupEventBridge(queryClient, mockStore);
+
+      emitMockEvent(eventNames.WAKE_WORD_DETECTED);
+
+      expect(mockStore.wakeWordDetected).toHaveBeenCalled();
+      expect(mockStore.clearWakeWord).not.toHaveBeenCalled();
+
+      // Fast-forward 500ms
+      vi.advanceTimersByTime(500);
+
+      expect(mockStore.clearWakeWord).toHaveBeenCalled();
+
+      vi.useRealTimers();
     });
   });
 

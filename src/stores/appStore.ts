@@ -13,6 +13,15 @@ export interface TranscriptionState {
 }
 
 /**
+ * Listening state for transient UI events.
+ * The main listening status (isListening, isMicAvailable) comes from Tanstack Query.
+ * This only holds transient state that auto-resets.
+ */
+export interface ListeningUIState {
+  isWakeWordDetected: boolean;
+}
+
+/**
  * Global app state managed by Zustand.
  *
  * IMPORTANT: This store holds CLIENT state only. Server state (recordings,
@@ -23,6 +32,7 @@ export interface TranscriptionState {
  * - settingsCache: In-memory cache of settings from Tauri Store
  * - isSettingsLoaded: Hydration flag indicating settings have been loaded
  * - transcription: Current transcription state (updated via events)
+ * - listening: Transient listening UI state (wake word detection)
  */
 export interface AppState {
   // Client state only - NO server state here
@@ -30,6 +40,7 @@ export interface AppState {
   settingsCache: AppSettings | null;
   isSettingsLoaded: boolean;
   transcription: TranscriptionState;
+  listening: ListeningUIState;
 
   // Actions
   setOverlayMode: (mode: string | null) => void;
@@ -41,6 +52,8 @@ export interface AppState {
   transcriptionStarted: () => void;
   transcriptionCompleted: (text: string, durationMs: number) => void;
   transcriptionError: (error: string) => void;
+  wakeWordDetected: () => void;
+  clearWakeWord: () => void;
 }
 
 const initialTranscriptionState: TranscriptionState = {
@@ -50,11 +63,16 @@ const initialTranscriptionState: TranscriptionState = {
   durationMs: null,
 };
 
+const initialListeningUIState: ListeningUIState = {
+  isWakeWordDetected: false,
+};
+
 export const useAppStore = create<AppState>((set) => ({
   overlayMode: null,
   settingsCache: null,
   isSettingsLoaded: false,
   transcription: initialTranscriptionState,
+  listening: initialListeningUIState,
 
   setOverlayMode: (mode) => set({ overlayMode: mode }),
 
@@ -96,6 +114,12 @@ export const useAppStore = create<AppState>((set) => ({
         error,
       },
     })),
+
+  wakeWordDetected: () =>
+    set({ listening: { isWakeWordDetected: true } }),
+
+  clearWakeWord: () =>
+    set({ listening: { isWakeWordDetected: false } }),
 }));
 
 // Optimized selectors - components using these will only re-render
@@ -104,3 +128,4 @@ export const useOverlayMode = () => useAppStore((s) => s.overlayMode);
 export const useSettingsCache = () => useAppStore((s) => s.settingsCache);
 export const useIsSettingsLoaded = () => useAppStore((s) => s.isSettingsLoaded);
 export const useTranscriptionState = () => useAppStore((s) => s.transcription);
+export const useListeningUIState = () => useAppStore((s) => s.listening);
