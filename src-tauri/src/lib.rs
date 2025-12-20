@@ -247,11 +247,18 @@ pub fn run() {
 
             // Register hotkey using platform-specific backend
             // Uses CGEventTap on macOS (supports fn key, media keys), Tauri on Windows/Linux
-            info!("Registering global hotkey (Cmd+Shift+R)...");
+            // Load saved shortcut from settings, falling back to default
+            let saved_shortcut = app
+                .store("settings.json")
+                .ok()
+                .and_then(|store| store.get("hotkey.recordingShortcut"))
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| hotkey::RECORDING_SHORTCUT.to_string());
+            info!("Registering global hotkey: {}...", saved_shortcut);
             let backend = hotkey::create_shortcut_backend(app.handle().clone());
             let service = hotkey::HotkeyServiceDyn::new(backend);
 
-            if let Err(e) = service.register_recording_shortcut(Box::new(move || {
+            if let Err(e) = service.backend.register(&saved_shortcut, Box::new(move || {
                 debug!("Hotkey pressed!");
                 match integration_clone.lock() {
                     Ok(mut guard) => {
