@@ -7,6 +7,11 @@ pub struct TauriShortcutBackend {
 }
 
 impl TauriShortcutBackend {
+    /// Create a new TauriShortcutBackend
+    ///
+    /// Note: On macOS, CGEventTapHotkeyBackend is used instead via create_shortcut_backend().
+    /// This is used on Windows/Linux. The #[allow(dead_code)] silences warnings on macOS.
+    #[allow(dead_code)]
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn new(app: tauri::AppHandle) -> Self {
         Self { app }

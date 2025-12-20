@@ -1,6 +1,8 @@
 // Global hotkey registration module
 
 mod tauri_backend;
+// TauriShortcutBackend is used internally by create_shortcut_backend on non-macOS platforms
+#[allow(unused_imports)]
 pub use tauri_backend::TauriShortcutBackend;
 
 #[cfg(target_os = "macos")]
@@ -67,11 +69,16 @@ pub trait ShortcutBackend {
 }
 
 /// Service for managing hotkey registration
+///
+/// Note: Production code uses HotkeyServiceDyn. This generic version is kept for testing
+/// with MockBackend. The #[allow(dead_code)] silences warnings on platforms where it's unused.
+#[allow(dead_code)]
 pub struct HotkeyService<B: ShortcutBackend> {
     /// The backend used for shortcut registration
     pub backend: B,
 }
 
+#[allow(dead_code)]
 impl<B: ShortcutBackend> HotkeyService<B> {
     pub fn new(backend: B) -> Self {
         Self { backend }

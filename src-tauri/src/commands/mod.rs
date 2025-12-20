@@ -13,7 +13,7 @@ use logic::{
     transcribe_file_impl,
 };
 
-use crate::hotkey::ShortcutBackend;
+// ShortcutBackend trait is used via HotkeyServiceDyn.backend field
 use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus, WakeWordEvent};
 
 use crate::events::{
@@ -727,8 +727,8 @@ pub fn stop_audio_monitor(monitor_state: State<'_, AudioMonitorState>) -> Result
 // Hotkey Management Commands
 // =============================================================================
 
-/// Type alias for hotkey service state
-pub type HotkeyServiceState = crate::hotkey::HotkeyService<crate::hotkey::TauriShortcutBackend>;
+/// Type alias for hotkey service state (uses dynamic backend)
+pub type HotkeyServiceState = crate::hotkey::HotkeyServiceDyn;
 
 /// Suspend the global recording shortcut
 ///

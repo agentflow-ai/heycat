@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-review
 created: 2025-12-19
 completed: null
 dependencies:
@@ -120,3 +120,98 @@ Support both Tauri format and extended format:
 
 - Test location: Manual + unit tests in cgeventtap_backend.rs
 - Verification: [ ] fn key works as global hotkey
+
+## Review
+
+**Reviewed:** 2025-12-20
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| New `CGEventTapHotkeyBackend` struct implements `ShortcutBackend` trait | PASS | /Users/michaelhindley/Documents/git/heycat/src-tauri/src/hotkey/cgeventtap_backend.rs:307-358 |
+| fn key can be registered as part of a hotkey (e.g., fn+R) | PASS | parse_shortcut supports "fn+Command+R" format (line 83), matches_shortcut checks fn_key (line 162) |
+| Media keys can be registered as hotkeys (e.g., Play/Pause to toggle recording) | PASS | MEDIA_KEY_NAMES array (line 18-31), parse_shortcut handles media keys (line 90-93) |
+| Modifier-only hotkeys work (e.g., just double-tap fn) | PASS | parse_shortcut supports "fn" (line 83), matches_shortcut handles modifier-only (line 180-184) |
+| Left/right modifier distinction available for hotkeys | DEFERRED | CapturedKeyEvent has left/right fields but spec matching doesn't use them yet (tracking: frontend-shortcut-display) |
+| CGEventTap runs continuously when any hotkey is registered | PASS | start_capture starts tap (line 224-245), stop_capture stops when empty (line 347-350) |
+| Multi-OS support via factory function | PASS | create_shortcut_backend in mod.rs (line 161-172) selects backend by OS |
+| Existing hotkey functionality (Cmd+Shift+R) continues to work | PASS | lib.rs uses create_shortcut_backend (line 251) for production hotkey registration |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Register fn+Command+R as hotkey | PASS | /Users/michaelhindley/Documents/git/heycat/src-tauri/src/hotkey/cgeventtap_backend.rs:376-382 |
+| Register just "fn" as hotkey | PASS | cgeventtap_backend.rs:385-391 |
+| Register Play/Pause media key | PASS | cgeventtap_backend.rs:393-399, 524-546 |
+| Multiple hotkeys registered | MISSING | No test for multiple simultaneous registrations |
+| Unregister hotkey | MISSING | No test for unregister functionality |
+| Permission denied on macOS | MISSING | No test for permission error handling |
+| Rapid key presses | MISSING | No debouncing test |
+| create_shortcut_backend returns correct backend type per OS | MISSING | No test for factory function |
+
+### Code Quality
+
+**Strengths:**
+- Clean separation via ShortcutBackend trait allows drop-in replacement
+- Factory function pattern (create_shortcut_backend) enables compile-time OS selection
+- Comprehensive shortcut parsing with normalization (media keys, fn key, standard modifiers)
+- Unit tests cover core parsing and matching logic
+- Proper lock management with callbacks executed outside of locks to prevent deadlocks
+
+**Concerns:**
+- **CRITICAL**: Unused code warnings detected - `CGEventTapHotkeyBackend::new` and `HotkeyService::register_recording_shortcut` marked as "never used"
+- **CRITICAL**: These functions ARE used in production (lib.rs:166, lib.rs:254) but Rust compiler doesn't see it - suggests the code may not be properly wired up
+- Two unregistered Tauri commands exist (check_parakeet_model_status, download_model) but these are unrelated to this spec
+- Left/right modifier distinction deferred but no tracking spec mentioned in code
+- Limited integration test coverage beyond unit tests
+
+### Automated Check Results
+
+```
+Build warnings:
+warning: unused import: `kCFRunLoopCommonModes`
+warning: associated items `new` and `register_recording_shortcut` are never used
+warning: associated function `new` is never used
+
+Unregistered commands (unrelated to this spec):
+check_parakeet_model_status
+download_model
+
+Deferrals:
+src-tauri/src/parakeet/utils.rs:24:/// TODO: Remove when parakeet-rs fixes this issue upstream (unrelated)
+src-tauri/src/hotkey/integration_test.rs:360:    // Metadata should be present (even if empty for now) (unrelated)
+```
+
+### Data Flow Verification
+
+```
+[Cmd+Shift+R Press]
+     |
+     v
+[CGEventTap Callback] cgeventtap_backend.rs:236
+     | handle_key_event
+     v
+[Match Shortcuts] cgeventtap_backend.rs:266-298
+     | matches_shortcut
+     v
+[Execute Callback] lib.rs:254-272
+     | integration.handle_toggle
+     v
+[Recording State Update] (existing flow)
+```
+
+**Production Call Sites:**
+| New Code | Type | Production Call Site | Reachable from main/UI? |
+|----------|------|---------------------|-------------------------|
+| CGEventTapHotkeyBackend | struct | lib.rs:166 (via create_shortcut_backend) | YES |
+| create_shortcut_backend | fn | lib.rs:183, lib.rs:251 | YES |
+| HotkeyServiceDyn | struct | lib.rs:252 | YES |
+| parse_shortcut | fn | cgeventtap_backend.rs:314 | YES (via register) |
+| matches_shortcut | fn | cgeventtap_backend.rs:285 | YES (via event handler) |
+
+### Verdict
+
+**NEEDS_WORK** - Dead code warnings indicate CGEventTapHotkeyBackend may not be properly compiled for macOS target despite being used in production code. The warnings suggest conditional compilation may not be correctly configured.

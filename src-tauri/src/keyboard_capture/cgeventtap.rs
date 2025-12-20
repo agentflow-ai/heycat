@@ -16,7 +16,7 @@ use cocoa::appkit::NSEvent;
 use cocoa::base::nil;
 use core_foundation::base::TCFType;
 use core_foundation::mach_port::{CFMachPort, CFMachPortRef};
-use core_foundation::runloop::{kCFRunLoopCommonModes, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopStop};
+use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopStop};
 use core_graphics::event::{
     CGEvent, CGEventFlags, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
     CGEventTapProxy, CGEventType,
