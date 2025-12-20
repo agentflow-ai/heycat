@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::types::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};
 use super::utils::fix_parakeet_text;
-use crate::info;
+use crate::{debug, info};
 
 // ============================================================================
 // TranscribingGuard - RAII guard for state transitions
@@ -259,10 +259,7 @@ impl SharedTranscriptionModel {
                 Ok(transcribe_result) => {
                     let fixed_text = fix_parakeet_text(&transcribe_result.tokens);
 
-                    info!("=== SharedTranscriptionModel transcribe_file result ===");
-                    info!("result.text (broken): {:?}", transcribe_result.text);
-                    info!("fixed_text: {:?}", fixed_text);
-                    info!("=== end result ===");
+                    debug!("Transcription result: {:?}", fixed_text);
 
                     Ok(fixed_text)
                 }
