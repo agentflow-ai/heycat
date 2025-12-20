@@ -142,6 +142,9 @@ impl HotkeyServiceDyn {
         Self { backend }
     }
 
+    /// Register the default recording shortcut (kept for API completeness, unused in production
+    /// since lib.rs now loads saved shortcuts from settings and uses backend.register directly)
+    #[allow(dead_code)]
     pub fn register_recording_shortcut(
         &self,
         callback: Box<dyn Fn() + Send + Sync>,
@@ -151,6 +154,9 @@ impl HotkeyServiceDyn {
             .map_err(|e| map_backend_error(&e))
     }
 
+    /// Unregister the default recording shortcut (kept for API completeness, unused in production
+    /// since lib.rs now loads saved shortcuts from settings and uses backend.unregister directly)
+    #[allow(dead_code)]
     pub fn unregister_recording_shortcut(&self) -> Result<(), HotkeyError> {
         self.backend
             .unregister(RECORDING_SHORTCUT)

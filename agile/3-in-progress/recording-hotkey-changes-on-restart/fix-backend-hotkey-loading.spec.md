@@ -80,7 +80,7 @@ warning: method `register_recording_shortcut` is never used
     = note: `#[warn(dead_code)]` on by default
 warning: `heycat` (lib) generated 1 warning
 ```
-**FAIL** - Dead code warning for `register_recording_shortcut` method on `HotkeyServiceDyn`.
+**FAIL** - Dead code warning for `register_recording_shortcut` method on `HotkeyServiceDyn` (hotkey/mod.rs:145-152). This method uses a hardcoded `RECORDING_SHORTCUT` constant and is now unused since production code calls `backend.register()` directly with the saved shortcut.
 
 #### 2. Command Registration Check
 All commands properly registered - PASS
@@ -91,8 +91,8 @@ All commands properly registered - PASS
 |-----------|--------|----------|
 | After app restart, pressing Fn triggers the recording hotkey if Fn was saved | DEFERRED | Manual test - no automated verification |
 | Backend logs show key press events for Fn key after restart | DEFERRED | Manual test - no automated verification |
-| Hotkey registration completes without errors for "Function+..." shortcuts | PASS | `lib.rs:251-261` loads saved shortcut and registers via `backend.register()` |
-| Both new hotkey setting and restored hotkey work identically | FAIL | Unregistration mismatch - see concerns below |
+| Hotkey registration completes without errors for "Function+..." shortcuts | PASS | lib.rs:251-261 loads saved shortcut and registers via `backend.register()`, CGEventTap parse_shortcut handles "function" modifier (cgeventtap_backend.rs:83) |
+| Both new hotkey setting and restored hotkey work identically | PASS | Fixed - lib.rs:299-311 now reads saved shortcut from settings.json for unregistration |
 
 ### Test Coverage Audit
 
@@ -105,14 +105,14 @@ All commands properly registered - PASS
 ### Code Quality
 
 **Strengths:**
-- Correctly reads saved shortcut from settings store with fallback to default
-- Uses existing `backend.register()` which already supports "Function" modifier (cgeventtap_backend.rs:83)
-- Logs the shortcut being registered for debugging
+- Correctly reads saved shortcut from settings store with fallback to default (lib.rs:251-256)
+- Uses `backend.register()` directly which supports "Function" modifier (cgeventtap_backend.rs:83)
+- Logs the shortcut being registered for debugging (lib.rs:257)
+- Unregistration now properly reads saved shortcut to unregister the correct one (lib.rs:299-311)
+- Symmetric registration/unregistration logic using same settings store key
 
 **Concerns:**
-- **Critical: Unregistration mismatch** - In `lib.rs:299`, the `on_window_event` cleanup calls `service.unregister_recording_shortcut()` which hardcodes `RECORDING_SHORTCUT` constant ("CmdOrControl+Shift+R"). When a custom shortcut like "Function+R" is registered, cleanup will unregister the wrong shortcut. This causes a resource leak.
-- **Dead code warning** - `register_recording_shortcut` on `HotkeyServiceDyn` is now unused since `lib.rs` calls `backend.register()` directly. Either remove the unused method or use it consistently.
-- The implementation changes registration but not unregistration, breaking symmetry.
+- **Dead code warning** - `register_recording_shortcut` and `unregister_recording_shortcut` methods on `HotkeyServiceDyn` (hotkey/mod.rs:145-158) are now unused since lib.rs bypasses them to call `backend.register()` and `backend.unregister()` directly. These methods should either be removed or annotated with `#[allow(dead_code)]` with a comment explaining they're kept for API completeness.
 
 ### Data Flow Analysis
 
@@ -129,13 +129,19 @@ All commands properly registered - PASS
 [Window Destroyed]
      |
      v
-[lib.rs:299] service.unregister_recording_shortcut()
-     | Calls backend.unregister(RECORDING_SHORTCUT) - WRONG!
-     | Tries to unregister "CmdOrControl+Shift+R" instead of "Function+R"
+[lib.rs:299-306] Load shortcut from settings.json (same key)
+     |
      v
-[Shortcut Leak] - Custom shortcut remains registered
+[lib.rs:306] service.backend.unregister(&shortcut)
+     | Correctly unregisters "Function+R"
+     v
+[Clean Shutdown] - No resource leak
 ```
 
 ### Verdict
 
-**NEEDS_WORK** - Critical unregistration mismatch will cause shortcut leak when custom shortcuts are used. The cleanup path in `on_window_event` (lib.rs:299) must be updated to unregister the actual registered shortcut, not the hardcoded constant. Additionally, the dead code warning must be resolved.
+**NEEDS_WORK** - The unregistration mismatch from the previous review has been fixed. However, the dead code warning for `register_recording_shortcut` on `HotkeyServiceDyn` must be resolved. Either:
+1. Add `#[allow(dead_code)]` annotation with a comment explaining these methods are kept for API completeness, or
+2. Remove the unused methods entirely since production code now uses `backend.register()` directly
+
+The spec cannot be approved with a build warning present.
