@@ -42,7 +42,6 @@ impl From<&CommandDefinition> for CommandDto {
             ActionType::OpenApp => "open_app",
             ActionType::TypeText => "type_text",
             ActionType::SystemControl => "system_control",
-            ActionType::Workflow => "workflow",
             ActionType::Custom => "custom",
         };
         Self {

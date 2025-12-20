@@ -18,8 +18,6 @@ pub enum ActionType {
     TypeText,
     /// System control (volume, brightness, etc.)
     SystemControl,
-    /// Multi-step workflow
-    Workflow,
     /// Custom user-defined action
     Custom,
 }
@@ -32,7 +30,6 @@ impl std::str::FromStr for ActionType {
             "open_app" => Ok(ActionType::OpenApp),
             "type_text" => Ok(ActionType::TypeText),
             "system_control" => Ok(ActionType::SystemControl),
-            "workflow" => Ok(ActionType::Workflow),
             "custom" => Ok(ActionType::Custom),
             _ => Err(format!("Unknown action type: {}", s)),
         }

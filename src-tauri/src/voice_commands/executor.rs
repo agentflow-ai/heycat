@@ -1,7 +1,7 @@
 // Action executor - dispatches commands to action implementations
 
 use crate::events::{command_events, CommandExecutedPayload, CommandFailedPayload};
-use crate::voice_commands::actions::{AppLauncherAction, TextInputAction, WorkflowAction};
+use crate::voice_commands::actions::{AppLauncherAction, TextInputAction};
 use crate::voice_commands::registry::{ActionType, CommandDefinition};
 use async_trait::async_trait;
 use serde::Serialize;
@@ -40,8 +40,6 @@ pub enum ActionErrorCode {
     ExecutionError,
     /// Failed to create event source
     EventSourceError,
-    /// Nested workflows are not supported
-    NestedWorkflow,
     /// Async task panicked
     TaskPanic,
     /// Character encoding error
@@ -54,12 +52,6 @@ pub enum ActionErrorCode {
     OpenFailed,
     /// Failed to close application
     CloseFailed,
-    /// Failed to parse workflow steps
-    ParseError,
-    /// Invalid action type in workflow
-    InvalidActionType,
-    /// A workflow step failed
-    StepFailed,
 }
 
 impl std::fmt::Display for ActionErrorCode {
@@ -72,16 +64,12 @@ impl std::fmt::Display for ActionErrorCode {
             ActionErrorCode::PermissionDenied => "PERMISSION_DENIED",
             ActionErrorCode::ExecutionError => "EXECUTION_ERROR",
             ActionErrorCode::EventSourceError => "EVENT_SOURCE_ERROR",
-            ActionErrorCode::NestedWorkflow => "NESTED_WORKFLOW",
             ActionErrorCode::TaskPanic => "TASK_PANIC",
             ActionErrorCode::EncodingError => "ENCODING_ERROR",
             ActionErrorCode::EventError => "EVENT_ERROR",
             ActionErrorCode::InvalidAppName => "INVALID_APP_NAME",
             ActionErrorCode::OpenFailed => "OPEN_FAILED",
             ActionErrorCode::CloseFailed => "CLOSE_FAILED",
-            ActionErrorCode::ParseError => "PARSE_ERROR",
-            ActionErrorCode::InvalidActionType => "INVALID_ACTION_TYPE",
-            ActionErrorCode::StepFailed => "STEP_FAILED",
         };
         write!(f, "{}", s)
     }
@@ -133,8 +121,6 @@ impl Action for SystemControlAction {
     }
 }
 
-// WorkflowAction is imported from actions::workflow and used in ActionDispatcher
-
 /// Stub implementation for Custom action
 pub struct CustomAction;
 
@@ -154,26 +140,11 @@ impl Action for CustomAction {
     }
 }
 
-/// Stub workflow action used to break circular dependency in ActionDispatcher
-/// This is used in the base dispatcher that WorkflowAction receives
-struct StubWorkflowAction;
-
-#[async_trait]
-impl Action for StubWorkflowAction {
-    async fn execute(&self, _parameters: &HashMap<String, String>) -> Result<ActionResult, ActionError> {
-        Err(ActionError {
-            code: ActionErrorCode::NestedWorkflow,
-            message: "Nested workflows are not supported".to_string(),
-        })
-    }
-}
-
 /// Action dispatcher - routes commands to their implementations
 pub struct ActionDispatcher {
     open_app: Arc<dyn Action>,
     type_text: Arc<dyn Action>,
     system_control: Arc<dyn Action>,
-    workflow: Arc<dyn Action>,
     custom: Arc<dyn Action>,
 }
 
@@ -185,35 +156,12 @@ impl Default for ActionDispatcher {
 
 impl ActionDispatcher {
     /// Create a new dispatcher with default action implementations
-    ///
-    /// Note: For workflow execution, a base dispatcher is created first to avoid
-    /// circular dependencies. This means deeply nested workflows (workflow within
-    /// workflow) will use simplified action routing.
     pub fn new() -> Self {
-        // Create base actions that don't need the dispatcher
-        let open_app: Arc<dyn Action> = Arc::new(AppLauncherAction::new());
-        let type_text: Arc<dyn Action> = Arc::new(TextInputAction::new());
-        let system_control: Arc<dyn Action> = Arc::new(SystemControlAction);
-        let custom: Arc<dyn Action> = Arc::new(CustomAction);
-
-        // Create a base dispatcher for workflow execution (with stub workflow to break circular dep)
-        let base_dispatcher = Arc::new(Self {
-            open_app: open_app.clone(),
-            type_text: type_text.clone(),
-            system_control: system_control.clone(),
-            workflow: Arc::new(StubWorkflowAction),
-            custom: custom.clone(),
-        });
-
-        // Create the real workflow action with the base dispatcher
-        let workflow: Arc<dyn Action> = Arc::new(WorkflowAction::new(base_dispatcher));
-
         Self {
-            open_app,
-            type_text,
-            system_control,
-            workflow,
-            custom,
+            open_app: Arc::new(AppLauncherAction::new()),
+            type_text: Arc::new(TextInputAction::new()),
+            system_control: Arc::new(SystemControlAction),
+            custom: Arc::new(CustomAction),
         }
     }
 
@@ -223,14 +171,12 @@ impl ActionDispatcher {
         open_app: Arc<dyn Action>,
         type_text: Arc<dyn Action>,
         system_control: Arc<dyn Action>,
-        workflow: Arc<dyn Action>,
         custom: Arc<dyn Action>,
     ) -> Self {
         Self {
             open_app,
             type_text,
             system_control,
-            workflow,
             custom,
         }
     }
@@ -241,7 +187,6 @@ impl ActionDispatcher {
             ActionType::OpenApp => self.open_app.clone(),
             ActionType::TypeText => self.type_text.clone(),
             ActionType::SystemControl => self.system_control.clone(),
-            ActionType::Workflow => self.workflow.clone(),
             ActionType::Custom => self.custom.clone(),
         }
     }

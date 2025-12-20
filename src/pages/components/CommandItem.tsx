@@ -6,7 +6,6 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   open_app: "Open App",
   type_text: "Type Text",
   system_control: "System Control",
-  workflow: "Workflow",
   custom: "Custom",
 };
 
@@ -14,7 +13,6 @@ const ACTION_TYPE_COLORS: Record<string, string> = {
   open_app: "bg-heycat-teal/10 text-heycat-teal",
   type_text: "bg-heycat-purple/10 text-heycat-purple",
   system_control: "bg-heycat-orange/10 text-heycat-orange",
-  workflow: "bg-info/10 text-info",
   custom: "bg-text-secondary/10 text-text-secondary",
 };
 
@@ -42,10 +40,6 @@ function getActionDescription(command: CommandDto): string {
       return command.parameters.control
         ? `${command.parameters.control.replace(/_/g, " ")}`
         : "System control";
-    case "workflow":
-      return command.parameters.workflow
-        ? `Runs ${command.parameters.workflow}`
-        : "Runs a workflow";
     case "custom":
       return "Custom script";
     default:

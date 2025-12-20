@@ -16,14 +16,12 @@ type ActionType =
   | "open_app"
   | "type_text"
   | "system_control"
-  | "workflow"
   | "custom";
 
 const ACTION_TYPES: { value: ActionType; label: string }[] = [
   { value: "open_app", label: "Open Application" },
   { value: "type_text", label: "Type Text" },
   { value: "system_control", label: "System Control" },
-  { value: "workflow", label: "Workflow" },
   { value: "custom", label: "Custom" },
 ];
 
@@ -110,11 +108,6 @@ export function CommandModal({
       case "system_control":
         if (!parameters.control?.trim()) {
           newErrors.control = "Control type is required";
-        }
-        break;
-      case "workflow":
-        if (!parameters.workflow?.trim()) {
-          newErrors.workflow = "Workflow name is required";
         }
         break;
       case "custom":
@@ -230,23 +223,6 @@ export function CommandModal({
                 </SelectItem>
               ))}
             </Select>
-          </FormField>
-        );
-
-      case "workflow":
-        return (
-          <FormField error={errors.workflow}>
-            <Label htmlFor="param-workflow" required>
-              Workflow Name
-            </Label>
-            <Input
-              id="param-workflow"
-              type="text"
-              error={Boolean(errors.workflow)}
-              value={parameters.workflow || ""}
-              onChange={(e) => updateParameter("workflow", e.target.value)}
-              placeholder="Workflow name"
-            />
           </FormField>
         );
 

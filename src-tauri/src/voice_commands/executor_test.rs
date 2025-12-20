@@ -6,19 +6,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
-/// Stub workflow action for testing - doesn't require a dispatcher
-struct StubWorkflowAction;
-
-#[async_trait]
-impl Action for StubWorkflowAction {
-    async fn execute(&self, _parameters: &HashMap<String, String>) -> Result<ActionResult, ActionError> {
-        Ok(ActionResult {
-            message: "Would execute workflow".to_string(),
-            data: None,
-        })
-    }
-}
-
 /// Mock action that tracks execution count
 struct MockAction {
     result: Result<ActionResult, ActionError>,
@@ -68,7 +55,6 @@ fn create_test_command(action_type: ActionType) -> CommandDefinition {
             ("app".to_string(), "Slack".to_string()),
             ("text".to_string(), "Hello".to_string()),
             ("control".to_string(), "volume_up".to_string()),
-            ("workflow".to_string(), "daily_standup".to_string()),
             ("script".to_string(), "custom.sh".to_string()),
         ]),
         enabled: true,
@@ -82,7 +68,6 @@ async fn test_dispatch_open_app_action() {
         mock.clone(),
         Arc::new(TextInputAction::new()),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
 
@@ -101,7 +86,6 @@ async fn test_dispatch_type_text_action() {
         Arc::new(AppLauncherAction::new()),
         mock.clone(),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
 
@@ -120,7 +104,6 @@ async fn test_action_failure_returns_error() {
         mock.clone(),
         Arc::new(TextInputAction::new()),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
 
@@ -182,14 +165,12 @@ async fn test_multiple_actions_execute_concurrently() {
         action1,
         Arc::new(TextInputAction::new()),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
     let dispatcher2 = ActionDispatcher::with_actions(
         action2,
         Arc::new(TextInputAction::new()),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
 
@@ -214,7 +195,6 @@ async fn test_stub_action_types_dispatch_correctly() {
     let dispatcher = ActionDispatcher::new();
 
     // Test stub action types only (OpenApp and TypeText use real implementations with system dependencies)
-    // Note: Workflow is tested separately in workflow_test.rs as it requires a "steps" parameter
     let test_cases = vec![
         (ActionType::SystemControl, "Would execute system control"),
         (ActionType::Custom, "Would execute custom script"),
@@ -245,7 +225,6 @@ async fn test_type_text_dispatches_to_text_input() {
         Arc::new(AppLauncherAction::new()),
         mock.clone(),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
 
@@ -264,7 +243,6 @@ async fn test_open_app_dispatches_to_app_launcher() {
         mock.clone(),
         Arc::new(TextInputAction::new()),
         Arc::new(SystemControlAction),
-        Arc::new(StubWorkflowAction),
         Arc::new(CustomAction),
     );
 
