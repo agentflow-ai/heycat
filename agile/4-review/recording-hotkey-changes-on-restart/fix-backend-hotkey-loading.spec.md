@@ -1,7 +1,7 @@
 ---
-status: in-review
+status: completed
 created: 2025-12-20
-completed: null
+completed: 2025-12-20
 dependencies: ["fix-display-conversion"]
 review_round: 1
 ---
@@ -76,11 +76,10 @@ After app restart, saved shortcuts containing the "Function" modifier are not be
 
 #### 1. Build Warning Check
 ```
-warning: method `register_recording_shortcut` is never used
-    = note: `#[warn(dead_code)]` on by default
-warning: `heycat` (lib) generated 1 warning
+$ cd src-tauri && cargo check 2>&1 | grep -E "(warning|unused|dead_code|never)"
+(no output - no warnings)
 ```
-**FAIL** - Dead code warning for `register_recording_shortcut` method on `HotkeyServiceDyn` (hotkey/mod.rs:145-152). This method uses a hardcoded `RECORDING_SHORTCUT` constant and is now unused since production code calls `backend.register()` directly with the saved shortcut.
+**PASS** - No build warnings. Dead code warning resolved by adding `#[allow(dead_code)]` annotations with explanatory comments (hotkey/mod.rs:145-164).
 
 #### 2. Command Registration Check
 All commands properly registered - PASS
@@ -92,7 +91,7 @@ All commands properly registered - PASS
 | After app restart, pressing Fn triggers the recording hotkey if Fn was saved | DEFERRED | Manual test - no automated verification |
 | Backend logs show key press events for Fn key after restart | DEFERRED | Manual test - no automated verification |
 | Hotkey registration completes without errors for "Function+..." shortcuts | PASS | lib.rs:251-261 loads saved shortcut and registers via `backend.register()`, CGEventTap parse_shortcut handles "function" modifier (cgeventtap_backend.rs:83) |
-| Both new hotkey setting and restored hotkey work identically | PASS | Fixed - lib.rs:299-311 now reads saved shortcut from settings.json for unregistration |
+| Both new hotkey setting and restored hotkey work identically | PASS | lib.rs:299-311 reads saved shortcut from settings.json for unregistration, symmetric with registration |
 
 ### Test Coverage Audit
 
@@ -106,13 +105,14 @@ All commands properly registered - PASS
 
 **Strengths:**
 - Correctly reads saved shortcut from settings store with fallback to default (lib.rs:251-256)
-- Uses `backend.register()` directly which supports "Function" modifier (cgeventtap_backend.rs:83)
+- Uses `backend.register()` directly which supports "Function" modifier (cgeventtap_backend.rs:83: `"fn" | "function" => spec.fn_key = true`)
 - Logs the shortcut being registered for debugging (lib.rs:257)
-- Unregistration now properly reads saved shortcut to unregister the correct one (lib.rs:299-311)
-- Symmetric registration/unregistration logic using same settings store key
+- Unregistration properly reads saved shortcut to unregister the correct one (lib.rs:299-311)
+- Symmetric registration/unregistration logic using same settings store key ("hotkey.recordingShortcut")
+- Dead code warning resolved with `#[allow(dead_code)]` and clear comment: "kept for API completeness, unused in production since lib.rs now loads saved shortcuts from settings and uses backend.register directly" (hotkey/mod.rs:145-147, 157-159)
 
 **Concerns:**
-- **Dead code warning** - `register_recording_shortcut` and `unregister_recording_shortcut` methods on `HotkeyServiceDyn` (hotkey/mod.rs:145-158) are now unused since lib.rs bypasses them to call `backend.register()` and `backend.unregister()` directly. These methods should either be removed or annotated with `#[allow(dead_code)]` with a comment explaining they're kept for API completeness.
+- None identified
 
 ### Data Flow Analysis
 
@@ -120,28 +120,27 @@ All commands properly registered - PASS
 [App Startup]
      |
      v
-[lib.rs:251-256] Load saved_shortcut from settings.json
+[lib.rs:251-256] Load saved_shortcut from settings.json ("hotkey.recordingShortcut")
      |
      v
 [lib.rs:261] service.backend.register(&saved_shortcut, callback)
-     | Registers e.g. "Function+R"
+     | Registers e.g. "Function+R" via CGEventTapHotkeyBackend
+     v
+[cgeventtap_backend.rs:335] parse_shortcut() parses "Function+R"
+     | Line 83: "fn" | "function" => spec.fn_key = true
      v
 [Window Destroyed]
      |
      v
-[lib.rs:299-306] Load shortcut from settings.json (same key)
+[lib.rs:299-306] Load shortcut from settings.json (same key: "hotkey.recordingShortcut")
      |
      v
 [lib.rs:306] service.backend.unregister(&shortcut)
-     | Correctly unregisters "Function+R"
+     | Correctly unregisters "Function+R" - matches what was registered
      v
 [Clean Shutdown] - No resource leak
 ```
 
 ### Verdict
 
-**NEEDS_WORK** - The unregistration mismatch from the previous review has been fixed. However, the dead code warning for `register_recording_shortcut` on `HotkeyServiceDyn` must be resolved. Either:
-1. Add `#[allow(dead_code)]` annotation with a comment explaining these methods are kept for API completeness, or
-2. Remove the unused methods entirely since production code now uses `backend.register()` directly
-
-The spec cannot be approved with a build warning present.
+**APPROVED** - All pre-review gates pass. The dead code warning from the previous review has been resolved by adding `#[allow(dead_code)]` annotations with explanatory comments. The implementation correctly loads saved shortcuts from settings.json on startup and uses the same key for unregistration, ensuring Function modifier shortcuts work identically after restart. Manual test cases are appropriately deferred for a system-level shortcut integration feature.
