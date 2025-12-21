@@ -101,18 +101,18 @@ impl AudioFingerprint {
         let overlap_start = self.start_idx.max(other.start_idx);
         let overlap_end = self.end_idx.min(other.end_idx);
 
-        if overlap_start >= overlap_end {
+        // Use saturating_sub to make underflow handling explicit
+        let overlap_len = overlap_end.saturating_sub(overlap_start);
+        if overlap_len == 0 {
             return 0.0; // No overlap
         }
 
-        let overlap_len = (overlap_end - overlap_start) as f32;
-        let self_len = (self.end_idx - self.start_idx) as f32;
-
-        if self_len == 0.0 {
+        let self_len = self.end_idx.saturating_sub(self.start_idx);
+        if self_len == 0 {
             return 0.0;
         }
 
-        overlap_len / self_len
+        overlap_len as f32 / self_len as f32
     }
 }
 
