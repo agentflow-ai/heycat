@@ -20,35 +20,24 @@ pub enum TranscriptionState {
 }
 
 /// Errors that can occur during transcription operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TranscriptionError {
     /// Model has not been loaded yet
+    #[error("Model not loaded")]
     ModelNotLoaded,
     /// Failed to load the model
+    #[error("Failed to load model: {0}")]
     ModelLoadFailed(String),
     /// Failed during transcription
+    #[error("Transcription failed: {0}")]
     TranscriptionFailed(String),
     /// Audio data is invalid or empty
+    #[error("Invalid audio: {0}")]
     InvalidAudio(String),
     /// Failed to acquire lock on context
+    #[error("Internal lock error")]
     LockPoisoned,
 }
-
-impl std::fmt::Display for TranscriptionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TranscriptionError::ModelNotLoaded => write!(f, "Model not loaded"),
-            TranscriptionError::ModelLoadFailed(msg) => write!(f, "Failed to load model: {}", msg),
-            TranscriptionError::TranscriptionFailed(msg) => {
-                write!(f, "Transcription failed: {}", msg)
-            }
-            TranscriptionError::InvalidAudio(msg) => write!(f, "Invalid audio: {}", msg),
-            TranscriptionError::LockPoisoned => write!(f, "Internal lock error"),
-        }
-    }
-}
-
-impl std::error::Error for TranscriptionError {}
 
 /// Result type for transcription operations
 pub type TranscriptionResult<T> = Result<T, TranscriptionError>;

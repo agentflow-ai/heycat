@@ -18,43 +18,22 @@ pub struct ListeningStatus {
 }
 
 /// Errors that can occur during listening operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ListeningError {
     /// Invalid state transition attempted
+    #[error("Cannot change listening state from {current_state:?}")]
     InvalidTransition { current_state: RecordingState },
     /// Recording is in progress
+    #[error("Cannot enable listening while recording")]
     RecordingInProgress,
     /// State lock error
+    #[error("Failed to acquire state lock")]
     LockError,
     /// Already in the requested state
     #[allow(dead_code)] // Error variant for future use
+    #[error("Already in the requested listening state")]
     AlreadyInState,
 }
-
-impl std::fmt::Display for ListeningError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ListeningError::InvalidTransition { current_state } => {
-                write!(
-                    f,
-                    "Cannot change listening state from {:?}",
-                    current_state
-                )
-            }
-            ListeningError::RecordingInProgress => {
-                write!(f, "Cannot enable listening while recording")
-            }
-            ListeningError::LockError => {
-                write!(f, "Failed to acquire state lock")
-            }
-            ListeningError::AlreadyInState => {
-                write!(f, "Already in the requested listening state")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ListeningError {}
 
 /// Manager for listening mode state
 ///

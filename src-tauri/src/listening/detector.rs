@@ -117,59 +117,40 @@ impl AudioFingerprint {
 }
 
 /// Errors that can occur during wake word detection
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum WakeWordError {
     /// Model has not been loaded
+    #[error("Wake word model not loaded")]
     ModelNotLoaded,
     /// Failed to load the model (unused since SharedTranscriptionModel loads externally)
     #[allow(dead_code)]
+    #[error("Failed to load model: {0}")]
     ModelLoadFailed(String),
     /// Failed during transcription
+    #[error("Transcription failed: {0}")]
     TranscriptionFailed(String),
     /// Transcription took too long (exceeded timeout)
+    #[error("Transcription timed out after {duration_secs}s (limit: {timeout_secs}s)")]
     TranscriptionTimeout { duration_secs: u64, timeout_secs: u64 },
     /// Lock was poisoned
+    #[error("Internal lock error")]
     LockPoisoned,
     /// Buffer is empty
+    #[error("Audio buffer is empty")]
     EmptyBuffer,
     /// Not enough new samples since last analysis
+    #[error("Not enough new audio samples for analysis")]
     InsufficientNewSamples,
     /// No speech detected in buffer (VAD filtered)
+    #[error("No speech detected in audio buffer (VAD filtered)")]
     NoSpeechDetected,
     /// VAD initialization failed
+    #[error("VAD initialization failed: {0}")]
     VadInitFailed(String),
     /// Audio segment already analyzed (fingerprint match)
+    #[error("Audio segment already analyzed (fingerprint match)")]
     DuplicateAudio,
 }
-
-impl std::fmt::Display for WakeWordError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WakeWordError::ModelNotLoaded => write!(f, "Wake word model not loaded"),
-            WakeWordError::ModelLoadFailed(msg) => write!(f, "Failed to load model: {}", msg),
-            WakeWordError::TranscriptionFailed(msg) => write!(f, "Transcription failed: {}", msg),
-            WakeWordError::TranscriptionTimeout { duration_secs, timeout_secs } => {
-                write!(f, "Transcription timed out after {}s (limit: {}s)", duration_secs, timeout_secs)
-            }
-            WakeWordError::LockPoisoned => write!(f, "Internal lock error"),
-            WakeWordError::EmptyBuffer => write!(f, "Audio buffer is empty"),
-            WakeWordError::InsufficientNewSamples => {
-                write!(f, "Not enough new audio samples for analysis")
-            }
-            WakeWordError::NoSpeechDetected => {
-                write!(f, "No speech detected in audio buffer (VAD filtered)")
-            }
-            WakeWordError::VadInitFailed(msg) => {
-                write!(f, "VAD initialization failed: {}", msg)
-            }
-            WakeWordError::DuplicateAudio => {
-                write!(f, "Audio segment already analyzed (fingerprint match)")
-            }
-        }
-    }
-}
-
-impl std::error::Error for WakeWordError {}
 
 /// Internal mutable state for WakeWordDetector.
 ///
