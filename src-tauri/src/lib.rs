@@ -6,6 +6,7 @@
 mod audio;
 mod audio_constants;
 mod commands;
+mod dictionary;
 mod events;
 mod hotkey;
 mod keyboard_capture;

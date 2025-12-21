@@ -9,7 +9,10 @@
 //
 // CGEventTap requires Accessibility permission (System Settings > Privacy & Security > Accessibility)
 
-use super::permissions::{check_accessibility_permission_with_prompt, AccessibilityPermissionError};
+use super::permissions::{
+    check_accessibility_permission, check_accessibility_permission_with_prompt,
+    AccessibilityPermissionError,
+};
 #[allow(deprecated)]
 use cocoa::appkit::NSEvent;
 #[allow(deprecated)]
@@ -175,9 +178,17 @@ impl CGEventTapCapture {
             return Err("CGEventTap capture is already running".to_string());
         }
 
-        // Check Accessibility permission before starting (with prompt if not granted)
-        let has_permission = check_accessibility_permission_with_prompt();
-        crate::info!("Accessibility permission check (with prompt): {}", has_permission);
+        // Check Accessibility permission before starting.
+        // In debug builds, skip the prompt to avoid popups during dev/test.
+        // In release builds (production), prompt the user to grant permission.
+        // Set HEYCAT_ACCESSIBILITY_PROMPT=1 to force the prompt in debug builds (for UX testing).
+        let has_permission =
+            if cfg!(debug_assertions) && std::env::var("HEYCAT_ACCESSIBILITY_PROMPT").is_err() {
+                check_accessibility_permission()
+            } else {
+                check_accessibility_permission_with_prompt()
+            };
+        crate::info!("Accessibility permission check: {}", has_permission);
         if !has_permission {
             return Err(AccessibilityPermissionError::new().to_string());
         }

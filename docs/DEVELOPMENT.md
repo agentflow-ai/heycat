@@ -26,3 +26,20 @@ bun run build
 rustup toolchain install nightly
 cargo install cargo-llvm-cov
 ```
+
+## macOS Accessibility Permission
+
+The app requires Accessibility permission for global hotkey capture. In **debug builds**, the permission prompt is automatically suppressed to avoid interrupting test/build workflows.
+
+| Build Type | Prompts? |
+|------------|----------|
+| `cargo test` | No |
+| `cargo build` | No |
+| `bun tauri dev` | No |
+| `bun tauri build` (release) | Yes |
+
+To test the first-run permission UX in dev mode:
+
+```bash
+HEYCAT_ACCESSIBILITY_PROMPT=1 bun tauri dev
+```
