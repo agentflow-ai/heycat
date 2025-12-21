@@ -7,7 +7,7 @@ import {
   useLocation,
   useOutletContext,
 } from "react-router-dom";
-import { Dashboard, Commands, Recordings, Settings } from "./pages";
+import { Dashboard, Commands, Recordings, Settings, Dictionary } from "./pages";
 import { AppShell } from "./components/layout/AppShell";
 import { useAppStatus } from "./hooks/useAppStatus";
 import { useRecording } from "./hooks/useRecording";
@@ -124,6 +124,7 @@ export const router = createHashRouter([
       { path: "commands", element: <Commands /> },
       { path: "recordings", element: <Recordings /> },
       { path: "settings", element: <Settings /> },
+      { path: "dictionary", element: <Dictionary /> },
       // Catch-all route redirects to dashboard
       { path: "*", element: <Navigate to="/" replace /> },
     ],

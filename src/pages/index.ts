@@ -12,3 +12,6 @@ export type { RecordingsProps, RecordingInfo, FilterOption, SortOption } from ".
 
 export { Settings } from "./Settings";
 export type { SettingsProps, SettingsTab } from "./Settings";
+
+export { Dictionary } from "./Dictionary";
+export type { DictionaryProps } from "./Dictionary";
