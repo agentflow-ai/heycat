@@ -52,6 +52,8 @@ pub enum ActionErrorCode {
     OpenFailed,
     /// Failed to close application
     CloseFailed,
+    /// Platform not supported for this action
+    UnsupportedPlatform,
 }
 
 impl std::fmt::Display for ActionErrorCode {
@@ -70,6 +72,7 @@ impl std::fmt::Display for ActionErrorCode {
             ActionErrorCode::InvalidAppName => "INVALID_APP_NAME",
             ActionErrorCode::OpenFailed => "OPEN_FAILED",
             ActionErrorCode::CloseFailed => "CLOSE_FAILED",
+            ActionErrorCode::UnsupportedPlatform => "UNSUPPORTED_PLATFORM",
         };
         write!(f, "{}", s)
     }

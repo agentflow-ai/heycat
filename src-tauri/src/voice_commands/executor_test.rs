@@ -310,3 +310,22 @@ fn test_command_failed_payload_serialization() {
     assert!(json.contains("open slack"));
     assert!(json.contains("NOT_FOUND"));
 }
+
+#[test]
+fn test_unsupported_platform_error_display() {
+    assert_eq!(
+        ActionErrorCode::UnsupportedPlatform.to_string(),
+        "UNSUPPORTED_PLATFORM"
+    );
+}
+
+#[test]
+fn test_unsupported_platform_error_serialization() {
+    let error = ActionError {
+        code: ActionErrorCode::UnsupportedPlatform,
+        message: "Text input is only supported on macOS".to_string(),
+    };
+    let json = serde_json::to_string(&error).unwrap();
+    assert!(json.contains("UNSUPPORTED_PLATFORM"));
+    assert!(json.contains("Text input is only supported on macOS"));
+}
