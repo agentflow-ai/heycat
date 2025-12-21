@@ -1,5 +1,8 @@
 // Dictionary store - persists and loads dictionary entries for text expansion
 // Follows the same pattern as voice_commands/registry.rs for file-based persistence
+//
+// NOTE: This is a foundational internal module consumed by tauri-commands.spec.md.
+// The #[allow(dead_code)] attributes will be removed when production wiring is added.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,6 +13,7 @@ use uuid::Uuid;
 
 /// A dictionary entry for text expansion
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct DictionaryEntry {
     /// Unique identifier for the entry
     pub id: String,
@@ -21,6 +25,7 @@ pub struct DictionaryEntry {
 
 /// Error types for dictionary operations
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[allow(dead_code)]
 pub enum DictionaryError {
     /// Entry with this ID already exists
     #[error("Entry with ID {0} already exists")]
@@ -38,6 +43,7 @@ pub enum DictionaryError {
 
 /// Store for dictionary entries with file-based persistence
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct DictionaryStore {
     /// Entries indexed by ID
     entries: HashMap<String, DictionaryEntry>,

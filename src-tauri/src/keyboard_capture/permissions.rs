@@ -136,6 +136,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Opens System Settings - skip during automated test runs
     fn test_open_accessibility_settings_succeeds() {
         // This test verifies that open_accessibility_settings can spawn the open command
         // Note: This will actually open System Settings on the test machine
