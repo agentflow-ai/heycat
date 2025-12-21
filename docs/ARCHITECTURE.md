@@ -59,28 +59,166 @@ This enables:
 - Multiple components reacting to same state change
 - Consistent state across all listeners
 
+### Event Bridge Pattern
+
+Backend events route through a central **Event Bridge** (`src/lib/eventBridge.ts`) that dispatches to appropriate state managers:
+
+```
+Backend emit() ──▶ Event Bridge ──┬──▶ Query invalidation (server state)
+                                  └──▶ Zustand update (client state)
+```
+
+| Event Type | Routing | Example |
+|------------|---------|---------|
+| Server state change | `queryClient.invalidateQueries()` | `recording_started` → refetch recording state |
+| UI state change | `store.setOverlayMode()` | `overlay-mode` → update Zustand directly |
+
+```typescript
+// src/lib/eventBridge.ts
+export async function setupEventBridge(queryClient: QueryClient, store: AppStore) {
+  // Server state → Query invalidation
+  await listen('recording_started', () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.tauri.getRecordingState });
+  });
+
+  // UI state → Zustand update
+  await listen('overlay-mode', (event) => {
+    store.setOverlayMode(event.payload);
+  });
+}
+```
+
+**Why this matters:** Mutations do NOT invalidate queries in `onSuccess`. The Event Bridge handles ALL cache invalidation, ensuring hotkey-triggered and wake-word-triggered actions update the UI correctly.
+
 ---
 
 ## 2. State Management
 
-| Layer | Storage | Frontend Access | Backend Access |
-|-------|---------|-----------------|----------------|
-| **Persistent** | `settings.json` (Tauri plugin-store) | `useSettings()` hook | `app.store("settings.json").get(key)` |
-| **Session** | React useState / `Arc<Mutex<T>>` | hooks (`isRecording`, `isListening`, etc.) | `State<'_, T>` |
+### Dataflow Architecture
 
-**Persistent keys:** `listening.enabled`, `listening.autoStartOnLaunch`, `audio.selectedDevice`
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    FRONTEND (React)                                      │
+│                                                                                          │
+│  ┌─────────────┐      ┌──────────────────────────────────────────────────────────────┐  │
+│  │   User      │      │                     React Components                          │  │
+│  │  Actions    │      │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │  │
+│  │             │      │  │  Dashboard  │  │  Settings   │  │  Recordings List    │   │  │
+│  │ • Click     │─────▶│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘   │  │
+│  │ • Navigate  │      │         │                │                    │              │  │
+│  │ • Input     │      │         ▼                ▼                    ▼              │  │
+│  └─────────────┘      │  ┌─────────────────────────────────────────────────────────┐ │  │
+│                       │  │                    Hooks Layer                           │ │  │
+│                       │  │  useRecordingQuery()  useSettingsStore()  useNavigate() │ │  │
+│                       │  └────────┬─────────────────────┬─────────────────┬────────┘ │  │
+│                       └───────────┼─────────────────────┼─────────────────┼──────────┘  │
+│                                   │                     │                 │             │
+│         ┌─────────────────────────┼─────────────────────┼─────────────────┼───────────┐ │
+│         ▼                         ▼                     ▼                 ▼           │ │
+│  ┌─────────────────┐  ┌─────────────────────┐  ┌─────────────────┐  ┌──────────────┐ │ │
+│  │  React Router   │  │   Tanstack Query    │  │     Zustand     │  │    Toast     │ │ │
+│  │                 │  │                     │  │                 │  │   Context    │ │ │
+│  │ URL ↔ Page      │  │ ┌─────────────────┐ │  │ • settings      │  │              │ │ │
+│  │                 │  │ │  Query Cache    │ │  │ • overlayMode   │  │ notifications│ │ │
+│  │ /dashboard      │  │ │                 │ │  │ • appStatus     │  │              │ │ │
+│  │ /recordings     │  │ │ ['tauri',...]   │ │  │                 │  │              │ │ │
+│  │ /settings/*     │  │ └────────┬────────┘ │  └────────┬────────┘  └──────────────┘ │ │
+│  │ /commands       │  │          │          │           │                            │ │
+│  └─────────────────┘  │          ▼          │           │                            │ │
+│                       │  ┌───────────────┐  │           │                            │ │
+│                       │  │ queryFn:      │  │           │                            │ │
+│                       │  │ invoke(cmd)   │──┼───────────┼────────────────────────────┘ │
+│                       │  └───────┬───────┘  │           │                              │
+│                       └──────────┼──────────┘           │                              │
+│                                  │                      │                              │
+│                                  ▼                      │                              │
+│                       ┌─────────────────────────────────┼──────────────────────────┐   │
+│                       │           Event Bridge          │                          │   │
+│                       │                                 │                          │   │
+│                       │  listen('recording_started') ───┼──▶ invalidateQueries()   │   │
+│                       │  listen('transcription_done') ──┼──▶ invalidateQueries()   │   │
+│                       │  listen('overlay-mode') ────────┴──▶ store.setOverlay()    │   │
+│                       │                                                            │   │
+│                       └────────────────────────────────────────────────────────────┘   │
+│                                  ▲                                                     │
+└──────────────────────────────────┼─────────────────────────────────────────────────────┘
+                                   │
+                    ═══════════════╪═══════════════  Tauri IPC Boundary  ════════════════
+                                   │
+┌──────────────────────────────────┼─────────────────────────────────────────────────────┐
+│                                  │           BACKEND (Rust)                            │
+│                                  ▼                                                     │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           #[tauri::command] Handlers                              │ │
+│  │                                                                                   │ │
+│  │  start_recording()  stop_recording()  list_recordings()  enable_listening()      │ │
+│  │         │                  │                 │                   │                │ │
+│  └─────────┼──────────────────┼─────────────────┼───────────────────┼────────────────┘ │
+│            │                  │                 │                   │                  │
+│            ▼                  ▼                 ▼                   ▼                  │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                              Core Business Logic                                  │ │
+│  │                                                                                   │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                   │ │
+│  │  │ RecordingManager│  │ ListeningManager│  │ TranscriptionSvc│                   │ │
+│  │  │                 │  │                 │  │                 │                   │ │
+│  │  │ Arc<Mutex<T>>   │  │ Arc<Mutex<T>>   │  │                 │                   │ │
+│  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘                   │ │
+│  │           │                    │                    │                            │ │
+│  └───────────┼────────────────────┼────────────────────┼────────────────────────────┘ │
+│              │                    │                    │                              │
+│              ▼                    ▼                    ▼                              │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                            app_handle.emit()                                      │ │
+│  │                                                                                   │ │
+│  │   emit("recording_started")  emit("listening_started")  emit("transcription_done")│ │
+│  │              │                        │                          │                │ │
+│  └──────────────┼────────────────────────┼──────────────────────────┼────────────────┘ │
+│                 │                        │                          │                  │
+└─────────────────┼────────────────────────┼──────────────────────────┼──────────────────┘
+                  │                        │                          │
+                  └────────────────────────┴──────────────────────────┘
+                                           │
+                              Tauri IPC (events to frontend)
+                                           │
+                                           ▼
+                              ┌─────────────────────────┐
+                              │      Event Bridge       │
+                              │   (receives & routes)   │
+                              └─────────────────────────┘
+```
 
-**Session state (Backend):** RecordingManager, ListeningManager, AudioThreadHandle, SharedTranscriptionModel
+### State Layers
+
+| Layer | Storage | Purpose | Examples |
+|-------|---------|---------|----------|
+| **URL State** | React Router (`src/routes.tsx`) | Navigation, page routing | Current page, route params |
+| **Client State** | Zustand (`src/stores/appStore.ts`) | UI state, settings cache | Overlay mode, transcription status |
+| **Server State** | Tanstack Query (`src/lib/queryClient.ts`) | Cached backend data | Recording state, recordings list |
+| **Persistent** | Tauri Store (`settings.json`) | App settings | `listening.enabled`, `audio.selectedDevice` |
+| **Backend Session** | `Arc<Mutex<T>>` | Runtime state | RecordingManager, ListeningManager |
+
+### Key Principles
+
+1. **Never store server data in Zustand** - Use Tanstack Query for cacheable backend state
+2. **Settings dual-write** - Zustand caches for fast reads; Tauri Store persists for backend access
+3. **High-frequency state stays local** - Audio levels, download progress use component `useState`
+4. **Event Bridge routes updates** - Central hub dispatches backend events to Query or Zustand
 
 ### Frontend State Pattern
 
 ```typescript
-// Session state in hooks
-const [isRecording, setIsRecording] = useState(false);
+// Server state via Tanstack Query
+const { isRecording, isLoading, error } = useRecordingState();
 
-// Persistent state via useSettings
-const { settings } = useSettings();
-const deviceName = settings.audio.selectedDevice;
+// Client state via Zustand selector
+const overlayMode = useOverlayMode();
+
+// Settings via useSettings (Zustand cache + Tauri Store)
+const { settings, updateListeningEnabled } = useSettings();
+
+// High-frequency transient state
+const [audioLevel, setAudioLevel] = useState(0);
 ```
 
 ### Backend State Pattern
@@ -160,9 +298,22 @@ Audio Subsystem
 
 ```
 src/
-├── hooks/       # State & side effects (invoke + listen patterns)
-├── components/  # UI components ([Component]/Component.tsx + .css)
-└── types/       # Shared type definitions
+├── lib/           # Infrastructure
+│   ├── queryClient.ts   # Tanstack Query configuration
+│   ├── queryKeys.ts     # Centralized query key definitions
+│   └── eventBridge.ts   # Backend event → state manager routing
+├── stores/        # Zustand stores
+│   └── appStore.ts      # Global client state (overlayMode, settings cache)
+├── hooks/         # Query/mutation hooks + composite hooks
+├── pages/         # Route pages
+├── components/    # UI components ([Component]/Component.tsx + .css)
+├── routes.tsx     # React Router configuration
+└── types/         # Shared type definitions
+```
+
+**Provider hierarchy** (`src/App.tsx`):
+```
+QueryClientProvider → ToastProvider → AppInitializer → RouterProvider
 ```
 
 ### Backend
@@ -185,17 +336,27 @@ src-tauri/src/
 
 - [ ] Identify all entry points (UI, hotkey, background triggers)
 - [ ] Map data flow: Frontend → Command → Backend → Event → Frontend
-- [ ] Determine state layer: Persistent (store) vs Session (runtime)
+- [ ] Determine state layer for each piece of data:
+  - **URL** (React Router) - navigation state
+  - **Client** (Zustand) - UI state, derived status
+  - **Server** (Tanstack Query) - cacheable backend data
+  - **Persistent** (Tauri Store) - settings backend needs access to
 - [ ] Check if feature affects state transitions
 
 ### During Implementation
 
+**Backend:**
 - [ ] Commands: Add store fallback for optional params
-- [ ] Events: Define payload types in events.rs + TypeScript
-- [ ] Hooks: Subscribe to relevant events, not just command responses
-- [ ] State: Use Arc<Mutex<T>> for shared backend state
-- [ ] Voice commands: Register in voice_commands/registry.rs if applicable
-- [ ] Model events: Subscribe to download progress if user-facing
+- [ ] Events: Define payload types in `events.rs` + TypeScript
+- [ ] State: Use `Arc<Mutex<T>>` for shared backend state
+- [ ] Voice commands: Register in `voice_commands/registry.rs` if applicable
+
+**Frontend:**
+- [ ] Server state: Create query/mutation hooks using `queryKeys.ts`
+- [ ] Events: Add handling in Event Bridge (invalidation or Zustand update)
+- [ ] Settings: Use dual-write pattern (Zustand + Tauri Store)
+- [ ] High-frequency data: Use local `useState` (audio levels, progress)
+- [ ] Mutations: NO `onSuccess` invalidation - Event Bridge handles it
 
 ---
 

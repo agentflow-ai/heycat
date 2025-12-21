@@ -32,7 +32,7 @@ export function useAudioDevices(
 
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.tauri.listAudioDevices,
     queryFn: async () => {
       const result = await invoke<AudioInputDevice[]>("list_audio_devices");

@@ -107,7 +107,7 @@ describe("useListening", () => {
 
       await act(async () => {
         try {
-          await result.current.mutateAsync();
+          await result.current.mutateAsync(undefined);
         } catch {
           // Expected to throw
         }
@@ -130,7 +130,7 @@ describe("useListening", () => {
       });
 
       await act(async () => {
-        await result.current.mutateAsync();
+        await result.current.mutateAsync(undefined);
       });
 
       expect(mockInvoke).toHaveBeenCalledWith("disable_listening");

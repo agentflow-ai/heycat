@@ -151,6 +151,133 @@ fn test_full_cycle_idle_recording_processing_idle() {
 - One test replaces several small state transition tests
 - Implicitly verifies defaults, transitions, and state machine correctness
 
+---
+
+## Testing Patterns for Dataflow Architecture
+
+The frontend uses Tanstack Query for server state, Zustand for client state, and an Event Bridge for routing backend events. Here are the patterns for testing each layer.
+
+### Testing Tanstack Query Hooks
+
+Query hooks wrap Tauri commands with caching. Provide a QueryClient wrapper:
+
+```typescript
+// Standard wrapper for query/mutation hooks
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+}
+
+// Usage
+const { result } = renderHook(() => useRecordingState(), {
+  wrapper: createWrapper(),
+});
+await waitFor(() => expect(result.current.isLoading).toBe(false));
+expect(result.current.isRecording).toBe(true);
+```
+
+For mutations, use `act()` with `mutateAsync()`:
+
+```typescript
+await act(async () => {
+  await result.current.startRecording();
+});
+expect(mockInvoke).toHaveBeenCalledWith("start_recording", { deviceName: undefined });
+```
+
+> See `src/hooks/useRecording.test.tsx` for complete examples.
+
+### Testing Zustand Stores
+
+Reset store state in `beforeEach` to ensure test isolation:
+
+```typescript
+beforeEach(() => {
+  useAppStore.setState({
+    settingsCache: null,
+    isSettingsLoaded: false,
+    transcription: { isTranscribing: false, transcribedText: null, error: null },
+  });
+});
+
+// Test store action directly
+act(() => {
+  useAppStore.getState().wakeWordDetected();
+});
+expect(useAppStore.getState().listening.isWakeWordDetected).toBe(true);
+```
+
+> See `src/stores/__tests__/appStore.test.ts` for complete examples.
+
+### Testing Event Bridge Integration
+
+Mock the Tauri event system to simulate backend events:
+
+```typescript
+// Mock event system with a Map to capture handlers
+const eventHandlers = new Map<string, (e: { payload: unknown }) => void>();
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn((name, callback) => {
+    eventHandlers.set(name, callback);
+    return Promise.resolve(() => {});
+  }),
+}));
+
+// Helper to simulate backend events
+function emitMockEvent(name: string, payload: unknown = {}) {
+  eventHandlers.get(name)?.({ payload });
+}
+
+// Test query invalidation when event fires
+const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+emitMockEvent("recording_started");
+expect(invalidateSpy).toHaveBeenCalledWith({
+  queryKey: queryKeys.tauri.getRecordingState,
+});
+```
+
+> See `src/lib/__tests__/eventBridge.test.ts` for complete examples.
+
+### Testing Dual-Write Settings
+
+Settings use both Zustand (for fast reads) and Tauri Store (for persistence). Use `vi.hoisted()` for proper mock scoping:
+
+```typescript
+// Mock Tauri Store with vi.hoisted for correct module scoping
+const { mockStore } = vi.hoisted(() => ({
+  mockStore: {
+    get: vi.fn(),
+    set: vi.fn().mockResolvedValue(undefined),
+    save: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock("@tauri-apps/plugin-store", () => ({
+  load: vi.fn().mockResolvedValue(mockStore),
+}));
+
+// Test that updates write to BOTH stores
+await act(async () => {
+  await result.current.updateListeningEnabled(true);
+});
+
+// Verify Tauri Store persistence
+expect(mockStore.set).toHaveBeenCalledWith("listening.enabled", true);
+expect(mockStore.save).toHaveBeenCalled();
+
+// Verify Zustand immediate update
+expect(result.current.settings.listening.enabled).toBe(true);
+```
+
+> See `src/hooks/useSettings.test.ts` for complete examples.
+
+---
+
 ## Coverage Targets
 
 **Target: 60% line and function coverage**

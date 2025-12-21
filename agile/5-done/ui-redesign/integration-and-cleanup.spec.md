@@ -224,7 +224,7 @@ All other specs are dependencies.
 | Voice commands CRUD works | PASS | Commands page exists, imports verified |
 | Settings save and persist | PASS | Settings page exists, useSettings hook tested |
 | Model download works | PASS | Settings page includes model management |
-| No TypeScript errors | PASS | Build completes with tsc validation |
+| No TypeScript errors | PASS | Build completes with tsgo validation |
 | No unused imports/exports | PASS | Build completes without TS6133 warnings |
 
 ### Code Quality

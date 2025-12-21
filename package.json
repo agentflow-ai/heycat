@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "dev:static": "vite build && tauri dev --no-watch",
-    "build": "tsc && vite build",
+    "build": "tsgo && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "typecheck": "tsgo",
     "prepare": "husky",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -52,7 +53,7 @@
     "jsdom": "^27.2.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
-    "typescript": "~5.6.2",
+    "@typescript/native-preview": "7.0.0-dev.20251220.1",
     "vite": "^6.0.3",
     "vitest": "^4.0.14"
   }
