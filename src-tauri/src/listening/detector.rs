@@ -4,9 +4,9 @@
 use super::vad::{create_vad, VadConfig, VadError};
 use super::CircularBuffer;
 use crate::audio_constants::{
-    DEFAULT_SAMPLE_RATE, FINGERPRINT_OVERLAP_THRESHOLD, VAD_CHUNK_SIZE_16KHZ,
-    VAD_THRESHOLD_AGGRESSIVE, WAKE_WORD_MIN_NEW_SAMPLES, WAKE_WORD_MIN_SPEECH_FRAMES,
-    WAKE_WORD_TRANSCRIPTION_TIMEOUT_SECS, WAKE_WORD_WINDOW_SECS,
+    DEFAULT_SAMPLE_RATE, FINGERPRINT_OVERLAP_THRESHOLD, MIN_PARTIAL_VAD_CHUNK,
+    VAD_CHUNK_SIZE_16KHZ, VAD_THRESHOLD_AGGRESSIVE, WAKE_WORD_MIN_NEW_SAMPLES,
+    WAKE_WORD_MIN_SPEECH_FRAMES, WAKE_WORD_TRANSCRIPTION_TIMEOUT_SECS, WAKE_WORD_WINDOW_SECS,
 };
 use crate::events::{current_timestamp, listening_events, ListeningEventEmitter};
 use crate::parakeet::SharedTranscriptionModel;
@@ -531,7 +531,7 @@ impl WakeWordDetector {
         // Also process partial final chunk by zero-padding
         // This prevents missing speech at buffer boundaries
         let remaining = samples.len() % CHUNK_SIZE;
-        if remaining >= 256 {
+        if remaining >= MIN_PARTIAL_VAD_CHUNK {
             // Only process if we have at least half a chunk (meaningful data)
             let start = samples.len() - remaining;
             let mut padded = vec![0.0f32; CHUNK_SIZE];

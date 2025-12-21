@@ -37,6 +37,14 @@ pub const VAD_CHUNK_SIZE_16KHZ: usize = 512;
 #[allow(dead_code)]
 pub const VAD_CHUNK_SIZE_8KHZ: usize = 256;
 
+/// Minimum samples to process for a partial VAD chunk.
+///
+/// When the remaining audio buffer doesn't fill a complete VAD chunk,
+/// we still process it if it contains at least this many samples.
+/// Set to half a chunk (256 samples at 16kHz = 16ms) to avoid
+/// missing speech at buffer boundaries while filtering noise.
+pub const MIN_PARTIAL_VAD_CHUNK: usize = VAD_CHUNK_SIZE_16KHZ / 2;
+
 // =============================================================================
 // VAD THRESHOLDS
 // =============================================================================
@@ -217,6 +225,13 @@ mod tests {
             VAD_CHUNK_SIZE_8KHZ,
             (8000 * OPTIMAL_CHUNK_DURATION_MS / 1000) as usize
         );
+    }
+
+    #[test]
+    fn test_min_partial_vad_chunk_is_half_of_full_chunk() {
+        // MIN_PARTIAL_VAD_CHUNK should be exactly half of VAD_CHUNK_SIZE_16KHZ
+        assert_eq!(MIN_PARTIAL_VAD_CHUNK, VAD_CHUNK_SIZE_16KHZ / 2);
+        assert_eq!(MIN_PARTIAL_VAD_CHUNK, 256);
     }
 
     #[test]
