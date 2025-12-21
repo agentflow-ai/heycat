@@ -52,7 +52,8 @@ pub enum ActionErrorCode {
     OpenFailed,
     /// Failed to close application
     CloseFailed,
-    /// Platform not supported for this action
+    /// Platform not supported for this action (used on non-macOS platforms)
+    #[allow(dead_code)]
     UnsupportedPlatform,
 }
 
