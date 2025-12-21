@@ -171,9 +171,6 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
     let mut samples_since_last_check: Vec<f32> = Vec::new();
     let mut loop_count: u64 = 0;
 
-    // Track last processed position in the audio buffer to avoid re-reading old samples
-    let mut last_processed_index: usize = 0;
-
     loop {
         loop_count += 1;
 
@@ -195,28 +192,11 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
             break;
         }
 
-        // Read only NEW samples from buffer (samples we haven't processed yet)
-        let new_samples = {
-            match buffer.lock() {
-                Ok(guard) => {
-                    let current_len = guard.len();
-                    if current_len > last_processed_index {
-                        // Only copy samples we haven't seen yet
-                        let samples = guard[last_processed_index..].to_vec();
-                        last_processed_index = current_len;
-                        samples
-                    } else {
-                        Vec::new()
-                    }
-                }
-                Err(_) => {
-                    crate::error!("[coordinator] Audio buffer lock poisoned in detection loop");
-                    break;
-                }
-            }
-        };
+        // Drain NEW samples from ring buffer (lock-free read)
+        // This also accumulates samples internally for WAV encoding
+        let new_samples = buffer.drain_samples();
 
-        // Accumulate samples
+        // Accumulate samples for silence detection
         if !new_samples.is_empty() {
             samples_since_last_check.extend(&new_samples);
             crate::trace!(

@@ -9,7 +9,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleRate, Stream};
 use rubato::{FftFixedIn, Resampler};
 
-use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState, StopReason, MAX_BUFFER_SAMPLES, MAX_RESAMPLE_BUFFER_SAMPLES, TARGET_SAMPLE_RATE};
+use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState, StopReason, MAX_RESAMPLE_BUFFER_SAMPLES, TARGET_SAMPLE_RATE};
 use crate::{debug, error, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
@@ -150,25 +150,24 @@ impl CallbackState {
             f32_samples.to_vec()
         };
 
-        match self.buffer.lock() {
-            Ok(mut guard) => {
-                let remaining = MAX_BUFFER_SAMPLES.saturating_sub(guard.len());
-                if remaining > 0 {
-                    let to_add = samples_to_add.len().min(remaining);
-                    guard.extend_from_slice(&samples_to_add[..to_add]);
-                } else if !self.signaled.swap(true, Ordering::SeqCst) {
-                    // Buffer full - signal once
-                    if let Some(ref sender) = self.stop_signal {
-                        let _ = sender.send(StopReason::BufferFull);
-                    }
+        // Use lock-free ring buffer for reduced contention
+        // Check if buffer is full before pushing
+        if self.buffer.is_full() {
+            if !self.signaled.swap(true, Ordering::SeqCst) {
+                if let Some(ref sender) = self.stop_signal {
+                    let _ = sender.send(StopReason::BufferFull);
                 }
             }
-            Err(_) => {
-                // Lock poisoned - signal once
-                if !self.signaled.swap(true, Ordering::SeqCst) {
-                    if let Some(ref sender) = self.stop_signal {
-                        let _ = sender.send(StopReason::LockError);
-                    }
+            return;
+        }
+
+        // Push samples to ring buffer (lock-free)
+        let pushed = self.buffer.push_samples(&samples_to_add);
+        if pushed < samples_to_add.len() {
+            // Buffer became full during push
+            if !self.signaled.swap(true, Ordering::SeqCst) {
+                if let Some(ref sender) = self.stop_signal {
+                    let _ = sender.send(StopReason::BufferFull);
                 }
             }
         }

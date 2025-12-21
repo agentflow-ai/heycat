@@ -1,5 +1,9 @@
 // Audio capture module for microphone recording
 
+use ringbuf::{
+    traits::{Consumer, Observer, Producer, Split},
+    HeapRb,
+};
 use std::sync::{Arc, Mutex};
 
 mod cpal_backend;
@@ -26,20 +30,97 @@ mod mod_test;
 #[cfg(test)]
 mod wav_test;
 
-/// Thread-safe buffer for storing audio samples
-/// Uses Arc<Mutex<Vec<f32>>> to allow sharing between capture thread and consumers
-#[derive(Debug)]
-pub struct AudioBuffer(Arc<Mutex<Vec<f32>>>);
+/// Thread-safe buffer for storing audio samples using lock-free ring buffer
+///
+/// Uses a SPSC ring buffer for low-contention audio capture:
+/// - Producer (audio callback) writes via `push_samples()` - lock-free
+/// - Consumer (detection loop) reads via `drain_samples()` - lock-free
+/// - Accumulated samples are stored for WAV encoding
+pub struct AudioBuffer {
+    /// Ring buffer producer for lock-free writes
+    producer: Arc<Mutex<RingProducer>>,
+    /// Ring buffer consumer for lock-free reads
+    consumer: Arc<Mutex<RingConsumer>>,
+    /// Accumulated samples for WAV encoding (populated by drain_samples)
+    accumulated: Arc<Mutex<Vec<f32>>>,
+}
 
 impl AudioBuffer {
-    /// Create a new empty audio buffer
+    /// Create a new empty audio buffer with default capacity
     pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(Vec::new())))
+        Self::with_capacity(MAX_BUFFER_SAMPLES)
     }
 
-    /// Lock the buffer for access
+    /// Create a new audio buffer with specified capacity
+    pub fn with_capacity(capacity: usize) -> Self {
+        let rb = HeapRb::<f32>::new(capacity);
+        let (producer, consumer) = rb.split();
+        Self {
+            producer: Arc::new(Mutex::new(producer)),
+            consumer: Arc::new(Mutex::new(consumer)),
+            accumulated: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Push samples to the buffer (used by audio callback)
+    ///
+    /// Returns the number of samples actually written.
+    /// If buffer is full, returns 0.
+    pub fn push_samples(&self, samples: &[f32]) -> usize {
+        match self.producer.lock() {
+            Ok(mut prod) => prod.push_slice(samples),
+            Err(_) => 0,
+        }
+    }
+
+    /// Drain available samples from ring buffer into accumulated storage
+    ///
+    /// Returns a copy of the newly drained samples.
+    /// This should be called periodically by the consumer.
+    pub fn drain_samples(&self) -> Vec<f32> {
+        let mut drained = Vec::new();
+
+        // Read from ring buffer
+        if let Ok(mut cons) = self.consumer.lock() {
+            let available = cons.occupied_len();
+            if available > 0 {
+                drained.resize(available, 0.0);
+                cons.pop_slice(&mut drained);
+            }
+        }
+
+        // Accumulate for WAV encoding
+        if !drained.is_empty() {
+            if let Ok(mut acc) = self.accumulated.lock() {
+                acc.extend_from_slice(&drained);
+            }
+        }
+
+        drained
+    }
+
+    /// Get accumulated sample count (for buffer full detection)
+    pub fn accumulated_len(&self) -> usize {
+        self.accumulated.lock().map(|a| a.len()).unwrap_or(0)
+    }
+
+    /// Get remaining capacity before buffer is full
+    #[allow(dead_code)]
+    pub fn remaining_capacity(&self) -> usize {
+        MAX_BUFFER_SAMPLES.saturating_sub(self.accumulated_len())
+    }
+
+    /// Check if buffer has reached maximum capacity
+    pub fn is_full(&self) -> bool {
+        self.accumulated_len() >= MAX_BUFFER_SAMPLES
+    }
+
+    /// Lock the accumulated buffer for direct access (WAV encoding, etc.)
+    ///
+    /// Note: This only accesses accumulated samples, not samples still in ring buffer.
+    /// Call `drain_samples()` first to ensure all samples are accumulated.
     pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Vec<f32>>> {
-        self.0.lock()
+        self.accumulated.lock()
     }
 }
 
@@ -51,9 +132,27 @@ impl Default for AudioBuffer {
 
 impl Clone for AudioBuffer {
     fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
+        Self {
+            producer: Arc::clone(&self.producer),
+            consumer: Arc::clone(&self.consumer),
+            accumulated: Arc::clone(&self.accumulated),
+        }
     }
 }
+
+impl std::fmt::Debug for AudioBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioBuffer")
+            .field("accumulated_len", &self.accumulated_len())
+            .finish()
+    }
+}
+
+/// Type alias for ring buffer producer half
+type RingProducer = ringbuf::HeapProd<f32>;
+
+/// Type alias for ring buffer consumer half
+type RingConsumer = ringbuf::HeapCons<f32>;
 
 /// Target sample rate for audio capture (16 kHz for speech recognition models)
 pub const TARGET_SAMPLE_RATE: u32 = 16000;
@@ -113,7 +212,8 @@ impl std::error::Error for AudioCaptureError {}
 pub enum StopReason {
     /// Buffer reached maximum capacity (~10 minutes)
     BufferFull,
-    /// Lock poisoning error in audio callback
+    /// Lock poisoning error in audio callback (legacy, kept for serialization compatibility)
+    #[allow(dead_code)]
     LockError,
     /// Audio stream error (device disconnected, etc.)
     StreamError,
