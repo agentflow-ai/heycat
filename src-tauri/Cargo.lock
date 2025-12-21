@@ -2131,6 +2131,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-store",
  "tempfile",
+ "thiserror 2.0.17",
  "tokio",
  "uuid",
  "voice_activity_detector",

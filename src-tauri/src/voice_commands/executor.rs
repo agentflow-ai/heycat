@@ -76,21 +76,14 @@ impl std::fmt::Display for ActionErrorCode {
 }
 
 /// Error during action execution
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, thiserror::Error)]
+#[error("{code}: {message}")]
 pub struct ActionError {
     /// Typed error code for categorization
     pub code: ActionErrorCode,
     /// Human-readable error message
     pub message: String,
 }
-
-impl std::fmt::Display for ActionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.code, self.message)
-    }
-}
-
-impl std::error::Error for ActionError {}
 
 /// Trait for action implementations
 #[async_trait]

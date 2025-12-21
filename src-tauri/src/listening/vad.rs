@@ -8,28 +8,15 @@ use crate::audio_constants::{
 use voice_activity_detector::VoiceActivityDetector;
 
 /// Error type for VAD operations
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum VadError {
     /// VAD initialization failed
+    #[error("VAD initialization failed: {0}")]
     InitializationFailed(String),
     /// Invalid configuration (e.g., unsupported sample rate)
+    #[error("VAD configuration invalid: {0}")]
     ConfigurationInvalid(String),
 }
-
-impl std::fmt::Display for VadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VadError::InitializationFailed(msg) => {
-                write!(f, "VAD initialization failed: {}", msg)
-            }
-            VadError::ConfigurationInvalid(msg) => {
-                write!(f, "VAD configuration invalid: {}", msg)
-            }
-        }
-    }
-}
-
-impl std::error::Error for VadError {}
 
 /// VAD configuration shared across listening and recording components.
 ///
