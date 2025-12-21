@@ -84,11 +84,18 @@ impl Drop for TranscribingGuard {
         // This handles both normal completion (where we want Idle)
         // and panics (where we want to reset from Transcribing)
         if !self.completed {
-            if let Ok(mut guard) = self.state.lock() {
-                // Only reset if still in Transcribing state
-                // (in case someone else changed it)
-                if *guard == TranscriptionState::Transcribing {
-                    *guard = TranscriptionState::Idle;
+            match self.state.lock() {
+                Ok(mut guard) => {
+                    // Only reset if still in Transcribing state
+                    // (in case someone else changed it)
+                    if *guard == TranscriptionState::Transcribing {
+                        *guard = TranscriptionState::Idle;
+                    }
+                }
+                Err(_) => {
+                    crate::warn!(
+                        "Failed to reset transcription state in drop - lock poisoned"
+                    );
                 }
             }
         }
