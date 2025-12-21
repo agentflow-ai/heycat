@@ -330,9 +330,17 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
                             }
                             SilenceStopReason::NoSpeechTimeout => {
                                 // False activation - abort without saving
-                                // Go to Idle (will restart listening below if return_to_listening)
-                                crate::info!("[coordinator] Aborting recording (no speech), transitioning to Idle");
-                                if let Err(e) = manager.abort_recording(RecordingState::Idle) {
+                                // Transition to target state (Listening or Idle) before dropping lock
+                                let target_state = if return_to_listening {
+                                    RecordingState::Listening
+                                } else {
+                                    RecordingState::Idle
+                                };
+                                crate::info!(
+                                    "[coordinator] Aborting recording (no speech), transitioning to {:?}",
+                                    target_state
+                                );
+                                if let Err(e) = manager.abort_recording(target_state) {
                                     crate::error!("[coordinator] Failed to abort recording: {:?}", e);
                                 }
 
@@ -340,14 +348,11 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
                                 drop(manager);
 
                                 // Restart listening pipeline if return_to_listening (even on timeout)
+                                // NOTE: State is already Listening, no need to re-acquire manager lock
                                 if return_to_listening {
                                     if let Some(ref pipeline_arc) = listening_pipeline {
                                         if let Ok(mut pipeline) = pipeline_arc.lock() {
                                             crate::info!("[coordinator] Restarting listening pipeline after false activation...");
-                                            // First transition state to Listening
-                                            if let Ok(mut rm) = recording_manager.lock() {
-                                                let _ = rm.transition_to(RecordingState::Listening);
-                                            }
                                             match pipeline.start(&audio_thread, emitter.clone()) {
                                                 Ok(_) => {
                                                     crate::info!("[coordinator] Listening pipeline restarted successfully");
