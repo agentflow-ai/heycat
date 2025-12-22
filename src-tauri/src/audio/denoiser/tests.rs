@@ -46,8 +46,10 @@ fn test_loading_returns_error_for_missing_files() {
 
     // Test missing model 1
     let result = DtlnModels::load(&missing_path, &valid_model_path);
-    assert!(result.is_err(), "Should error when model_1 is missing");
-    match result.unwrap_err() {
+    let Err(err) = result else {
+        panic!("Should error when model_1 is missing");
+    };
+    match err {
         DenoiserError::ModelNotFound(path) => {
             assert!(path.contains("nonexistent"), "Error should mention the missing path");
         }
@@ -56,8 +58,10 @@ fn test_loading_returns_error_for_missing_files() {
 
     // Test missing model 2
     let result = DtlnModels::load(&valid_model_path, &missing_path);
-    assert!(result.is_err(), "Should error when model_2 is missing");
-    match result.unwrap_err() {
+    let Err(err) = result else {
+        panic!("Should error when model_2 is missing");
+    };
+    match err {
         DenoiserError::ModelNotFound(path) => {
             assert!(path.contains("nonexistent"), "Error should mention the missing path");
         }

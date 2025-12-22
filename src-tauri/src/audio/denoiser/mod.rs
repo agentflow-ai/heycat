@@ -44,7 +44,6 @@ pub type RunnableModel = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact
 /// - Model 2: Time-domain refinement (LSTM-based)
 ///
 /// Both models have LSTM states that must be tracked between frames.
-#[derive(Debug)]
 pub struct DtlnModels {
     /// Stage 1 model: Magnitude masking
     pub model_1: RunnableModel,

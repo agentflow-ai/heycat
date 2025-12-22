@@ -1,8 +1,9 @@
 ---
-status: in-progress
+status: in-review
 created: 2025-12-22
 completed: null
 dependencies: []
+review_round: 1
 ---
 
 # Spec: ONNX model loading and dependencies
