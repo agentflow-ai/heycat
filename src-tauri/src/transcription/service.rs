@@ -627,11 +627,15 @@ mod tests {
                 id: "1".to_string(),
                 trigger: "brb".to_string(),
                 expansion: "be right back".to_string(),
+                suffix: None,
+                auto_enter: false,
             },
             DictionaryEntry {
                 id: "2".to_string(),
                 trigger: "api".to_string(),
                 expansion: "API".to_string(),
+                suffix: None,
+                auto_enter: false,
             },
         ];
 
@@ -727,6 +731,8 @@ mod tests {
             id: "1".to_string(),
             trigger: "brb".to_string(),
             expansion: "be right back".to_string(),
+            suffix: None,
+            auto_enter: false,
         }];
         {
             let mut guard = dictionary_expander.write().unwrap();

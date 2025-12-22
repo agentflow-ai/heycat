@@ -21,6 +21,12 @@ pub struct DictionaryEntry {
     pub trigger: String,
     /// Expansion text (e.g., "be right back")
     pub expansion: String,
+    /// Optional suffix appended after expansion
+    #[serde(default)]
+    pub suffix: Option<String>,
+    /// Whether to simulate enter keypress after expansion
+    #[serde(default)]
+    pub auto_enter: bool,
 }
 
 /// Error types for dictionary operations
@@ -146,12 +152,20 @@ impl DictionaryStore {
     /// Add a new entry to the store
     /// Generates a unique ID using UUID v4
     #[must_use = "this returns a Result that should be handled"]
-    pub fn add(&mut self, trigger: String, expansion: String) -> Result<DictionaryEntry, DictionaryError> {
+    pub fn add(
+        &mut self,
+        trigger: String,
+        expansion: String,
+        suffix: Option<String>,
+        auto_enter: bool,
+    ) -> Result<DictionaryEntry, DictionaryError> {
         let id = Uuid::new_v4().to_string();
         let entry = DictionaryEntry {
             id: id.clone(),
             trigger,
             expansion,
+            suffix,
+            auto_enter,
         };
 
         // ID collision is extremely unlikely with UUID v4, but check anyway
@@ -171,6 +185,8 @@ impl DictionaryStore {
         id: String,
         trigger: String,
         expansion: String,
+        suffix: Option<String>,
+        auto_enter: bool,
     ) -> Result<DictionaryEntry, DictionaryError> {
         if !self.entries.contains_key(&id) {
             return Err(DictionaryError::NotFound(id));
@@ -180,6 +196,8 @@ impl DictionaryStore {
             id: id.clone(),
             trigger,
             expansion,
+            suffix,
+            auto_enter,
         };
         self.entries.insert(id, entry.clone());
         self.save()?;

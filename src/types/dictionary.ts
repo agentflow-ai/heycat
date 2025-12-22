@@ -9,4 +9,8 @@ export interface DictionaryEntry {
   trigger: string;
   /** Expansion text (e.g., "be right back") */
   expansion: string;
+  /** Optional suffix appended after expansion */
+  suffix?: string;
+  /** Whether to simulate enter keypress after expansion */
+  autoEnter?: boolean;
 }

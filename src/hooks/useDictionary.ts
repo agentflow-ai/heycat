@@ -19,14 +19,36 @@ export function useDictionary() {
   });
 
   const addEntry = useMutation({
-    mutationFn: (data: { trigger: string; expansion: string }) =>
-      invoke<DictionaryEntry>("add_dictionary_entry", data),
+    mutationFn: (data: {
+      trigger: string;
+      expansion: string;
+      suffix?: string;
+      autoEnter?: boolean;
+    }) =>
+      invoke<DictionaryEntry>("add_dictionary_entry", {
+        trigger: data.trigger,
+        expansion: data.expansion,
+        suffix: data.suffix,
+        auto_enter: data.autoEnter,
+      }),
     // Note: NO onSuccess invalidation - Event Bridge handles it
   });
 
   const updateEntry = useMutation({
-    mutationFn: (data: { id: string; trigger: string; expansion: string }) =>
-      invoke<void>("update_dictionary_entry", data),
+    mutationFn: (data: {
+      id: string;
+      trigger: string;
+      expansion: string;
+      suffix?: string;
+      autoEnter?: boolean;
+    }) =>
+      invoke<void>("update_dictionary_entry", {
+        id: data.id,
+        trigger: data.trigger,
+        expansion: data.expansion,
+        suffix: data.suffix,
+        auto_enter: data.autoEnter,
+      }),
     // Note: NO onSuccess invalidation - Event Bridge handles it
   });
 

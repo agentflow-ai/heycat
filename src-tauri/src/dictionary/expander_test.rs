@@ -5,6 +5,8 @@ fn make_entry(trigger: &str, expansion: &str) -> DictionaryEntry {
         id: format!("test-{}", trigger),
         trigger: trigger.to_string(),
         expansion: expansion.to_string(),
+        suffix: None,
+        auto_enter: false,
     }
 }
 

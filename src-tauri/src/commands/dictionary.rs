@@ -60,6 +60,8 @@ pub fn list_dictionary_entries(
 /// # Arguments
 /// * `trigger` - The trigger word/phrase (e.g., "brb")
 /// * `expansion` - The expansion text (e.g., "be right back")
+/// * `suffix` - Optional suffix appended after expansion
+/// * `auto_enter` - Whether to simulate enter keypress after expansion (defaults to false)
 ///
 /// # Returns
 /// The newly created DictionaryEntry with its generated ID
@@ -70,6 +72,8 @@ pub fn add_dictionary_entry(
     transcription_service: State<'_, TranscriptionServiceState>,
     trigger: String,
     expansion: String,
+    suffix: Option<String>,
+    auto_enter: Option<bool>,
 ) -> Result<DictionaryEntry, String> {
     // Validate: trigger cannot be empty
     if trigger.trim().is_empty() {
@@ -77,7 +81,9 @@ pub fn add_dictionary_entry(
     }
 
     let mut store = store.lock().map_err(|_| "Failed to access dictionary store".to_string())?;
-    let entry = store.add(trigger, expansion).map_err(to_user_error)?;
+    let entry = store
+        .add(trigger, expansion, suffix, auto_enter.unwrap_or(false))
+        .map_err(to_user_error)?;
 
     // Refresh the dictionary expander in the transcription service
     refresh_dictionary_expander(&store, &transcription_service);
@@ -105,6 +111,8 @@ pub fn add_dictionary_entry(
 /// * `id` - The unique ID of the entry to update
 /// * `trigger` - The new trigger word/phrase
 /// * `expansion` - The new expansion text
+/// * `suffix` - Optional suffix appended after expansion
+/// * `auto_enter` - Whether to simulate enter keypress after expansion (defaults to false)
 #[tauri::command]
 pub fn update_dictionary_entry(
     app_handle: AppHandle,
@@ -113,6 +121,8 @@ pub fn update_dictionary_entry(
     id: String,
     trigger: String,
     expansion: String,
+    suffix: Option<String>,
+    auto_enter: Option<bool>,
 ) -> Result<(), String> {
     // Validate: trigger cannot be empty
     if trigger.trim().is_empty() {
@@ -120,7 +130,9 @@ pub fn update_dictionary_entry(
     }
 
     let mut store = store.lock().map_err(|_| "Failed to access dictionary store".to_string())?;
-    store.update(id.clone(), trigger, expansion).map_err(to_user_error)?;
+    store
+        .update(id.clone(), trigger, expansion, suffix, auto_enter.unwrap_or(false))
+        .map_err(to_user_error)?;
 
     // Refresh the dictionary expander in the transcription service
     refresh_dictionary_expander(&store, &transcription_service);

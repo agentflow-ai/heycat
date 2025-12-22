@@ -44,13 +44,25 @@ Add `recording_cancelled` event handling to the Event Bridge:
 
 ## Acceptance Criteria
 
-- [ ] Bug no longer reproducible
-- [ ] Root cause addressed (not just symptoms)
-- [ ] Tests added to prevent regression
+- [x] Bug no longer reproducible
+- [x] Root cause addressed (not just symptoms)
+- [x] Tests added to prevent regression
 
 ## Test Cases
 
 | Test Case | Expected Result | Status |
 |-----------|-----------------|--------|
-| Double-Escape during recording | Overlay hides, recording status clears | [ ] |
-| Event bridge receives `recording_cancelled` | Query invalidation triggered | [ ] |
+| Double-Escape during recording | Overlay hides, recording status clears | [x] |
+| Event bridge receives `recording_cancelled` | Query invalidation triggered | [x] |
+
+## Definition of Done
+
+- [x] Event bridge handles `recording_cancelled` event
+- [x] Unit tests verify query invalidation
+- [x] Manual testing confirms UI updates correctly
+
+## Bug Review
+
+**Verdict: APPROVED_FOR_DONE**
+
+Manual review by user. Bug fix implemented correctly - added missing `recording_cancelled` event handler to Event Bridge.
