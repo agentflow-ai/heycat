@@ -62,13 +62,41 @@ impl DictionaryExpander {
 
         for pattern in &self.patterns {
             if pattern.regex.is_match(&result) {
-                // Build replacement with suffix if present
-                let replacement = match &pattern.entry.suffix {
-                    Some(suffix) => format!("{}{}", pattern.entry.expansion, suffix),
-                    None => pattern.entry.expansion.clone(),
+                // Build replacement based on suffix and disable_suffix settings
+                let replacement = if pattern.entry.disable_suffix {
+                    // When disable_suffix is true, use expansion only (no trailing punctuation)
+                    pattern.entry.expansion.clone()
+                } else {
+                    // Normal behavior: append suffix if present
+                    match &pattern.entry.suffix {
+                        Some(suffix) => format!("{}{}", pattern.entry.expansion, suffix),
+                        None => pattern.entry.expansion.clone(),
+                    }
                 };
 
-                result = pattern.regex.replace_all(&result, replacement.as_str()).to_string();
+                // When disable_suffix is true, we also need to strip any trailing punctuation
+                // that may follow the trigger in the original text
+                if pattern.entry.disable_suffix {
+                    // Use a capturing regex to also match and remove trailing punctuation
+                    let pattern_with_punct =
+                        format!(r"(?i)\b{}\b([.!?,;:]*)", regex::escape(&pattern.entry.trigger));
+                    if let Ok(punct_regex) = regex::Regex::new(&pattern_with_punct) {
+                        result = punct_regex
+                            .replace_all(&result, replacement.as_str())
+                            .to_string();
+                    } else {
+                        // Fallback to standard replacement if regex fails
+                        result = pattern
+                            .regex
+                            .replace_all(&result, replacement.as_str())
+                            .to_string();
+                    }
+                } else {
+                    result = pattern
+                        .regex
+                        .replace_all(&result, replacement.as_str())
+                        .to_string();
+                }
 
                 // Track auto_enter
                 if pattern.entry.auto_enter {

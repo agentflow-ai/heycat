@@ -7,6 +7,7 @@ fn make_entry(trigger: &str, expansion: &str) -> DictionaryEntry {
         expansion: expansion.to_string(),
         suffix: None,
         auto_enter: false,
+        disable_suffix: false,
     }
 }
 
@@ -17,6 +18,7 @@ fn make_entry_with_suffix(trigger: &str, expansion: &str, suffix: &str) -> Dicti
         expansion: expansion.to_string(),
         suffix: Some(suffix.to_string()),
         auto_enter: false,
+        disable_suffix: false,
     }
 }
 
@@ -27,6 +29,7 @@ fn make_entry_with_auto_enter(trigger: &str, expansion: &str) -> DictionaryEntry
         expansion: expansion.to_string(),
         suffix: None,
         auto_enter: true,
+        disable_suffix: false,
     }
 }
 

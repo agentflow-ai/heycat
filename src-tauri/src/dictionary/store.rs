@@ -27,6 +27,10 @@ pub struct DictionaryEntry {
     /// Whether to simulate enter keypress after expansion
     #[serde(default)]
     pub auto_enter: bool,
+    /// Whether to suppress any trailing punctuation from the transcription
+    /// When true, trailing punctuation after the trigger match is stripped
+    #[serde(default)]
+    pub disable_suffix: bool,
 }
 
 /// Error types for dictionary operations
@@ -158,6 +162,7 @@ impl DictionaryStore {
         expansion: String,
         suffix: Option<String>,
         auto_enter: bool,
+        disable_suffix: bool,
     ) -> Result<DictionaryEntry, DictionaryError> {
         let id = Uuid::new_v4().to_string();
         let entry = DictionaryEntry {
@@ -166,6 +171,7 @@ impl DictionaryStore {
             expansion,
             suffix,
             auto_enter,
+            disable_suffix,
         };
 
         // ID collision is extremely unlikely with UUID v4, but check anyway
@@ -187,6 +193,7 @@ impl DictionaryStore {
         expansion: String,
         suffix: Option<String>,
         auto_enter: bool,
+        disable_suffix: bool,
     ) -> Result<DictionaryEntry, DictionaryError> {
         if !self.entries.contains_key(&id) {
             return Err(DictionaryError::NotFound(id));
@@ -198,6 +205,7 @@ impl DictionaryStore {
             expansion,
             suffix,
             auto_enter,
+            disable_suffix,
         };
         self.entries.insert(id, entry.clone());
         self.save()?;

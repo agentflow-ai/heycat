@@ -13,16 +13,20 @@ export interface DictionaryProps {
 interface SettingsPanelProps {
   suffix: string;
   autoEnter: boolean;
+  disableSuffix: boolean;
   onSuffixChange: (value: string) => void;
   onAutoEnterChange: (value: boolean) => void;
+  onDisableSuffixChange: (value: boolean) => void;
   suffixError?: string | null;
 }
 
 function SettingsPanel({
   suffix,
   autoEnter,
+  disableSuffix,
   onSuffixChange,
   onAutoEnterChange,
+  onDisableSuffixChange,
   suffixError,
 }: SettingsPanelProps) {
   return (
@@ -46,7 +50,8 @@ function SettingsPanel({
               onChange={(e) => onSuffixChange(e.target.value)}
               placeholder="e.g., . or ?"
               maxLength={5}
-              className={`w-20 text-center ${suffixError ? "border-error" : ""}`}
+              disabled={disableSuffix}
+              className={`w-20 text-center ${suffixError ? "border-error" : ""} ${disableSuffix ? "opacity-50" : ""}`}
               aria-label="Suffix"
               aria-invalid={!!suffixError}
             />
@@ -54,6 +59,20 @@ function SettingsPanel({
               <span className="text-error text-xs">{suffixError}</span>
             )}
           </div>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <label
+            htmlFor="disable-suffix-toggle"
+            className="text-sm font-medium text-text-secondary"
+            title="When enabled, no punctuation will be added after expansion"
+          >
+            No punctuation
+          </label>
+          <Toggle
+            id="disable-suffix-toggle"
+            checked={disableSuffix}
+            onCheckedChange={onDisableSuffixChange}
+          />
         </div>
         <div className="flex items-center justify-between gap-4">
           <label
@@ -78,7 +97,8 @@ interface AddEntryFormProps {
     trigger: string,
     expansion: string,
     suffix?: string,
-    autoEnter?: boolean
+    autoEnter?: boolean,
+    disableSuffix?: boolean
   ) => Promise<void>;
   existingTriggers: string[];
 }
@@ -88,12 +108,13 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
   const [expansion, setExpansion] = useState("");
   const [suffix, setSuffix] = useState("");
   const [autoEnter, setAutoEnter] = useState(false);
+  const [disableSuffix, setDisableSuffix] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [suffixError, setSuffixError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const hasSettings = suffix !== "" || autoEnter;
+  const hasSettings = suffix !== "" || autoEnter || disableSuffix;
 
   const validateSuffix = (value: string): boolean => {
     if (value.length > 5) {
@@ -134,14 +155,16 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
       await onSubmit(
         trigger.trim(),
         expansion.trim(),
-        suffix.trim() || undefined,
-        autoEnter || undefined
+        disableSuffix ? undefined : (suffix.trim() || undefined),
+        autoEnter || undefined,
+        disableSuffix || undefined
       );
       setTrigger("");
       setExpansion("");
       setSuffix("");
       setSuffixError(null);
       setAutoEnter(false);
+      setDisableSuffix(false);
       setIsSettingsOpen(false);
     } finally {
       setIsSubmitting(false);
@@ -203,8 +226,10 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
             <SettingsPanel
               suffix={suffix}
               autoEnter={autoEnter}
+              disableSuffix={disableSuffix}
               onSuffixChange={handleSuffixChange}
               onAutoEnterChange={setAutoEnter}
+              onDisableSuffixChange={setDisableSuffix}
               suffixError={suffixError}
             />
           )}
@@ -220,10 +245,10 @@ interface EntryItemProps {
   onDelete: (id: string) => void;
   isEditing: boolean;
   isDeleting: boolean;
-  editValues: { trigger: string; expansion: string; suffix: string; autoEnter: boolean };
+  editValues: { trigger: string; expansion: string; suffix: string; autoEnter: boolean; disableSuffix: boolean };
   editError: string | null;
   editSuffixError: string | null;
-  onEditChange: (field: "trigger" | "expansion" | "suffix" | "autoEnter", value: string | boolean) => void;
+  onEditChange: (field: "trigger" | "expansion" | "suffix" | "autoEnter" | "disableSuffix", value: string | boolean) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onConfirmDelete: () => void;
@@ -247,8 +272,8 @@ function EntryItem({
 }: EntryItemProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const hasSettings = entry.suffix || entry.autoEnter;
-  const editHasSettings = editValues.suffix !== "" || editValues.autoEnter;
+  const hasSettings = entry.suffix || entry.autoEnter || entry.disableSuffix;
+  const editHasSettings = editValues.suffix !== "" || editValues.autoEnter || editValues.disableSuffix;
 
   if (isEditing) {
     return (
@@ -308,8 +333,10 @@ function EntryItem({
           <SettingsPanel
             suffix={editValues.suffix}
             autoEnter={editValues.autoEnter}
+            disableSuffix={editValues.disableSuffix}
             onSuffixChange={(value) => onEditChange("suffix", value)}
             onAutoEnterChange={(value) => onEditChange("autoEnter", value)}
+            onDisableSuffixChange={(value) => onEditChange("disableSuffix", value)}
             suffixError={editSuffixError}
           />
         )}
@@ -361,7 +388,7 @@ function EntryItem({
           {hasSettings && (
             <span
               className="text-heycat-orange shrink-0"
-              title={`Suffix: "${entry.suffix || ""}"${entry.autoEnter ? ", Auto-enter" : ""}`}
+              title={`${entry.disableSuffix ? "No punctuation" : `Suffix: "${entry.suffix || ""}"`}${entry.autoEnter ? ", Auto-enter" : ""}`}
             >
               <Settings className="h-4 w-4" />
             </span>
@@ -426,6 +453,7 @@ export function Dictionary(_props: DictionaryProps) {
     expansion: "",
     suffix: "",
     autoEnter: false,
+    disableSuffix: false,
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuffixError, setEditSuffixError] = useState<string | null>(null);
@@ -452,10 +480,11 @@ export function Dictionary(_props: DictionaryProps) {
       trigger: string,
       expansion: string,
       suffix?: string,
-      autoEnter?: boolean
+      autoEnter?: boolean,
+      disableSuffix?: boolean
     ) => {
       try {
-        await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter });
+        await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter, disableSuffix });
         toast({
           type: "success",
           title: "Entry added",
@@ -480,13 +509,14 @@ export function Dictionary(_props: DictionaryProps) {
       expansion: entry.expansion,
       suffix: entry.suffix || "",
       autoEnter: entry.autoEnter || false,
+      disableSuffix: entry.disableSuffix || false,
     });
     setEditError(null);
     setEditSuffixError(null);
   }, []);
 
   const handleEditChange = useCallback(
-    (field: "trigger" | "expansion" | "suffix" | "autoEnter", value: string | boolean) => {
+    (field: "trigger" | "expansion" | "suffix" | "autoEnter" | "disableSuffix", value: string | boolean) => {
       setEditValues((prev) => ({ ...prev, [field]: value }));
       if (field === "trigger") {
         setEditError(null);
@@ -533,8 +563,9 @@ export function Dictionary(_props: DictionaryProps) {
         id: editingId,
         trigger: trimmedTrigger,
         expansion: editValues.expansion.trim(),
-        suffix: editValues.suffix.trim() || undefined,
+        suffix: editValues.disableSuffix ? undefined : (editValues.suffix.trim() || undefined),
         autoEnter: editValues.autoEnter || undefined,
+        disableSuffix: editValues.disableSuffix || undefined,
       });
       toast({
         type: "success",
@@ -542,7 +573,7 @@ export function Dictionary(_props: DictionaryProps) {
         description: `"${trimmedTrigger}" has been updated.`,
       });
       setEditingId(null);
-      setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false });
+      setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false, disableSuffix: false });
       setEditError(null);
       setEditSuffixError(null);
     } catch (e) {
@@ -556,7 +587,7 @@ export function Dictionary(_props: DictionaryProps) {
 
   const handleCancelEdit = useCallback(() => {
     setEditingId(null);
-    setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false });
+    setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false, disableSuffix: false });
     setEditError(null);
     setEditSuffixError(null);
   }, []);

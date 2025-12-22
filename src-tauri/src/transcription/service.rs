@@ -653,6 +653,7 @@ mod tests {
                 expansion: "be right back".to_string(),
                 suffix: None,
                 auto_enter: false,
+                disable_suffix: false,
             },
             DictionaryEntry {
                 id: "2".to_string(),
@@ -660,6 +661,7 @@ mod tests {
                 expansion: "API".to_string(),
                 suffix: None,
                 auto_enter: false,
+                disable_suffix: false,
             },
         ];
 
@@ -775,6 +777,7 @@ mod tests {
             expansion: "be right back".to_string(),
             suffix: None,
             auto_enter: false,
+            disable_suffix: false,
         }];
         {
             let mut guard = dictionary_expander.write().unwrap();

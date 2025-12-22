@@ -188,10 +188,15 @@ impl CallbackState {
         }
     }
 
-    /// Flush any remaining samples in the resample buffer
+    /// Flush any remaining samples in the resample buffer and the resampler's internal delay buffer
     ///
     /// Called from stop() after the stream is dropped but before CallbackState is dropped.
-    /// This ensures residual samples that didn't fill a complete chunk are processed.
+    /// This ensures:
+    /// 1. Residual samples that didn't fill a complete chunk are processed via process_partial
+    /// 2. The resampler's internal delay buffer (output_delay frames) is flushed
+    ///
+    /// The FFT resampler holds samples internally during processing. Without flushing the delay
+    /// buffer, each recording loses ~100-500 samples, causing progressive audio speedup.
     fn flush_residuals(&self) {
         // Only need to flush if we have a resampler
         let Some(ref resampler) = self.resampler else {
@@ -203,42 +208,34 @@ impl CallbackState {
             Err(_) => return,
         };
 
-        let residual_count = resample_buf.len();
-        if residual_count == 0 || residual_count >= self.chunk_size {
-            // No residuals, or already a full chunk (would have been processed)
-            return;
-        }
-
-        crate::debug!("Flushing {} residual samples from resample buffer", residual_count);
-
-        // Zero-pad to chunk size
-        resample_buf.resize(self.chunk_size, 0.0);
-
-        // Process the padded chunk
         if let Ok(mut r) = resampler.lock() {
-            if let Ok(output) = r.process(&[resample_buf.as_slice()], None) {
-                if !output.is_empty() {
-                    // Calculate expected output samples based on residual count and resample ratio
-                    let expected_ratio = TARGET_SAMPLE_RATE as f64 / self.device_sample_rate as f64;
-                    let expected_output = (residual_count as f64 * expected_ratio).ceil() as usize;
-                    let actual_output = output[0].len().min(expected_output);
+            // Step 1: Process any remaining samples using process_partial
+            let residual_count = resample_buf.len();
+            if residual_count > 0 {
+                crate::debug!("Flushing {} residual samples via process_partial", residual_count);
+                if let Ok(output) = r.process_partial(Some(&[resample_buf.as_slice()]), None) {
+                    if !output.is_empty() && !output[0].is_empty() {
+                        self.output_sample_count.fetch_add(output[0].len(), Ordering::Relaxed);
+                        self.buffer.push_samples(&output[0]);
+                        crate::debug!("Residual flush produced {} output samples", output[0].len());
+                    }
+                }
+                resample_buf.clear();
+            }
 
-                    // Track these output samples
-                    self.output_sample_count.fetch_add(actual_output, Ordering::Relaxed);
-
-                    // Push only the meaningful samples (not the zero-padded tail)
-                    self.buffer.push_samples(&output[0][..actual_output]);
-
-                    crate::debug!(
-                        "Flushed {} residual samples -> {} output samples",
-                        residual_count, actual_output
-                    );
+            // Step 2: Flush the resampler's internal delay buffer (CRITICAL)
+            // The FFT resampler holds output_delay() frames internally that must be extracted
+            let delay = r.output_delay();
+            crate::debug!("Flushing resampler delay buffer (delay={} frames)", delay);
+            if let Ok(output) = r.process_partial(None::<&[&[f32]]>, None) {
+                if !output.is_empty() && !output[0].is_empty() {
+                    let flushed = output[0].len();
+                    self.output_sample_count.fetch_add(flushed, Ordering::Relaxed);
+                    self.buffer.push_samples(&output[0]);
+                    crate::debug!("Flushed {} samples from delay buffer", flushed);
                 }
             }
         }
-
-        // Clear the buffer
-        resample_buf.clear();
     }
 
     /// Log sample count diagnostics when recording stops
@@ -332,6 +329,12 @@ impl AudioCaptureBackend for CpalBackend {
         // Create resampler if needed
         let resampler: Option<Arc<Mutex<FftFixedIn<f32>>>> = if needs_resampling {
             let r = create_resampler(device_sample_rate, TARGET_SAMPLE_RATE, RESAMPLE_CHUNK_SIZE)?;
+            crate::info!(
+                "Resampler created: {}Hz -> {}Hz, output_delay={} frames",
+                device_sample_rate,
+                TARGET_SAMPLE_RATE,
+                r.output_delay()
+            );
             Some(Arc::new(Mutex::new(r)))
         } else {
             None
@@ -603,9 +606,6 @@ mod resampler_tests {
     /// Test that flush processes residuals without panicking
     #[test]
     fn test_flush_residuals_does_not_panic() {
-        let resampler =
-            FftFixedIn::<f32>::new(SOURCE_RATE, TARGET_RATE, CHUNK_SIZE, 1, 1).unwrap();
-
         // Test with various residual sizes
         for residual_size in [1, 100, 500, 1023] {
             let residual_samples: Vec<f32> = vec![0.5f32; residual_size];
@@ -635,5 +635,111 @@ mod resampler_tests {
                 residual_size
             );
         }
+    }
+
+    /// Test that process_partial(None) extracts samples from the delay buffer.
+    /// The FFT resampler holds output_delay() frames internally that must be flushed.
+    #[test]
+    fn test_process_partial_extracts_delay_buffer() {
+        let mut resampler =
+            FftFixedIn::<f32>::new(SOURCE_RATE, TARGET_RATE, CHUNK_SIZE, 1, 1).unwrap();
+
+        // The resampler has an internal delay buffer
+        let delay = resampler.output_delay();
+        assert!(delay > 0, "Resampler should have non-zero output delay");
+
+        // Process some chunks to fill the internal state
+        let mut total_output = 0usize;
+        for _ in 0..10 {
+            let chunk: Vec<f32> = vec![0.5f32; CHUNK_SIZE];
+            let output = resampler.process(&[&chunk], None).unwrap();
+            total_output += output[0].len();
+        }
+
+        // Now flush with process_partial(None) - this should extract remaining samples
+        let flush_output = resampler.process_partial(None::<&[&[f32]]>, None).unwrap();
+        let flushed_samples = if !flush_output.is_empty() {
+            flush_output[0].len()
+        } else {
+            0
+        };
+
+        // After flushing, we should have gotten some samples from the delay buffer
+        // The exact number depends on the resampler's internal state, but it should be > 0
+        assert!(
+            flushed_samples > 0,
+            "process_partial(None) should extract samples from delay buffer, got {}",
+            flushed_samples
+        );
+    }
+
+    /// Test that sample ratio converges toward expected value after proper flushing.
+    /// With proper flushing, the ratio error should be lower than without flushing.
+    ///
+    /// Note: Due to FFT resampler internal buffering characteristics, the exact ratio
+    /// depends on total sample count. The key behavior is that flushing extracts
+    /// additional samples that would otherwise be lost.
+    #[test]
+    fn test_sample_ratio_improves_with_flush() {
+        // Create two resamplers to compare with vs without flushing
+        let mut resampler_with_flush =
+            FftFixedIn::<f32>::new(SOURCE_RATE, TARGET_RATE, CHUNK_SIZE, 1, 1).unwrap();
+        let mut resampler_without_flush =
+            FftFixedIn::<f32>::new(SOURCE_RATE, TARGET_RATE, CHUNK_SIZE, 1, 1).unwrap();
+
+        let expected_ratio = TARGET_RATE as f64 / SOURCE_RATE as f64;
+
+        let mut total_input = 0usize;
+        let mut output_with_flush = 0usize;
+        let mut output_without_flush = 0usize;
+
+        // Process chunks (simulating a recording)
+        for _ in 0..100 {
+            let chunk: Vec<f32> = vec![0.5f32; CHUNK_SIZE];
+            let out1 = resampler_with_flush.process(&[&chunk], None).unwrap();
+            let out2 = resampler_without_flush.process(&[&chunk], None).unwrap();
+            total_input += CHUNK_SIZE;
+            output_with_flush += out1[0].len();
+            output_without_flush += out2[0].len();
+        }
+
+        // Add some residual samples via process_partial (for with_flush)
+        let residual: Vec<f32> = vec![0.5f32; 500];
+        total_input += 500;
+        let residual_output = resampler_with_flush.process_partial(Some(&[&residual[..]]), None).unwrap();
+        if !residual_output.is_empty() {
+            output_with_flush += residual_output[0].len();
+        }
+
+        // Flush the delay buffer with process_partial(None)
+        let flush_output = resampler_with_flush.process_partial(None::<&[&[f32]]>, None).unwrap();
+        if !flush_output.is_empty() {
+            output_with_flush += flush_output[0].len();
+        }
+
+        // Calculate ratio errors
+        let ratio_with_flush = output_with_flush as f64 / total_input as f64;
+        let ratio_without_flush = output_without_flush as f64 / (total_input - 500) as f64; // without residual
+
+        let error_with_flush = ((ratio_with_flush - expected_ratio) / expected_ratio * 100.0).abs();
+        let error_without_flush = ((ratio_without_flush - expected_ratio) / expected_ratio * 100.0).abs();
+
+        // The key assertion: flushing should get us more output samples
+        // (or at least not make things worse)
+        assert!(
+            output_with_flush > output_without_flush,
+            "Flushing should produce more output samples: with_flush={}, without_flush={}",
+            output_with_flush,
+            output_without_flush
+        );
+
+        // The ratio with flushing should be at least as good or better
+        // (Note: exact tolerance depends on sample count, so we just verify improvement)
+        assert!(
+            error_with_flush <= error_without_flush + 0.5,
+            "Flushing should not significantly degrade ratio: with_flush error={:.3}%, without_flush error={:.3}%",
+            error_with_flush,
+            error_without_flush
+        );
     }
 }

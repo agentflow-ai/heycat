@@ -27,6 +27,7 @@ fn test_complete_crud_workflow() {
             "be right back".to_string(),
             Some(".".to_string()),
             true,
+            false, // disable_suffix
         )
         .unwrap();
     assert_eq!(entry.trigger, "brb");
@@ -48,6 +49,7 @@ fn test_complete_crud_workflow() {
             "be right back!".to_string(),
             None,
             false,
+            false, // disable_suffix
         )
         .unwrap();
     assert_eq!(updated.expansion, "be right back!");
@@ -76,6 +78,7 @@ fn test_update_nonexistent_returns_error() {
         "test expansion".to_string(),
         None,
         false,
+        false, // disable_suffix
     );
 
     assert!(matches!(result, Err(DictionaryError::NotFound(_))));
@@ -104,10 +107,11 @@ fn test_entries_persist_across_reload() {
                 "be right back".to_string(),
                 Some(".".to_string()),
                 true,
+                false, // disable_suffix
             )
             .unwrap();
         let _entry2 = store
-            .add("api".to_string(), "API".to_string(), None, false)
+            .add("api".to_string(), "API".to_string(), None, false, false)
             .unwrap();
         entry1.id
     };

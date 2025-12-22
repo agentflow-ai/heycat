@@ -13,4 +13,6 @@ export interface DictionaryEntry {
   suffix?: string;
   /** Whether to simulate enter keypress after expansion */
   autoEnter?: boolean;
+  /** Whether to suppress any trailing punctuation from the transcription */
+  disableSuffix?: boolean;
 }

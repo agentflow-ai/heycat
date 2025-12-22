@@ -24,12 +24,14 @@ export function useDictionary() {
       expansion: string;
       suffix?: string;
       autoEnter?: boolean;
+      disableSuffix?: boolean;
     }) =>
       invoke<DictionaryEntry>("add_dictionary_entry", {
         trigger: data.trigger,
         expansion: data.expansion,
         suffix: data.suffix,
         auto_enter: data.autoEnter,
+        disable_suffix: data.disableSuffix,
       }),
     // Note: NO onSuccess invalidation - Event Bridge handles it
   });
@@ -41,6 +43,7 @@ export function useDictionary() {
       expansion: string;
       suffix?: string;
       autoEnter?: boolean;
+      disableSuffix?: boolean;
     }) =>
       invoke<void>("update_dictionary_entry", {
         id: data.id,
@@ -48,6 +51,7 @@ export function useDictionary() {
         expansion: data.expansion,
         suffix: data.suffix,
         auto_enter: data.autoEnter,
+        disable_suffix: data.disableSuffix,
       }),
     // Note: NO onSuccess invalidation - Event Bridge handles it
   });
