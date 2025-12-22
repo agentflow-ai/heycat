@@ -25,7 +25,9 @@ pub mod wav;
 pub use wav::{encode_wav, parse_duration_from_file, SystemFileWriter};
 
 pub mod denoiser;
-pub use denoiser::{load_embedded_models, DenoiserError, DtlnModels};
+pub use denoiser::{
+    load_embedded_models, DenoiserError, DtlnDenoiser, DtlnModels, FRAME_SHIFT, FRAME_SIZE,
+};
 
 #[cfg(test)]
 mod mod_test;

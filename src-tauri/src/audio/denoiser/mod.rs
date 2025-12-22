@@ -8,6 +8,9 @@ use std::path::Path;
 use thiserror::Error;
 use tract_onnx::prelude::*;
 
+mod dtln;
+pub use dtln::{DtlnDenoiser, FRAME_SHIFT, FRAME_SIZE, FFT_BINS};
+
 #[cfg(test)]
 mod tests;
 

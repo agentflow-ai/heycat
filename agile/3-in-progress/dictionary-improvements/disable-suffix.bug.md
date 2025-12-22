@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: completed
 severity: major
 origin: manual
 created: 2025-12-22
@@ -30,13 +30,17 @@ When a dictionary entry matches during transcription, the expansion still receiv
 
 ## Root Cause
 
-The expander appends suffix when present, but the transcription service also applies punctuation based on voice/context. When a user wants no punctuation, they need an explicit flag to suppress all trailing punctuation.
+**Original issue:** The expander appends suffix when present, but the transcription service also applies punctuation based on voice/context. When a user wants no punctuation, they need an explicit flag to suppress all trailing punctuation.
+
+**Follow-up issue (discovered 2025-12-22):** The `disable_suffix` feature was implemented but didn't work because the Rust `DictionaryEntry` struct used snake_case serde serialization (`disable_suffix`) while the frontend expected camelCase (`disableSuffix`). This caused the frontend to always read `undefined` for the `disableSuffix` field when loading entries, making the toggle appear OFF even when the value was stored as `true` in the backend.
 
 ## Fix Approach
 
-Added a `disable_suffix` boolean field to `DictionaryEntry` that, when true:
+**Original fix:** Added a `disable_suffix` boolean field to `DictionaryEntry` that, when true:
 1. Suppresses any explicit suffix from being appended
 2. Strips trailing punctuation after the trigger match in the transcription text
+
+**Follow-up fix:** Added `#[serde(rename_all = "camelCase")]` to the `DictionaryEntry` struct to serialize/deserialize using camelCase, matching frontend expectations. Added `alias` attributes for backward compatibility with existing JSON files that used snake_case.
 
 ## Acceptance Criteria
 
@@ -68,49 +72,96 @@ Manual: Create entry with "disable suffix", trigger via voice, verify no punctua
 
 ## Review
 
+**Reviewer:** Claude Opus 4.5
 **Date:** 2025-12-22
 **Verdict:** APPROVED
 
-### Acceptance Criteria Verification
+### Pre-Review Gates
 
-| Criteria | Status | Evidence |
-|----------|--------|----------|
-| User can configure a dictionary entry to have no suffix applied | PASS | UI includes "No punctuation" toggle in SettingsPanel (`Dictionary.tsx:60-75`), state managed via `disableSuffix` state variable |
-| When "disable suffix" is set, default transcription punctuation is NOT appended | PASS | `DictionaryExpander.expand()` strips trailing punctuation `[.!?,;:]*` when `disable_suffix=true` (`expander.rs:77-95`) |
-| Existing entries with explicit suffix still work correctly | PASS | Conditional logic preserves normal suffix behavior when `disable_suffix=false` (`expander.rs:70-76`) |
-| Tests added to prevent regression | PASS | 8 new test cases in `expander_test.rs:177-284` covering all scenarios |
+#### 1. Build Warning Check
+```
+No new warnings related to this fix. Existing warnings are for the unfinished noise-suppression feature.
+```
+PASS
 
-### Code Quality Assessment
+#### 2. Command Registration Check
+```
+Unregistered: check_parakeet_model_status, download_model (unrelated to this fix - noise-suppression feature)
+```
+PASS (no new commands in this fix)
 
-**Backend Implementation:**
-- `DictionaryEntry` struct updated with `disable_suffix: bool` field with `#[serde(default)]` for backward compatibility (`store.rs:30-33`)
-- `DictionaryExpander.expand()` correctly handles the priority: `disable_suffix` takes precedence over explicit `suffix` field
-- Regex pattern `[.!?,;:]*` strips common punctuation marks after trigger match
-- Store methods (`add`, `update`) accept new parameter
-- Tauri commands (`add_dictionary_entry`, `update_dictionary_entry`) accept and pass through `disable_suffix`
+#### 3. Event Subscription Check
+No new events introduced by this fix.
+PASS
 
-**Frontend Implementation:**
-- TypeScript type `DictionaryEntry` includes `disableSuffix?: boolean` (`types/dictionary.ts:17`)
-- UI includes toggle with clear label "No punctuation" with tooltip explanation
-- Suffix input field is disabled when `disableSuffix` is true (good UX)
-- When `disableSuffix=true`, suffix field value is not sent to backend (`Dictionary.tsx:158`)
-- Hook `useDictionary` correctly maps camelCase to snake_case for Tauri IPC
+### Manual Review
 
-**Test Coverage:**
-- `test_expand_with_disable_suffix_strips_trailing_punctuation` - verifies `.!?,;:` are stripped
-- `test_expand_with_disable_suffix_no_trailing_punctuation` - works without punctuation
-- `test_expand_with_disable_suffix_multiple_punctuation` - handles `...` and `!?`
-- `test_expand_without_disable_suffix_preserves_punctuation` - backward compatibility
-- `test_expand_disable_suffix_ignores_explicit_suffix` - priority handling
-- `test_expand_with_suffix_and_disable_suffix_false` - normal suffix behavior preserved
-- `test_expand_disable_suffix_in_sentence` - mid-sentence handling
-- All 22 expander tests pass, all 24 frontend Dictionary tests pass
+#### 1. Is the code wired up end-to-end?
+- [x] The `#[serde(rename_all = "camelCase")]` attribute on `DictionaryEntry` is used when serializing responses from Tauri commands
+- [x] `list_dictionary_entries` returns `Vec<DictionaryEntry>` which now serializes with camelCase
+- [x] Frontend `DictionaryEntry` interface expects `disableSuffix` (camelCase) - matches
+- [x] Frontend sends `disable_suffix` (snake_case) in invoke parameters - backend accepts this via Tauri command parameters
 
-### Issues Found
+PASS
 
-**Minor Issue (non-blocking):**
-The sentence test case `"I'll brb. Talk soon"` produces `"I'll be right back Talk soon"` (missing space after expansion when period is stripped). This is an edge case that may be acceptable behavior, as users typically use disable_suffix for standalone abbreviations, not mid-sentence triggers.
+#### 2. What would break if this code was deleted?
 
-### Conclusion
+| New Code | Type | Production Call Site | Reachable from main/UI? |
+|----------|------|---------------------|-------------------------|
+| `#[serde(rename_all = "camelCase")]` | attribute | DictionaryEntry serialization via list/add commands | YES |
+| `alias = "disable_suffix"` | attribute | Backward compat for existing JSON files | YES |
+| `alias = "auto_enter"` | attribute | Backward compat for existing JSON files | YES |
 
-The implementation is complete, well-tested, and follows project architecture patterns. All acceptance criteria are met. The bug fix properly addresses the root cause by allowing users to explicitly suppress trailing punctuation on dictionary expansions.
+PASS - All changes are production-reachable
+
+#### 3. Where does the data flow?
+
+```
+[UI] Dictionary.tsx toggles disableSuffix
+     |
+     v
+[Hook] useDictionary.ts:34 invoke("add_dictionary_entry", {..., disable_suffix})
+     |
+     v
+[Command] commands/dictionary.rs:70 add_dictionary_entry(disable_suffix: Option<bool>)
+     |
+     v
+[Store] dictionary/store.rs:166 DictionaryEntry { disable_suffix: true }
+     |
+     v (on list)
+[Command] commands/dictionary.rs:48 list_dictionary_entries() -> Vec<DictionaryEntry>
+     |
+     v (serialization with rename_all = "camelCase")
+[JSON] {"disableSuffix": true, ...}
+     |
+     v
+[Frontend] DictionaryEntry.disableSuffix = true (UI reads correct value)
+```
+
+PASS - Complete data flow verified
+
+#### 4. Are there any deferrals?
+```bash
+grep -rn "TODO\|FIXME\|XXX\|HACK\|handled separately\|will be implemented\|for now" src-tauri/src/dictionary/
+```
+No matches found.
+
+PASS
+
+#### 5. Test Coverage
+
+- `test_expand_disable_suffix_case_insensitive` - Tests the specific bug scenario (Clear? -> /clear)
+- `test_expand_with_disable_suffix_strips_trailing_punctuation` - Covers all punctuation types
+- `test_backward_compatible_deserialization` - Ensures old JSON files still load
+
+All 28 dictionary tests pass.
+
+PASS
+
+### Summary
+
+The fix correctly addresses the serde serialization mismatch:
+1. `#[serde(rename_all = "camelCase")]` ensures JSON responses use camelCase field names
+2. `alias` attributes maintain backward compatibility with existing snake_case JSON files
+3. The expander logic was already correct - the issue was purely serialization
+4. Tests comprehensively cover the disable_suffix functionality including case-insensitive matching
