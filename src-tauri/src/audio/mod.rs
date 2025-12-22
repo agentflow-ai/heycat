@@ -24,6 +24,9 @@ pub use thread::AudioThreadHandle;
 pub mod wav;
 pub use wav::{encode_wav, parse_duration_from_file, SystemFileWriter};
 
+pub mod denoiser;
+pub use denoiser::{load_embedded_models, DenoiserError, DtlnModels};
+
 #[cfg(test)]
 mod mod_test;
 

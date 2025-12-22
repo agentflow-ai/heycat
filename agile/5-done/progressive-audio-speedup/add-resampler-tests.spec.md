@@ -1,8 +1,9 @@
 ---
-status: pending
+status: completed
 created: 2025-12-22
-completed: null
+completed: 2025-12-22
 dependencies: ["flush-residual-samples"]
+review_round: 1
 ---
 
 # Spec: Add unit tests for resampler residual sample handling

@@ -167,7 +167,7 @@ status: active
 The denoiser will be inserted into the existing audio pipeline between format conversion and the AudioBuffer:
 
 ```
-Microphone → cpal → format conversion → [DTLN DENOISER] → AudioBuffer → VAD → transcription
+Microphone → cpal → format conversion → DTLN Denoiser → AudioBuffer → VAD → transcription
 ```
 
 ### Processing Parameters

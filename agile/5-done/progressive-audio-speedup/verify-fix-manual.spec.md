@@ -1,7 +1,7 @@
 ---
-status: pending
+status: completed
 created: 2025-12-22
-completed: null
+completed: 2025-12-22
 dependencies: ["add-resampler-tests"]
 ---
 

@@ -282,3 +282,18 @@ fn test_expand_disable_suffix_in_sentence() {
         "I'll be right back Talk soon"
     );
 }
+
+#[test]
+fn test_expand_disable_suffix_case_insensitive() {
+    // Test disable_suffix with case-insensitive matching
+    // This is the bug: "Clear?" should become "/clear" not "/clear?"
+    let entries = vec![make_entry_with_disable_suffix("clear", "/clear")];
+    let expander = DictionaryExpander::new(&entries);
+
+    // Case variations with punctuation should all strip the punctuation
+    assert_eq!(expander.expand("clear?").expanded_text, "/clear");
+    assert_eq!(expander.expand("Clear?").expanded_text, "/clear");
+    assert_eq!(expander.expand("CLEAR?").expanded_text, "/clear");
+    assert_eq!(expander.expand("Clear.").expanded_text, "/clear");
+    assert_eq!(expander.expand("Clear!").expanded_text, "/clear");
+}
