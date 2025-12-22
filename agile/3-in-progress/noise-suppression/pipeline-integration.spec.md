@@ -5,7 +5,6 @@ completed: 2025-12-22
 dependencies: ["dtln-denoiser"]
 review_round: 1
 ---
-
 # Spec: Integrate denoiser into audio capture pipeline
 
 ## Description

@@ -55,6 +55,12 @@ pub fn run() {
                 } else {
                     tauri_plugin_log::log::LevelFilter::Info
                 })
+                // Suppress verbose DEBUG logs from tract ONNX inference library
+                // These flood the console during model optimization and cause multi-second delays
+                .level_for("tract_core", tauri_plugin_log::log::LevelFilter::Warn)
+                .level_for("tract_onnx", tauri_plugin_log::log::LevelFilter::Warn)
+                .level_for("tract_hir", tauri_plugin_log::log::LevelFilter::Warn)
+                .level_for("tract_linalg", tauri_plugin_log::log::LevelFilter::Warn)
                 .build(),
         )
         .setup(|app| {
