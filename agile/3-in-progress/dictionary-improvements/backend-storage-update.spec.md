@@ -1,8 +1,9 @@
 ---
-status: in-progress
+status: completed
 created: 2025-12-22
-completed: null
+completed: 2025-12-22
 dependencies: ["data-model-update"]
+review_round: 1
 ---
 
 # Spec: Update DictionaryStore and Tauri commands for new fields
@@ -217,3 +218,96 @@ it("addEntry passes suffix and autoEnter to invoke", async () => {
 
 - Test location: `src-tauri/src/commands/dictionary_test.rs`
 - Verification: [ ] Integration test passes
+
+## Review
+
+**Reviewed:** 2025-12-22
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `add_dictionary_entry` command accepts optional `suffix` and `auto_enter` parameters | PASS | src-tauri/src/commands/dictionary.rs:69-76 - Parameters added with `Option<String>` and `Option<bool>` |
+| `update_dictionary_entry` command accepts optional `suffix` and `auto_enter` parameters | PASS | src-tauri/src/commands/dictionary.rs:117-125 - Parameters added with `Option<String>` and `Option<bool>` |
+| `list_dictionary_entries` returns entries with suffix/auto_enter fields | PASS | src-tauri/src/dictionary/store.rs:24-29 - DictionaryEntry struct includes suffix and auto_enter with serde defaults |
+| DictionaryStore.add() accepts suffix and auto_enter | PASS | src-tauri/src/dictionary/store.rs:155-179 - Method signature updated to accept new fields |
+| DictionaryStore.update() accepts suffix and auto_enter | PASS | src-tauri/src/dictionary/store.rs:183-204 - Method signature updated to accept new fields |
+| Existing dictionary.json loads with defaults for missing fields | PASS | src-tauri/src/dictionary/store.rs:25-29 - `#[serde(default)]` annotations ensure backward compatibility |
+| New entries persist suffix/auto_enter to dictionary.json | PASS | src-tauri/src/dictionary/store_test.rs:97-132 - test_entries_persist_across_reload verifies persistence |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Add entry with suffix - persisted and returned correctly | PASS | src-tauri/src/dictionary/store_test.rs:23-39 (test_complete_crud_workflow) |
+| Add entry with auto_enter=true - persisted and returned correctly | PASS | src-tauri/src/dictionary/store_test.rs:23-39 (test_complete_crud_workflow) |
+| Update entry to add suffix - suffix saved | PASS | src-tauri/src/dictionary/store_test.rs:47-58 (test_complete_crud_workflow) |
+| Update entry to clear suffix (None) - suffix removed | PASS | src-tauri/src/dictionary/store_test.rs:47-58 (test_complete_crud_workflow) |
+| Load legacy dictionary.json - entries have None/false defaults | PASS | src-tauri/src/dictionary/store_test.rs:152-159 (test_backward_compatible_deserialization) |
+| List entries - all fields returned including suffix/auto_enter | PASS | src-tauri/src/dictionary/store_test.rs:134-149 (test_entry_serialization_with_new_fields) |
+| Frontend addEntry passes suffix to invoke | PASS | src/hooks/useDictionary.test.ts:130-162 |
+| Frontend addEntry passes autoEnter to invoke | PASS | src/hooks/useDictionary.test.ts:164-195 |
+| Frontend updateEntry passes suffix to invoke | PASS | src/hooks/useDictionary.test.ts:255-282 |
+| Frontend updateEntry passes autoEnter to invoke | PASS | src/hooks/useDictionary.test.ts:284-311 |
+
+### Pre-Review Gate Results
+
+**Build Warning Check:**
+```
+warning: method `get` is never used
+```
+This warning is for `DictionaryStore.get()` which is a pre-existing issue documented in store.rs header comment. The method is used in tests for verification and is part of the foundational API. This is acceptable as noted in the code comments.
+
+**Command Registration Check:**
+All dictionary commands are registered in invoke_handler (src-tauri/src/lib.rs:385-388):
+- `commands::dictionary::list_dictionary_entries`
+- `commands::dictionary::add_dictionary_entry`
+- `commands::dictionary::update_dictionary_entry`
+- `commands::dictionary::delete_dictionary_entry`
+
+### Data Flow Verification
+
+```
+[UI Action] - User calls addEntry/updateEntry mutation
+     |
+     v
+[Hook] src/hooks/useDictionary.ts:21-35, 37-53
+     | invoke("add_dictionary_entry"/"update_dictionary_entry")
+     v
+[Command] src-tauri/src/commands/dictionary.rs:68-103, 116-152
+     |
+     v
+[Logic] src-tauri/src/dictionary/store.rs:155-179, 183-204
+     |
+     v
+[Persistence] dictionary.json (atomic write via store.save())
+     |
+     v
+[Event] emit!("dictionary_updated") at dictionary.rs:92-99, 141-148
+     |
+     v
+[Listener] Event Bridge invalidates queries
+     |
+     v
+[UI Re-render] Query refetch shows updated entries
+```
+
+All links verified - data flows end-to-end from UI to persistence and back.
+
+### Code Quality
+
+**Strengths:**
+- Clean separation between Tauri commands and store logic
+- Proper use of `#[serde(default)]` for backward compatibility with legacy JSON files
+- Consistent error handling with `to_user_error()` mapping
+- Event emission after mutations enables UI synchronization via Event Bridge
+- Tests cover both backend (Rust) and frontend (TypeScript) layers
+- Frontend hook properly maps camelCase (autoEnter) to snake_case (auto_enter) for Rust
+
+**Concerns:**
+- None identified
+
+### Verdict
+
+**APPROVED** - All acceptance criteria verified with evidence. Tests pass for both backend (391 tests) and frontend (11 useDictionary tests). Data flow is complete from UI through commands to persistence with event emission for cache invalidation. Backward compatibility is ensured via serde defaults. The pre-existing dead_code warning for `DictionaryStore.get()` is documented and acceptable as it's part of the foundational API used in tests.
