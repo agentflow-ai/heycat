@@ -288,3 +288,19 @@ body {
 .animate-slide-in {
   animation: slide-in-from-right var(--duration-normal) var(--ease-out);
 }
+
+/* Settings Panel Animation */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideDown {
+  animation: slideDown var(--duration-normal) var(--ease-out);
+}

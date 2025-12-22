@@ -34,6 +34,12 @@ const sampleEntries: DictionaryEntry[] = [
   { id: "3", trigger: "ty", expansion: "thank you" },
 ];
 
+// Sample entries with settings configured
+const entriesWithSettings: DictionaryEntry[] = [
+  { id: "1", trigger: "brb", expansion: "be right back", suffix: ".", autoEnter: true },
+  { id: "2", trigger: "omw", expansion: "on my way" },
+];
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -390,5 +396,172 @@ describe("Dictionary", () => {
 
     // Edit and delete buttons should be back
     expect(screen.getByRole("button", { name: /edit brb/i })).toBeDefined();
+  });
+
+  describe("Settings Panel", () => {
+    it("add form: toggles settings panel on icon click", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockResolvedValue([]);
+
+      render(<Dictionary />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Trigger phrase")).toBeDefined();
+      });
+
+      // Settings panel should be hidden initially
+      expect(screen.queryByTestId("settings-panel")).toBeNull();
+
+      // Click settings icon
+      await user.click(screen.getByRole("button", { name: /toggle settings/i }));
+
+      // Settings panel should now be visible
+      expect(screen.getByTestId("settings-panel")).toBeDefined();
+      expect(screen.getByLabelText("Suffix")).toBeDefined();
+      expect(screen.getByLabelText("Auto-enter")).toBeDefined();
+
+      // Click settings icon again to close
+      await user.click(screen.getByRole("button", { name: /toggle settings/i }));
+
+      // Settings panel should be hidden
+      expect(screen.queryByTestId("settings-panel")).toBeNull();
+    });
+
+    it("add form: saves entry with suffix and autoEnter", async () => {
+      const user = userEvent.setup();
+      const newEntry: DictionaryEntry = {
+        id: "new-1",
+        trigger: "ty",
+        expansion: "thank you",
+        suffix: "!",
+        autoEnter: true,
+      };
+
+      mockInvoke
+        .mockResolvedValueOnce([]) // Initial load
+        .mockResolvedValueOnce(newEntry); // add_dictionary_entry response
+
+      render(<Dictionary />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Trigger phrase")).toBeDefined();
+      });
+
+      // Fill form
+      await user.type(screen.getByLabelText("Trigger phrase"), "ty");
+      await user.type(screen.getByLabelText("Expansion text"), "thank you");
+
+      // Open settings
+      await user.click(screen.getByRole("button", { name: /toggle settings/i }));
+
+      // Enter suffix
+      await user.type(screen.getByLabelText("Suffix"), "!");
+
+      // Toggle auto-enter
+      await user.click(screen.getByLabelText("Auto-enter"));
+
+      // Submit
+      await user.click(screen.getByRole("button", { name: /^add$/i }));
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("add_dictionary_entry", {
+          trigger: "ty",
+          expansion: "thank you",
+          suffix: "!",
+          auto_enter: true,
+        });
+      });
+    });
+
+    it("edit: shows settings panel with correct values", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockReset();
+      mockInvoke.mockResolvedValue(entriesWithSettings);
+
+      render(<Dictionary />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(screen.getByText('"brb"')).toBeDefined();
+      });
+
+      // Click edit on entry with settings
+      await user.click(screen.getByRole("button", { name: /edit brb/i }));
+
+      // Open settings panel - get all toggle settings buttons and use the one in edit mode (not the add form one)
+      const toggleButtons = screen.getAllByRole("button", { name: /toggle settings/i });
+      // The first one is in add form, the second one is in edit mode
+      await user.click(toggleButtons[1]);
+
+      // Verify settings are populated
+      expect(screen.getByLabelText("Suffix")).toHaveValue(".");
+      expect(screen.getByLabelText("Auto-enter")).toBeChecked();
+    });
+
+    it("edit: saves entry with updated suffix and autoEnter", async () => {
+      const user = userEvent.setup();
+      mockInvoke.mockReset();
+      mockInvoke.mockResolvedValue(entriesWithSettings);
+
+      render(<Dictionary />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(screen.getByText('"brb"')).toBeDefined();
+      });
+
+      // Click edit
+      await user.click(screen.getByRole("button", { name: /edit brb/i }));
+
+      // Open settings panel - get all toggle settings buttons and use the one in edit mode (not the add form one)
+      const toggleButtons = screen.getAllByRole("button", { name: /toggle settings/i });
+      // The first one is in add form, the second one is in edit mode
+      await user.click(toggleButtons[1]);
+
+      // Modify suffix
+      const suffixInput = screen.getByLabelText("Suffix");
+      await user.clear(suffixInput);
+      await user.type(suffixInput, "?");
+
+      // Toggle auto-enter off
+      await user.click(screen.getByLabelText("Auto-enter"));
+
+      // Save
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("update_dictionary_entry", {
+          id: "1",
+          trigger: "brb",
+          expansion: "be right back",
+          suffix: "?",
+          auto_enter: undefined, // false becomes undefined
+        });
+      });
+    });
+
+    it("shows settings indicator when entry has settings", async () => {
+      mockInvoke.mockReset();
+      mockInvoke.mockResolvedValue(entriesWithSettings);
+
+      render(<Dictionary />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(screen.getByText('"brb"')).toBeDefined();
+      });
+
+      // Entry with settings should have a visible settings indicator
+      // The Settings icon within the entry row indicates settings are configured
+      const entryList = screen.getByRole("list");
+      const entries = entryList.querySelectorAll('[role="listitem"]');
+
+      // First entry (brb) has settings - should have heycat-orange colored icon
+      const firstEntry = entries[0];
+      const settingsIndicator = firstEntry.querySelector(".text-heycat-orange");
+      expect(settingsIndicator).not.toBeNull();
+
+      // Second entry (omw) has no settings - should not have indicator
+      const secondEntry = entries[1];
+      const noIndicator = secondEntry.querySelector(".text-heycat-orange");
+      expect(noIndicator).toBeNull();
+    });
   });
 });

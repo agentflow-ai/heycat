@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Book, Pencil, Trash2, Check, X } from "lucide-react";
-import { Card, CardContent, Button, Input, FormField } from "../components/ui";
+import { Plus, Search, Book, Pencil, Trash2, Check, X, Settings } from "lucide-react";
+import { Card, CardContent, Button, Input, FormField, Toggle } from "../components/ui";
 import { useToast } from "../components/overlays";
 import { useDictionary } from "../hooks/useDictionary";
 import type { DictionaryEntry } from "../types/dictionary";
@@ -10,16 +10,81 @@ export interface DictionaryProps {
   onNavigate?: (page: string) => void;
 }
 
+interface SettingsPanelProps {
+  suffix: string;
+  autoEnter: boolean;
+  onSuffixChange: (value: string) => void;
+  onAutoEnterChange: (value: boolean) => void;
+}
+
+function SettingsPanel({
+  suffix,
+  autoEnter,
+  onSuffixChange,
+  onAutoEnterChange,
+}: SettingsPanelProps) {
+  return (
+    <div
+      className="mt-3 p-3 bg-neutral-100 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 animate-slideDown"
+      data-testid="settings-panel"
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-4">
+          <label
+            htmlFor="suffix-input"
+            className="text-sm font-medium text-text-secondary"
+          >
+            Suffix
+          </label>
+          <Input
+            id="suffix-input"
+            type="text"
+            value={suffix}
+            onChange={(e) => onSuffixChange(e.target.value)}
+            placeholder="e.g., . or ?"
+            maxLength={5}
+            className="w-20 text-center"
+            aria-label="Suffix"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <label
+            htmlFor="auto-enter-toggle"
+            className="text-sm font-medium text-text-secondary"
+          >
+            Auto-enter
+          </label>
+          <Toggle
+            id="auto-enter-toggle"
+            checked={autoEnter}
+            onCheckedChange={onAutoEnterChange}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface AddEntryFormProps {
-  onSubmit: (trigger: string, expansion: string) => Promise<void>;
+  onSubmit: (
+    trigger: string,
+    expansion: string,
+    suffix?: string,
+    autoEnter?: boolean
+  ) => Promise<void>;
   existingTriggers: string[];
 }
 
 function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
   const [trigger, setTrigger] = useState("");
   const [expansion, setExpansion] = useState("");
+  const [suffix, setSuffix] = useState("");
+  const [autoEnter, setAutoEnter] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const hasSettings = suffix !== "" || autoEnter;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,9 +103,17 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
 
     setIsSubmitting(true);
     try {
-      await onSubmit(trigger.trim(), expansion.trim());
+      await onSubmit(
+        trigger.trim(),
+        expansion.trim(),
+        suffix.trim() || undefined,
+        autoEnter || undefined
+      );
       setTrigger("");
       setExpansion("");
+      setSuffix("");
+      setAutoEnter(false);
+      setIsSettingsOpen(false);
     } finally {
       setIsSubmitting(false);
     }
@@ -49,39 +122,62 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
   return (
     <Card>
       <CardContent className="p-4">
-        <form onSubmit={handleSubmit} className="flex gap-3 items-start">
-          <FormField
-            label="Trigger"
-            error={triggerError ?? undefined}
-            className="flex-1"
-          >
-            <Input
-              type="text"
-              placeholder="e.g., brb"
-              value={trigger}
-              onChange={(e) => {
-                setTrigger(e.target.value);
-                setTriggerError(null);
-              }}
-              aria-label="Trigger phrase"
-              aria-invalid={!!triggerError}
-            />
-          </FormField>
-          <FormField label="Expansion" className="flex-[2]">
-            <Input
-              type="text"
-              placeholder="e.g., be right back"
-              value={expansion}
-              onChange={(e) => setExpansion(e.target.value)}
-              aria-label="Expansion text"
-            />
-          </FormField>
-          <div className="pt-6">
-            <Button type="submit" disabled={isSubmitting}>
-              <Plus className="h-4 w-4" />
-              Add
-            </Button>
+        <form onSubmit={handleSubmit}>
+          <div className="flex gap-3 items-start">
+            <FormField
+              label="Trigger"
+              error={triggerError ?? undefined}
+              className="flex-1"
+            >
+              <Input
+                type="text"
+                placeholder="e.g., brb"
+                value={trigger}
+                onChange={(e) => {
+                  setTrigger(e.target.value);
+                  setTriggerError(null);
+                }}
+                aria-label="Trigger phrase"
+                aria-invalid={!!triggerError}
+              />
+            </FormField>
+            <FormField label="Expansion" className="flex-[2]">
+              <Input
+                type="text"
+                placeholder="e.g., be right back"
+                value={expansion}
+                onChange={(e) => setExpansion(e.target.value)}
+                aria-label="Expansion text"
+              />
+            </FormField>
+            <div className="pt-6 flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                aria-label="Toggle settings"
+                aria-expanded={isSettingsOpen}
+                className={hasSettings ? "text-heycat-orange" : ""}
+              >
+                <Settings className="h-4 w-4" />
+                {hasSettings && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-heycat-orange rounded-full" />
+                )}
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                <Plus className="h-4 w-4" />
+                Add
+              </Button>
+            </div>
           </div>
+          {isSettingsOpen && (
+            <SettingsPanel
+              suffix={suffix}
+              autoEnter={autoEnter}
+              onSuffixChange={setSuffix}
+              onAutoEnterChange={setAutoEnter}
+            />
+          )}
         </form>
       </CardContent>
     </Card>
@@ -94,9 +190,9 @@ interface EntryItemProps {
   onDelete: (id: string) => void;
   isEditing: boolean;
   isDeleting: boolean;
-  editValues: { trigger: string; expansion: string };
+  editValues: { trigger: string; expansion: string; suffix: string; autoEnter: boolean };
   editError: string | null;
-  onEditChange: (field: "trigger" | "expansion", value: string) => void;
+  onEditChange: (field: "trigger" | "expansion" | "suffix" | "autoEnter", value: string | boolean) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onConfirmDelete: () => void;
@@ -117,6 +213,11 @@ function EntryItem({
   onConfirmDelete,
   onCancelDelete,
 }: EntryItemProps) {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const hasSettings = entry.suffix || entry.autoEnter;
+  const editHasSettings = editValues.suffix !== "" || editValues.autoEnter;
+
   if (isEditing) {
     return (
       <Card className="p-3">
@@ -145,6 +246,16 @@ function EntryItem({
           <div className="flex gap-2 pt-6">
             <Button
               size="sm"
+              variant="ghost"
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              aria-label="Toggle settings"
+              aria-expanded={isSettingsOpen}
+              className={editHasSettings ? "text-heycat-orange" : ""}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
               onClick={onSaveEdit}
               aria-label="Save changes"
             >
@@ -160,6 +271,14 @@ function EntryItem({
             </Button>
           </div>
         </div>
+        {isSettingsOpen && (
+          <SettingsPanel
+            suffix={editValues.suffix}
+            autoEnter={editValues.autoEnter}
+            onSuffixChange={(value) => onEditChange("suffix", value)}
+            onAutoEnterChange={(value) => onEditChange("autoEnter", value)}
+          />
+        )}
       </Card>
     );
   }
@@ -205,6 +324,14 @@ function EntryItem({
           <span className="text-text-secondary truncate">
             {entry.expansion}
           </span>
+          {hasSettings && (
+            <span
+              className="text-heycat-orange shrink-0"
+              title={`Suffix: "${entry.suffix || ""}"${entry.autoEnter ? ", Auto-enter" : ""}`}
+            >
+              <Settings className="h-4 w-4" />
+            </span>
+          )}
         </div>
         <div className="flex gap-2 shrink-0">
           <Button
@@ -260,7 +387,12 @@ export function Dictionary(_props: DictionaryProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState({ trigger: "", expansion: "" });
+  const [editValues, setEditValues] = useState({
+    trigger: "",
+    expansion: "",
+    suffix: "",
+    autoEnter: false,
+  });
   const [editError, setEditError] = useState<string | null>(null);
 
   const entryList = Array.isArray(entries.data) ? entries.data : [];
@@ -281,9 +413,14 @@ export function Dictionary(_props: DictionaryProps) {
   }, [entryList, searchQuery]);
 
   const handleAddEntry = useCallback(
-    async (trigger: string, expansion: string) => {
+    async (
+      trigger: string,
+      expansion: string,
+      suffix?: string,
+      autoEnter?: boolean
+    ) => {
       try {
-        await addEntry.mutateAsync({ trigger, expansion });
+        await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter });
         toast({
           type: "success",
           title: "Entry added",
@@ -303,12 +440,17 @@ export function Dictionary(_props: DictionaryProps) {
 
   const handleStartEdit = useCallback((entry: DictionaryEntry) => {
     setEditingId(entry.id);
-    setEditValues({ trigger: entry.trigger, expansion: entry.expansion });
+    setEditValues({
+      trigger: entry.trigger,
+      expansion: entry.expansion,
+      suffix: entry.suffix || "",
+      autoEnter: entry.autoEnter || false,
+    });
     setEditError(null);
   }, []);
 
   const handleEditChange = useCallback(
-    (field: "trigger" | "expansion", value: string) => {
+    (field: "trigger" | "expansion" | "suffix" | "autoEnter", value: string | boolean) => {
       setEditValues((prev) => ({ ...prev, [field]: value }));
       if (field === "trigger") {
         setEditError(null);
@@ -342,6 +484,8 @@ export function Dictionary(_props: DictionaryProps) {
         id: editingId,
         trigger: trimmedTrigger,
         expansion: editValues.expansion.trim(),
+        suffix: editValues.suffix.trim() || undefined,
+        autoEnter: editValues.autoEnter || undefined,
       });
       toast({
         type: "success",
@@ -349,7 +493,7 @@ export function Dictionary(_props: DictionaryProps) {
         description: `"${trimmedTrigger}" has been updated.`,
       });
       setEditingId(null);
-      setEditValues({ trigger: "", expansion: "" });
+      setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false });
       setEditError(null);
     } catch (e) {
       toast({
@@ -362,7 +506,7 @@ export function Dictionary(_props: DictionaryProps) {
 
   const handleCancelEdit = useCallback(() => {
     setEditingId(null);
-    setEditValues({ trigger: "", expansion: "" });
+    setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false });
     setEditError(null);
   }, []);
 

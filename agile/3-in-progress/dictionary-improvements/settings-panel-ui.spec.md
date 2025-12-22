@@ -1,8 +1,9 @@
 ---
-status: in-progress
+status: completed
 created: 2025-12-22
-completed: null
+completed: 2025-12-22
 dependencies: ["backend-storage-update"]
+review_round: 1
 ---
 
 # Spec: Add expandable settings panel to dictionary entry UI
@@ -250,4 +251,89 @@ describe("Dictionary Settings Panel", () => {
 ## Integration Test
 
 - Test location: `src/pages/__tests__/Dictionary.test.tsx`
-- Verification: [ ] Integration test passes
+- Verification: [x] Integration test passes
+
+## Review
+
+**Reviewed:** 2025-12-22
+**Reviewer:** Claude
+
+### Acceptance Criteria Verification
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Each dictionary entry has a settings icon (gear/cog) | PASS | `src/pages/Dictionary.tsx:332-333` - Settings icon rendered from lucide-react |
+| Clicking the icon toggles a collapsible settings panel | PASS | `src/pages/Dictionary.tsx:157,216,274` - isSettingsOpen state toggles panel visibility |
+| Settings panel contains a "Suffix" text input with placeholder "e.g., . or ?" | PASS | `src/pages/Dictionary.tsx:39-48` - Input with placeholder and maxLength=5 |
+| Settings panel contains an "Auto-enter" toggle switch | PASS | `src/pages/Dictionary.tsx:56-60` - Toggle component wired to autoEnter state |
+| AddEntryForm also has the settings panel | PASS | `src/pages/Dictionary.tsx:173-180` - SettingsPanel rendered in AddEntryForm |
+| Saving an entry persists suffix and autoEnter values | PASS | `src/pages/Dictionary.tsx:106-111,483-489` - Values passed to mutations |
+| Loading entries displays correct suffix and autoEnter values | PASS | `src/pages/Dictionary.tsx:443-448` - editValues populated from entry |
+| Settings icon indicates when settings are configured (visual indicator) | PASS | `src/pages/Dictionary.tsx:160,253,327-334` - heycat-orange class applied when hasSettings |
+
+### Test Coverage Audit
+
+| Test Case | Status | Location |
+|-----------|--------|----------|
+| Click settings icon -> panel expands | PASS | `src/pages/Dictionary.test.tsx:402-428` |
+| Click settings icon again -> panel collapses | PASS | `src/pages/Dictionary.test.tsx:423-428` |
+| Enter suffix value -> value shown in input | PASS | `src/pages/Dictionary.test.tsx:458` |
+| Toggle auto-enter on -> toggle shows on state | PASS | `src/pages/Dictionary.test.tsx:461` |
+| Save entry with settings -> invoke called with suffix/autoEnter params | PASS | `src/pages/Dictionary.test.tsx:466-473` |
+| Load entry with settings -> settings panel shows correct values when expanded | PASS | `src/pages/Dictionary.test.tsx:476-498` |
+| Entry with no settings -> settings panel shows empty/default values | PASS | `src/pages/Dictionary.test.tsx:541-564` (verifies indicator absent) |
+
+### Code Quality
+
+**Strengths:**
+- Clean separation: SettingsPanel is a reusable component used by both AddEntryForm and EntryItem
+- Follows existing patterns: Uses useDictionary hook, Tanstack Query mutations, Event Bridge for cache invalidation
+- Proper accessibility: aria-label, aria-expanded, data-testid attributes
+- Complete data flow: UI -> Hook -> Tauri command -> Backend -> Event -> Cache invalidation -> UI refresh
+- Animation polish: slideDown animation from globals.css for smooth panel expansion
+
+**Concerns:**
+- None identified
+
+### Pre-Review Gate Results
+
+**Build Warning Check:**
+```
+warning: method `get` is never used (unrelated to this spec - pre-existing)
+```
+No new warnings introduced by this spec.
+
+**Command Registration Check:** N/A (no new commands)
+
+**Event Subscription Check:** N/A (no new events - uses existing dictionary_updated)
+
+### Data Flow Verification
+
+```
+[UI Action] User clicks settings icon or modifies suffix/autoEnter
+     |
+     v
+[Component State] isSettingsOpen, suffix, autoEnter useState
+     |
+     v
+[Hook] src/hooks/useDictionary.ts:21-35 addEntry.mutateAsync()
+     | invoke("add_dictionary_entry", { trigger, expansion, suffix, auto_enter })
+     v
+[Command] src-tauri/src/commands/dictionary.rs:68-103 add_dictionary_entry
+     |
+     v
+[Event] emit!("dictionary_updated") at dictionary.rs:92-99
+     |
+     v
+[Event Bridge] src/lib/eventBridge.ts:161-166 listen(DICTIONARY_UPDATED)
+     | invalidateQueries({ queryKey: queryKeys.dictionary.all })
+     v
+[Query Refetch] useDictionary entries.data re-fetched
+     |
+     v
+[UI Re-render] Dictionary page shows updated entries
+```
+
+### Verdict
+
+**APPROVED** - All acceptance criteria verified with passing tests. Settings panel UI is fully implemented with proper data flow from UI through backend and back via Event Bridge. No orphaned code, no broken links in data flow, and comprehensive test coverage including the new "Settings Panel" describe block with 6 targeted tests.
