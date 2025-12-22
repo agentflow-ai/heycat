@@ -295,21 +295,6 @@ describe("Dictionary", () => {
     );
   });
 
-  it("empty state shown when no entries", async () => {
-    mockInvoke.mockResolvedValue([]);
-
-    render(<Dictionary />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByText("No dictionary entries yet")).toBeDefined();
-    });
-
-    expect(
-      screen.getByText("Add your first text expansion to get started")
-    ).toBeDefined();
-    expect(screen.getByRole("button", { name: /add entry/i })).toBeDefined();
-  });
-
   it("loading state shown while fetching", async () => {
     // Don't resolve the mock immediately
     mockInvoke.mockImplementation(

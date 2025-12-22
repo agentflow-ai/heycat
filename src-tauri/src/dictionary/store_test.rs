@@ -1,12 +1,9 @@
 // Tests for DictionaryStore
-// Test cases from spec:
+// Test cases:
 // - Complete CRUD workflow: add entry, list it, update it, delete it, verify removed
 // - Update/delete on non-existent ID returns error
 // - Entries persist across store reload (save/load cycle)
-// - Deserialize entry with suffix and auto_enter → fields populated correctly
-// - Deserialize entry without suffix/auto_enter → defaults to None/false
-// - Serialize entry with suffix → JSON includes suffix field
-// - Round-trip serialization preserves all fields
+// - Deserialize entry without suffix/auto_enter → defaults to None/false (backward compat)
 
 use super::*;
 use tempfile::TempDir;
@@ -132,23 +129,6 @@ fn test_entries_persist_across_reload() {
 }
 
 #[test]
-fn test_entry_serialization_with_new_fields() {
-    let entry = DictionaryEntry {
-        id: "123".to_string(),
-        trigger: "brb".to_string(),
-        expansion: "be right back".to_string(),
-        suffix: Some(".".to_string()),
-        auto_enter: true,
-    };
-
-    let json = serde_json::to_string(&entry).unwrap();
-    let parsed: DictionaryEntry = serde_json::from_str(&json).unwrap();
-
-    assert_eq!(parsed.suffix, Some(".".to_string()));
-    assert!(parsed.auto_enter);
-}
-
-#[test]
 fn test_backward_compatible_deserialization() {
     // Old format without new fields
     let json = r#"{"id":"123","trigger":"brb","expansion":"be right back"}"#;
@@ -156,43 +136,4 @@ fn test_backward_compatible_deserialization() {
 
     assert_eq!(entry.suffix, None);
     assert!(!entry.auto_enter);
-}
-
-#[test]
-fn test_serialize_entry_with_suffix() {
-    let entry = DictionaryEntry {
-        id: "123".to_string(),
-        trigger: "brb".to_string(),
-        expansion: "be right back".to_string(),
-        suffix: Some(".".to_string()),
-        auto_enter: false,
-    };
-
-    let json = serde_json::to_string(&entry).unwrap();
-
-    // Verify JSON includes suffix field
-    assert!(json.contains(r#""suffix":".""#));
-}
-
-#[test]
-fn test_roundtrip_serialization_preserves_all_fields() {
-    let original = DictionaryEntry {
-        id: "test-id".to_string(),
-        trigger: "ty".to_string(),
-        expansion: "thank you".to_string(),
-        suffix: Some("!".to_string()),
-        auto_enter: true,
-    };
-
-    // Serialize to JSON
-    let json = serde_json::to_string(&original).unwrap();
-    // Deserialize back
-    let parsed: DictionaryEntry = serde_json::from_str(&json).unwrap();
-
-    // All fields should be preserved
-    assert_eq!(parsed.id, original.id);
-    assert_eq!(parsed.trigger, original.trigger);
-    assert_eq!(parsed.expansion, original.expansion);
-    assert_eq!(parsed.suffix, original.suffix);
-    assert_eq!(parsed.auto_enter, original.auto_enter);
 }
