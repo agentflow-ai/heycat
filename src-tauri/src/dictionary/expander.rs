@@ -5,10 +5,19 @@ use regex::Regex;
 
 use super::DictionaryEntry;
 
+/// Result of expanding text with dictionary entries
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpansionResult {
+    /// The expanded text with all substitutions applied
+    pub expanded_text: String,
+    /// True if any matched entry had auto_enter enabled
+    pub should_press_enter: bool,
+}
+
 /// Compiled pattern for a single dictionary entry
 struct CompiledPattern {
     regex: Regex,
-    expansion: String,
+    entry: DictionaryEntry,
 }
 
 /// Expander that applies dictionary expansions to text
@@ -28,7 +37,7 @@ impl DictionaryExpander {
                 match Regex::new(&pattern) {
                     Ok(regex) => Some(CompiledPattern {
                         regex,
-                        expansion: entry.expansion.clone(),
+                        entry: entry.clone(),
                     }),
                     Err(e) => {
                         crate::warn!(
@@ -46,15 +55,32 @@ impl DictionaryExpander {
     }
 
     /// Apply all expansions to the input text
-    /// Returns the expanded text, or the original text if no matches
-    pub fn expand(&self, text: &str) -> String {
+    /// Returns ExpansionResult with expanded text and whether enter should be pressed
+    pub fn expand(&self, text: &str) -> ExpansionResult {
         let mut result = text.to_string();
+        let mut should_press_enter = false;
 
         for pattern in &self.patterns {
-            result = pattern.regex.replace_all(&result, &pattern.expansion).into_owned();
+            if pattern.regex.is_match(&result) {
+                // Build replacement with suffix if present
+                let replacement = match &pattern.entry.suffix {
+                    Some(suffix) => format!("{}{}", pattern.entry.expansion, suffix),
+                    None => pattern.entry.expansion.clone(),
+                };
+
+                result = pattern.regex.replace_all(&result, replacement.as_str()).to_string();
+
+                // Track auto_enter
+                if pattern.entry.auto_enter {
+                    should_press_enter = true;
+                }
+            }
         }
 
-        result
+        ExpansionResult {
+            expanded_text: result,
+            should_press_enter,
+        }
     }
 }
 

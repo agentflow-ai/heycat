@@ -4,7 +4,7 @@
 // This service decouples transcription from HotkeyIntegration, enabling
 // button-initiated recordings and wake word flows to share the same logic.
 
-use crate::dictionary::{DictionaryEntry, DictionaryExpander};
+use crate::dictionary::{DictionaryEntry, DictionaryExpander, ExpansionResult};
 use crate::events::{
     current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
     CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
@@ -313,27 +313,34 @@ where
             );
 
             // Apply dictionary expansion if configured
-            let expanded_text = match dictionary_expander.read() {
+            let expansion_result = match dictionary_expander.read() {
                 Ok(guard) => {
                     if let Some(ref expander) = *guard {
                         let result = expander.expand(&text);
-                        if result != text {
+                        if result.expanded_text != text {
                             crate::debug!(
                                 "Dictionary expansion applied: '{}' -> '{}'",
                                 text,
-                                result
+                                result.expanded_text
                             );
                         }
                         result
                     } else {
-                        text
+                        ExpansionResult {
+                            expanded_text: text,
+                            should_press_enter: false,
+                        }
                     }
                 }
                 Err(e) => {
                     crate::warn!("Failed to acquire dictionary expander lock: {}", e);
-                    text
+                    ExpansionResult {
+                        expanded_text: text,
+                        should_press_enter: false,
+                    }
                 }
             };
+            let expanded_text = expansion_result.expanded_text;
 
             // Try voice command matching if configured (using expanded text)
             let command_handled =
@@ -645,11 +652,11 @@ mod tests {
         let transcribed_text = "i need to brb and check the api docs";
 
         // Apply expansion (same pattern as in process_recording)
-        let expanded_text = expander.expand(transcribed_text);
+        let result = expander.expand(transcribed_text);
 
         // Verify expansion was applied correctly
         assert_eq!(
-            expanded_text,
+            result.expanded_text,
             "i need to be right back and check the API docs"
         );
 
@@ -668,19 +675,25 @@ mod tests {
         let text = "i need to brb and check the api docs";
 
         // Simulate the expansion logic from process_recording (using RwLock pattern)
-        let expanded_text = match dictionary_expander.read() {
+        let result = match dictionary_expander.read() {
             Ok(guard) => {
                 if let Some(ref expander) = *guard {
                     expander.expand(text)
                 } else {
-                    text.to_string()
+                    ExpansionResult {
+                        expanded_text: text.to_string(),
+                        should_press_enter: false,
+                    }
                 }
             }
-            Err(_) => text.to_string(),
+            Err(_) => ExpansionResult {
+                expanded_text: text.to_string(),
+                should_press_enter: false,
+            },
         };
 
         // Text should be unchanged when no expander is present
-        assert_eq!(expanded_text, text);
+        assert_eq!(result.expanded_text, text);
     }
 
     #[test]
@@ -693,19 +706,25 @@ mod tests {
         let text = "i need to brb and check the api docs";
 
         // Simulate the expansion logic from process_recording (using RwLock pattern)
-        let expanded_text = match dictionary_expander.read() {
+        let result = match dictionary_expander.read() {
             Ok(guard) => {
                 if let Some(ref exp) = *guard {
                     exp.expand(text)
                 } else {
-                    text.to_string()
+                    ExpansionResult {
+                        expanded_text: text.to_string(),
+                        should_press_enter: false,
+                    }
                 }
             }
-            Err(_) => text.to_string(),
+            Err(_) => ExpansionResult {
+                expanded_text: text.to_string(),
+                should_press_enter: false,
+            },
         };
 
         // Text should be unchanged when expander has no entries
-        assert_eq!(expanded_text, text);
+        assert_eq!(result.expanded_text, text);
     }
 
     #[test]
@@ -720,11 +739,17 @@ mod tests {
         let result1 = match dictionary_expander.read() {
             Ok(guard) => match *guard {
                 Some(ref exp) => exp.expand(text),
-                None => text.to_string(),
+                None => ExpansionResult {
+                    expanded_text: text.to_string(),
+                    should_press_enter: false,
+                },
             },
-            Err(_) => text.to_string(),
+            Err(_) => ExpansionResult {
+                expanded_text: text.to_string(),
+                should_press_enter: false,
+            },
         };
-        assert_eq!(result1, "i need to brb");
+        assert_eq!(result1.expanded_text, "i need to brb");
 
         // Update with new entries (simulating what update_dictionary does)
         let entries = vec![DictionaryEntry {
@@ -743,10 +768,16 @@ mod tests {
         let result2 = match dictionary_expander.read() {
             Ok(guard) => match *guard {
                 Some(ref exp) => exp.expand(text),
-                None => text.to_string(),
+                None => ExpansionResult {
+                    expanded_text: text.to_string(),
+                    should_press_enter: false,
+                },
             },
-            Err(_) => text.to_string(),
+            Err(_) => ExpansionResult {
+                expanded_text: text.to_string(),
+                should_press_enter: false,
+            },
         };
-        assert_eq!(result2, "i need to be right back");
+        assert_eq!(result2.expanded_text, "i need to be right back");
     }
 }
