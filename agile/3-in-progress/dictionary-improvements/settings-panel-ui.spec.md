@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 created: 2025-12-22
 completed: null
 dependencies: ["backend-storage-update"]

@@ -1,9 +1,9 @@
 ---
-status: pending
+status: completed
 severity: major
 origin: manual
 created: 2025-12-22
-completed: null
+completed: 2025-12-22
 parent_feature: null
 parent_spec: null
 ---
