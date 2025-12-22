@@ -10,6 +10,7 @@ use cpal::{SampleRate, Stream};
 use rubato::{FftFixedIn, Resampler};
 
 use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState, StopReason, MAX_RESAMPLE_BUFFER_SAMPLES, TARGET_SAMPLE_RATE};
+use super::denoiser::{load_embedded_models, DtlnDenoiser};
 use crate::audio_constants::RESAMPLE_CHUNK_SIZE;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -100,6 +101,8 @@ struct CallbackState {
     output_sample_count: Arc<AtomicUsize>,
     /// Device sample rate (for ratio calculation in diagnostics)
     device_sample_rate: u32,
+    /// Optional noise suppression denoiser (None if failed to load)
+    denoiser: Option<Arc<Mutex<DtlnDenoiser>>>,
 }
 
 impl CallbackState {
@@ -162,6 +165,16 @@ impl CallbackState {
             f32_samples.to_vec()
         };
 
+        // Apply noise suppression if available
+        let processed_samples = if let Some(ref denoiser) = self.denoiser {
+            match denoiser.lock() {
+                Ok(mut d) => d.process(&samples_to_add),
+                Err(_) => samples_to_add, // Skip denoising if lock fails
+            }
+        } else {
+            samples_to_add
+        };
+
         // Use lock-free ring buffer for reduced contention
         // Check if buffer is full before pushing
         if self.buffer.is_full() {
@@ -174,11 +187,11 @@ impl CallbackState {
         }
 
         // Track output samples for diagnostic logging
-        self.output_sample_count.fetch_add(samples_to_add.len(), Ordering::Relaxed);
+        self.output_sample_count.fetch_add(processed_samples.len(), Ordering::Relaxed);
 
         // Push samples to ring buffer (lock-free)
-        let pushed = self.buffer.push_samples(&samples_to_add);
-        if pushed < samples_to_add.len() {
+        let pushed = self.buffer.push_samples(&processed_samples);
+        if pushed < processed_samples.len() {
             // Buffer became full during push
             if !self.signaled.swap(true, Ordering::SeqCst) {
                 if let Some(ref sender) = self.stop_signal {
@@ -362,6 +375,21 @@ impl AudioCaptureBackend for CpalBackend {
         // Pre-allocated chunk buffer to avoid allocations in hot path
         let chunk_buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.0f32; RESAMPLE_CHUNK_SIZE]));
 
+        // Initialize noise suppression denoiser with graceful degradation
+        let denoiser: Option<Arc<Mutex<DtlnDenoiser>>> = match load_embedded_models() {
+            Ok(models) => {
+                crate::info!("DTLN noise suppression initialized successfully");
+                Some(Arc::new(Mutex::new(DtlnDenoiser::new(models))))
+            }
+            Err(e) => {
+                crate::warn!(
+                    "Failed to initialize noise suppression, continuing without denoising: {}",
+                    e
+                );
+                None
+            }
+        };
+
         // Create shared callback state - all callbacks use the same processing logic
         let callback_state = Arc::new(CallbackState {
             buffer,
@@ -374,6 +402,7 @@ impl AudioCaptureBackend for CpalBackend {
             input_sample_count: Arc::new(AtomicUsize::new(0)),
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate,
+            denoiser,
         });
 
         // Build the input stream based on sample format
@@ -549,6 +578,7 @@ mod resampler_tests {
             input_sample_count: Arc::new(AtomicUsize::new(0)),
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate: SOURCE_RATE as u32,
+            denoiser: None,
         };
 
         // Flush should be a no-op when buffer is empty
@@ -587,6 +617,7 @@ mod resampler_tests {
             input_sample_count: Arc::new(AtomicUsize::new(5 * CHUNK_SIZE + 500)),
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate: SOURCE_RATE as u32,
+            denoiser: None,
         };
 
         // Flush the residual samples
@@ -622,6 +653,7 @@ mod resampler_tests {
                 input_sample_count: Arc::new(AtomicUsize::new(residual_size)),
                 output_sample_count: Arc::new(AtomicUsize::new(0)),
                 device_sample_rate: SOURCE_RATE as u32,
+                denoiser: None,
             };
 
             // Should not panic
