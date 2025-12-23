@@ -27,6 +27,9 @@ pub use wav::{encode_wav, parse_duration_from_file, SystemFileWriter};
 pub mod denoiser;
 pub use denoiser::SharedDenoiser;
 
+pub mod preprocessing;
+pub use preprocessing::PreprocessingChain;
+
 #[cfg(test)]
 mod mod_test;
 

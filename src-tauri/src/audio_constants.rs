@@ -206,6 +206,24 @@ pub const RESAMPLE_CHUNK_SIZE: usize = 1024;
 pub const PREFERRED_BUFFER_SIZE: u32 = 256;
 
 // =============================================================================
+// AUDIO PREPROCESSING
+// =============================================================================
+
+/// Highpass filter cutoff frequency (Hz).
+///
+/// Removes low-frequency rumble (HVAC, traffic, handling noise) below this
+/// frequency. 80Hz is above typical voice fundamentals (85-255Hz) but removes
+/// room noise effectively.
+pub const HIGHPASS_CUTOFF_HZ: f32 = 80.0;
+
+/// Pre-emphasis filter coefficient.
+///
+/// Standard ASR coefficient that boosts frequencies above ~300Hz to improve
+/// speech intelligibility. The filter is: y[n] = x[n] - alpha * x[n-1]
+/// Higher values (closer to 1.0) = stronger high-frequency boost.
+pub const PRE_EMPHASIS_ALPHA: f32 = 0.97;
+
+// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 

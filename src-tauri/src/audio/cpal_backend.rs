@@ -11,6 +11,7 @@ use rubato::{FftFixedIn, Resampler};
 
 use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState, StopReason, MAX_RESAMPLE_BUFFER_SAMPLES, TARGET_SAMPLE_RATE};
 use super::denoiser::{DtlnDenoiser, SharedDenoiser};
+use super::preprocessing::PreprocessingChain;
 use crate::audio_constants::{PREFERRED_BUFFER_SIZE, RESAMPLE_CHUNK_SIZE};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -212,6 +213,8 @@ struct CallbackState {
     device_sample_rate: u32,
     /// Number of channels from the audio device (for stereo-to-mono mixing)
     channel_count: u16,
+    /// Voice-optimized preprocessing (highpass + pre-emphasis)
+    preprocessing: Arc<Mutex<PreprocessingChain>>,
     /// Optional noise suppression denoiser (None if failed to load)
     denoiser: Option<Arc<Mutex<DtlnDenoiser>>>,
 }
@@ -245,7 +248,14 @@ impl CallbackState {
             f32_samples.to_vec()
         };
 
-        // Step 2: Resample to target rate (if needed)
+        // Step 2: Apply voice-optimized preprocessing (highpass + pre-emphasis)
+        // This runs at device sample rate for best filter accuracy
+        let preprocessed = match self.preprocessing.lock() {
+            Ok(mut pp) => pp.process(&mono_samples),
+            Err(_) => mono_samples, // Skip preprocessing if lock fails
+        };
+
+        // Step 3: Resample to target rate (if needed)
         let samples_to_add = if let Some(ref resampler) = self.resampler {
             // Accumulate samples and resample when we have enough
             let mut resample_buf = match self.resample_buffer.lock() {
@@ -254,7 +264,7 @@ impl CallbackState {
             };
 
             // Signal stop if resample buffer overflows - data loss is unacceptable
-            if resample_buf.len() + mono_samples.len() > MAX_RESAMPLE_BUFFER_SAMPLES {
+            if resample_buf.len() + preprocessed.len() > MAX_RESAMPLE_BUFFER_SAMPLES {
                 crate::error!("Resample buffer overflow: resampling can't keep up with audio input");
                 if !self.signaled.swap(true, Ordering::SeqCst) {
                     if let Some(ref sender) = self.stop_signal {
@@ -263,7 +273,7 @@ impl CallbackState {
                 }
                 return;
             }
-            resample_buf.extend_from_slice(&mono_samples);
+            resample_buf.extend_from_slice(&preprocessed);
 
             // Process full chunks using pre-allocated buffer
             let mut resampled = Vec::new();
@@ -294,7 +304,7 @@ impl CallbackState {
             resampled
         } else {
             // No resampling needed
-            mono_samples
+            preprocessed
         };
 
         // Apply noise suppression if available
@@ -615,6 +625,15 @@ impl CpalBackend {
             None
         };
 
+        // Create preprocessing chain at device sample rate for best filter accuracy
+        let preprocessing = PreprocessingChain::new(device_sample_rate);
+        crate::info!(
+            "Preprocessing chain initialized at {}Hz (highpass {}Hz, pre-emphasis α={})",
+            device_sample_rate,
+            crate::audio_constants::HIGHPASS_CUTOFF_HZ,
+            crate::audio_constants::PRE_EMPHASIS_ALPHA
+        );
+
         // Create shared callback state - all callbacks use the same processing logic
         let callback_state = Arc::new(CallbackState {
             buffer,
@@ -629,6 +648,7 @@ impl CpalBackend {
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate,
             channel_count,
+            preprocessing: Arc::new(Mutex::new(preprocessing)),
             denoiser,
         });
 
@@ -882,6 +902,7 @@ mod resampler_tests {
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate: SOURCE_RATE as u32,
             channel_count: 1, // Tests use mono
+            preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
             denoiser: None,
         };
 
@@ -923,6 +944,7 @@ mod resampler_tests {
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate: SOURCE_RATE as u32,
             channel_count: 1, // Tests use mono
+            preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
             denoiser: None,
         };
 
@@ -961,6 +983,7 @@ mod resampler_tests {
                 output_sample_count: Arc::new(AtomicUsize::new(0)),
                 device_sample_rate: SOURCE_RATE as u32,
                 channel_count: 1, // Tests use mono
+                preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
                 denoiser: None,
             };
 
@@ -1111,6 +1134,7 @@ mod resampler_tests {
             output_sample_count: Arc::new(AtomicUsize::new(0)),
             device_sample_rate: SOURCE_RATE as u32,
             channel_count: 1, // Tests use mono
+            preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
             denoiser: None,
         };
 
