@@ -10,8 +10,10 @@ pub struct WorktreeContext {
     pub gitdir_path: PathBuf,
 }
 
-/// State wrapper for worktree context, managed by Tauri
+/// State wrapper for worktree context, managed by Tauri.
+/// Fields are consumed by dependent specs (worktree-paths, worktree-config).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct WorktreeState {
     pub context: Option<WorktreeContext>,
 }
