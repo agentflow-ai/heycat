@@ -386,6 +386,20 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         })
     }
 
+    /// Check if noise suppression is enabled from persistent settings store
+    fn is_noise_suppression_enabled(&self) -> bool {
+        use tauri_plugin_store::StoreExt;
+        self.app_handle
+            .as_ref()
+            .and_then(|app| {
+                app.store("settings.json")
+                    .ok()
+                    .and_then(|store| store.get("audio.noiseSuppression"))
+                    .and_then(|v| v.as_bool())
+            })
+            .unwrap_or(true) // Default to enabled for new installations
+    }
+
     /// Add an audio thread handle (builder pattern)
     pub fn with_audio_thread(mut self, handle: Arc<AudioThreadHandle>) -> Self {
         self.audio_thread = Some(handle);
@@ -778,8 +792,13 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                 // Use unified command implementation
                 // Read selected device from persistent settings store
                 let device_name = self.get_selected_audio_device();
-                // Clone shared denoiser for this recording (if available)
-                let denoiser = self.shared_denoiser.clone();
+                // Only use denoiser if noise suppression is enabled
+                let denoiser = if self.is_noise_suppression_enabled() {
+                    self.shared_denoiser.clone()
+                } else {
+                    crate::info!("Noise suppression disabled by user setting (hotkey path)");
+                    None
+                };
                 match start_recording_impl(state, self.audio_thread.as_deref(), model_available, device_name, denoiser) {
                     Ok(()) => {
                         self.recording_emitter

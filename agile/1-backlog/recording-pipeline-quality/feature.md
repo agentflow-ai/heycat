@@ -1,3 +1,7 @@
+---
+discovery_phase: paths
+---
+
 # Feature: Recording Pipeline Quality
 
 **Created:** 2025-12-23
@@ -10,10 +14,11 @@
 
 ## BDD Scenarios
 
-<!-- Run 'agile.ts discover <name>' for guided scenario creation -->
-<!-- Required sections: User Persona, Problem Statement, Gherkin scenarios, Out of Scope, Assumptions -->
+### User Persona
+A general user who wants reliable, good-quality audio recordings without needing technical expertise. They expect the app to "just work" and produce clear audio output.
 
-[No scenarios defined yet - run discovery to complete this section]
+### Problem Statement
+Users experience both audio quality issues (noise, distortion, low fidelity) and reliability problems (recordings that drop, stutter, or fail unexpectedly). This foundation work must be addressed before adding other features that depend on reliable audio capture and processing.
 
 ## Acceptance Criteria (High-Level)
 
