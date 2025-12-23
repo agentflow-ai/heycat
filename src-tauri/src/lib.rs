@@ -80,6 +80,52 @@ pub fn run() {
             }
             app.manage(worktree_state);
 
+            // Check for collision with another running instance
+            // This must happen before any state initialization that writes to data directories
+            match worktree::check_collision(worktree_context.as_ref()) {
+                Ok(worktree::CollisionResult::NoCollision) => {
+                    debug!("No collision detected, proceeding with startup");
+                }
+                Ok(worktree::CollisionResult::InstanceRunning { pid, data_dir, .. }) => {
+                    error!(
+                        "Collision detected! Another heycat instance (PID: {}) is using: {:?}",
+                        pid, data_dir
+                    );
+                    // Log resolution steps for debugging
+                    warn!("Resolution: Close the other instance (PID: {}) and restart", pid);
+                    // Return error to prevent app from starting with conflicting data
+                    return Err(format!(
+                        "Another heycat instance is already running (PID: {}). \
+                         Please close it before starting a new instance.",
+                        pid
+                    ).into());
+                }
+                Ok(worktree::CollisionResult::StaleLock { lock_file }) => {
+                    warn!("Stale lock file detected: {:?}", lock_file);
+                    info!("Cleaning up stale lock file from crashed instance...");
+                    if let Err(e) = worktree::cleanup_stale_lock(&lock_file) {
+                        warn!("Failed to clean up stale lock file: {}", e);
+                    } else {
+                        info!("Stale lock file cleaned up successfully");
+                    }
+                }
+                Err(e) => {
+                    // Non-fatal: log warning but continue startup
+                    warn!("Failed to check for collisions: {}", e);
+                }
+            }
+
+            // Create lock file for this instance
+            match worktree::create_lock(worktree_context.as_ref()) {
+                Ok(lock_path) => {
+                    debug!("Lock file created: {:?}", lock_path);
+                }
+                Err(e) => {
+                    warn!("Failed to create lock file: {}", e);
+                    // Non-fatal: continue without lock file
+                }
+            }
+
             // Create shared state for recording manager
             let recording_state = Arc::new(Mutex::new(recording::RecordingManager::new()));
 
@@ -375,6 +421,19 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 debug!("Window destroyed, cleaning up...");
+
+                // Get worktree context for cleanup
+                let worktree_context = window.app_handle()
+                    .try_state::<worktree::WorktreeState>()
+                    .and_then(|s| s.context.clone());
+
+                // Clean up lock file on graceful shutdown
+                if let Err(e) = worktree::remove_lock(worktree_context.as_ref()) {
+                    warn!("Failed to remove lock file: {}", e);
+                } else {
+                    debug!("Lock file removed successfully");
+                }
+
                 // Unregister hotkey on window close - use saved shortcut from settings
                 if let Some(service) = window.app_handle().try_state::<HotkeyServiceHandle>() {
                     use tauri_plugin_store::StoreExt;
