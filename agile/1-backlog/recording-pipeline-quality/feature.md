@@ -1,5 +1,5 @@
 ---
-discovery_phase: scope
+discovery_phase: complete
 ---
 
 # Feature: Recording Pipeline Quality
@@ -10,7 +10,12 @@ discovery_phase: scope
 
 ## Description
 
-[What should be built and why - provide context for the team]
+Improve the audio recording pipeline to produce clear, consistent voice recordings. Current issues include:
+- Voice recordings are too quiet
+- Robotic/artifacty sound quality (even without denoising)
+- Inconsistent volume levels across recordings
+
+This feature addresses these quality issues by enhancing the audio processing pipeline with proper channel mixing, higher-quality resampling, voice-optimized filtering, automatic gain control, and diagnostic tooling.
 
 ## BDD Scenarios
 
@@ -94,8 +99,11 @@ Feature: Recording Pipeline Quality
 
 > Detailed acceptance criteria go in individual spec files
 
-- [ ] [High-level criterion 1]
-- [ ] [High-level criterion 2]
+- [ ] Voice recordings are audibly clearer compared to current pipeline
+- [ ] Recording volume is consistent regardless of input level (within reason)
+- [ ] No audible artifacts or robotic sound in recordings
+- [ ] Multi-channel audio devices work correctly (stereo mixed to mono properly)
+- [ ] Diagnostic metrics available for troubleshooting quality issues
 
 ## Definition of Done
 

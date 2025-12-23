@@ -215,7 +215,10 @@ describe("useListening", () => {
         await result.current.enableListening();
       });
 
-      expect(result.current.error).toBe("Cannot enable while recording");
+      // Wait for mutation error state to propagate
+      await waitFor(() => {
+        expect(result.current.error).toBe("Cannot enable while recording");
+      });
     });
 
     it("reads wake word detection state from Zustand", async () => {
