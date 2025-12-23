@@ -8,7 +8,7 @@
     "dev:static": "vite build && tauri dev --no-watch",
     "build": "tsgo && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "bun scripts/tauri-wrapper.ts",
     "typecheck": "tsgo",
     "prepare": "husky",
     "test": "vitest run",

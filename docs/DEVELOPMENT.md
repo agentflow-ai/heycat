@@ -12,7 +12,7 @@ bun run tauri dev
 # Build production app
 bun run tauri build
 
-# Run frontend only (Vite dev server on port 1420)
+# Run frontend only (Vite dev server)
 bun run dev
 
 # Type check and build frontend
@@ -76,11 +76,13 @@ bun run tauri dev
 
 | Data | Main Repo | Worktree |
 |------|-----------|----------|
+| Dev port | 1420 | 1421-1429 (deterministic) |
+| Hotkey | Default | Unique per worktree |
 | Settings | `settings.json` | `settings-{id}.json` |
 | Data dir | `~/.local/share/heycat/` | `~/.local/share/heycat-{id}/` |
 | Config dir | `~/.config/heycat/` | `~/.config/heycat-{id}/` |
 
-The `{id}` is the worktree directory name (e.g., `heycat-feature-audio`).
+The `{id}` is the worktree directory name (e.g., `heycat-feature-audio`). Port and hotkey are assigned deterministically based on the identifier hash, so they're consistent across sessions.
 
 ### Clean up worktree data
 
@@ -102,16 +104,18 @@ bun scripts/cleanup-worktree.ts <identifier> --remove-worktree
 
 ### Run multiple instances
 
-Each worktree uses a different recording hotkey, so you can run the main repo and worktrees simultaneously:
+Each worktree uses a different dev server port and recording hotkey, so you can run the main repo and worktrees simultaneously:
 
 ```bash
 # Terminal 1: main repo
-bun run tauri dev   # Uses default hotkey
+bun run tauri dev   # Uses port 1420, default hotkey
 
 # Terminal 2: worktree
 cd worktrees/heycat-feature-audio
-bun run tauri dev   # Uses unique hotkey (CmdOrControl+Shift+N)
+bun run tauri dev   # Uses port 1421-1429, unique hotkey
 ```
+
+The wrapper script automatically detects the worktree context and configures both Vite and Tauri with the correct port.
 
 ### Sync agile state to main
 

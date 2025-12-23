@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename, resolve } from "path";
+import { getDevPort } from "./dev-port";
 
 // ANSI color codes for terminal output
 const colors = {
@@ -239,12 +240,14 @@ ${colors.bold}Example:${colors.reset}
     process.exit(1);
   }
 
-  // Generate unique hotkey
+  // Generate unique hotkey and port
   const identifier = getWorktreeIdentifier(worktreePath);
   const hotkey = generateHotkey(identifier);
+  const devPort = getDevPort(identifier);
 
   info(`\nWorktree identifier: ${identifier}`);
   info(`Generated hotkey: ${hotkey}`);
+  info(`Dev server port: ${devPort}`);
 
   // Create settings file
   const settingsPath = createSettingsFile(identifier, hotkey);
@@ -265,9 +268,10 @@ ${colors.bold}Next steps:${colors.reset}
   3. Start the development server:
      ${colors.cyan}bun run tauri dev${colors.reset}
 
-${colors.bold}Hotkey:${colors.reset}
-  This worktree is configured with: ${colors.yellow}${hotkey}${colors.reset}
-  (Main repo uses a different hotkey, so both can run simultaneously)
+${colors.bold}Configuration:${colors.reset}
+  Hotkey: ${colors.yellow}${hotkey}${colors.reset}
+  Dev port: ${colors.yellow}${devPort}${colors.reset}
+  (Main repo uses port 1420 and a different hotkey, so both can run simultaneously)
 
 ${colors.bold}Note:${colors.reset}
   To remove this worktree later:

@@ -5,6 +5,8 @@ import { resolve } from "path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error process is a nodejs global
+const port = parseInt(process.env.VITE_DEV_PORT || "1420", 10);
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
@@ -24,8 +26,9 @@ export default defineConfig(async () => ({
   // 1. prevent vite from obscuring rust errors
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
+  // Port is set via VITE_DEV_PORT env var (default 1420, worktrees use 1421-1429)
   server: {
-    port: 1420,
+    port,
     strictPort: true,
     host: host || false,
     hmr: false,
