@@ -80,6 +80,19 @@ pub fn run() {
             }
             app.manage(worktree_state);
 
+            // Set dynamic window title based on worktree context
+            if let Some(window) = app.get_webview_window("main") {
+                let title = match &worktree_context {
+                    Some(ctx) => format!("heycat - {}", ctx.identifier),
+                    None => "heycat".to_string(),
+                };
+                if let Err(e) = window.set_title(&title) {
+                    warn!("Failed to set window title: {}", e);
+                } else {
+                    debug!("Window title set to: {}", title);
+                }
+            }
+
             // Check for collision with another running instance
             // This must happen before any state initialization that writes to data directories
             let collision_result = worktree::check_collision(worktree_context.as_ref());
