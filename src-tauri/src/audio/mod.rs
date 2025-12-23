@@ -33,6 +33,9 @@ pub use preprocessing::PreprocessingChain;
 pub mod agc;
 pub use agc::AutomaticGainControl;
 
+pub mod diagnostics;
+pub use diagnostics::{RecordingDiagnostics, QualityWarning};
+
 #[cfg(test)]
 mod mod_test;
 
