@@ -1,11 +1,21 @@
 // Command implementation logic - testable functions separate from Tauri wrappers
 
 use crate::audio::{
-    encode_wav, parse_duration_from_file, AudioThreadHandle, SharedDenoiser, SystemFileWriter,
-    TARGET_SAMPLE_RATE,
+    encode_wav, parse_duration_from_file, AudioThreadHandle, QualityWarning, SharedDenoiser,
+    SystemFileWriter, TARGET_SAMPLE_RATE,
 };
 use std::sync::Arc;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
+
+/// Extended result from stop_recording_impl that includes diagnostics
+pub struct StopRecordingResult {
+    /// The recording metadata
+    pub metadata: RecordingMetadata,
+    /// Quality warnings from the recording session
+    pub warnings: Vec<QualityWarning>,
+    /// Raw audio data (if debug mode was enabled) with device sample rate
+    pub raw_audio: Option<(Vec<f32>, u32)>,
+}
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -141,6 +151,21 @@ pub fn stop_recording_impl(
     return_to_listening: bool,
     recordings_dir: PathBuf,
 ) -> Result<RecordingMetadata, String> {
+    // Call the extended implementation and discard diagnostics
+    stop_recording_impl_extended(state, audio_thread, return_to_listening, recordings_dir)
+        .map(|result| result.metadata)
+}
+
+/// Extended implementation of stop_recording that returns diagnostics
+///
+/// This is the full implementation that returns quality warnings and raw audio
+/// in addition to recording metadata. Used by the command layer to emit events.
+pub fn stop_recording_impl_extended(
+    state: &Mutex<RecordingManager>,
+    audio_thread: Option<&AudioThreadHandle>,
+    return_to_listening: bool,
+    recordings_dir: PathBuf,
+) -> Result<StopRecordingResult, String> {
     crate::debug!("stop_recording_impl called");
 
     let mut manager = state.lock().map_err(|_| {
@@ -237,17 +262,24 @@ pub fn stop_recording_impl(
             "Failed to complete recording."
         })?;
 
-    // Extract stop reason from result
-    let stop_reason = stop_result.and_then(|r| r.reason);
+    // Extract stop reason, warnings, and raw audio from result
+    let (stop_reason, warnings, raw_audio) = match stop_result {
+        Some(result) => (result.reason, result.warnings, result.raw_audio),
+        None => (None, Vec::new(), None),
+    };
 
-    crate::info!("Recording stopped: {} samples, {:.2}s, stop_reason={:?}",
-          sample_count, duration_secs, stop_reason);
+    crate::info!("Recording stopped: {} samples, {:.2}s, stop_reason={:?}, warnings={}",
+          sample_count, duration_secs, stop_reason, warnings.len());
 
-    Ok(RecordingMetadata {
-        duration_secs,
-        file_path,
-        sample_count,
-        stop_reason,
+    Ok(StopRecordingResult {
+        metadata: RecordingMetadata {
+            duration_secs,
+            file_path,
+            sample_count,
+            stop_reason,
+        },
+        warnings,
+        raw_audio,
     })
 }
 

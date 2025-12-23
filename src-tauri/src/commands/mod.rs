@@ -10,8 +10,8 @@ pub use logic::{RecordingInfo, RecordingStateInfo};
 use logic::{
     clear_last_recording_buffer_impl, delete_recording_impl, disable_listening_impl,
     enable_listening_impl, get_last_recording_buffer_impl, get_listening_status_impl,
-    get_recording_state_impl, list_recordings_impl, start_recording_impl, stop_recording_impl,
-    transcribe_file_impl,
+    get_recording_state_impl, list_recordings_impl, start_recording_impl,
+    stop_recording_impl_extended, transcribe_file_impl,
 };
 
 // ShortcutBackend trait is used via HotkeyServiceDyn.backend field
@@ -24,7 +24,7 @@ use crate::events::{
     RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
     TranscriptionEventEmitter, TranscriptionStartedPayload,
 };
-use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, SharedDenoiser, StopReason};
+use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, SharedDenoiser, StopReason, encode_wav, SystemFileWriter};
 use crate::parakeet::SharedTranscriptionModel;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
 use std::sync::{Arc, Mutex};
@@ -287,10 +287,12 @@ pub fn stop_recording(
     let recordings_dir = crate::paths::get_recordings_dir(worktree_context.as_ref())
         .unwrap_or_else(|_| std::path::PathBuf::from(".").join("heycat").join("recordings"));
 
-    let result = stop_recording_impl(state.as_ref(), Some(audio_thread.as_ref()), return_to_listening, recordings_dir);
+    let result = stop_recording_impl_extended(state.as_ref(), Some(audio_thread.as_ref()), return_to_listening, recordings_dir.clone());
 
-    // Emit event on success for frontend state sync
-    if let Ok(ref metadata) = result {
+    // Handle success case
+    if let Ok(ref stop_result) = result {
+        let metadata = &stop_result.metadata;
+
         // Check if recording was stopped due to a device error and emit appropriate event
         // Other stop reasons (BufferFull, SilenceAfterSpeech, etc.) are not device errors
         if let Some(StopReason::StreamError) = metadata.stop_reason {
@@ -299,6 +301,35 @@ pub fn stop_recording(
                 event_names::AUDIO_DEVICE_ERROR,
                 AudioDeviceError::DeviceDisconnected
             );
+        }
+
+        // Emit quality warnings to frontend
+        for warning in &stop_result.warnings {
+            emit_or_warn!(
+                app_handle,
+                event_names::RECORDING_QUALITY_WARNING,
+                warning
+            );
+            crate::info!("[DIAGNOSTICS] Emitted quality warning: {:?}", warning.warning_type);
+        }
+
+        // Save raw audio file if debug mode was enabled
+        if let Some((raw_samples, device_sample_rate)) = &stop_result.raw_audio {
+            let raw_writer = SystemFileWriter::new(recordings_dir);
+            match encode_wav(raw_samples, *device_sample_rate, &raw_writer) {
+                Ok(raw_path) => {
+                    // Rename to add -raw suffix
+                    let raw_path_with_suffix = raw_path.replace(".wav", "-raw.wav");
+                    if let Err(e) = std::fs::rename(&raw_path, &raw_path_with_suffix) {
+                        crate::warn!("Failed to rename raw audio file: {}", e);
+                    } else {
+                        crate::info!("[DIAGNOSTICS] Saved raw audio to: {}", raw_path_with_suffix);
+                    }
+                }
+                Err(e) => {
+                    crate::warn!("Failed to save raw audio file: {:?}", e);
+                }
+            }
         }
 
         emit_or_warn!(
@@ -316,7 +347,7 @@ pub fn stop_recording(
         }
     }
 
-    result
+    result.map(|r| r.metadata)
 }
 
 /// Get the current recording state

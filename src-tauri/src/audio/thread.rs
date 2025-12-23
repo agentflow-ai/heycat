@@ -5,6 +5,7 @@
 // it on a dedicated thread and communicate via channels.
 
 use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CpalBackend, SharedDenoiser, StopReason};
+use super::diagnostics::QualityWarning;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -14,10 +15,14 @@ use std::time::Duration;
 pub type StartResponse = Result<u32, AudioCaptureError>;
 
 /// Result of stopping a recording (includes reason if auto-stopped)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct StopResult {
     /// Why the recording stopped (None = user initiated)
     pub reason: Option<StopReason>,
+    /// Quality warnings generated during the recording
+    pub warnings: Vec<QualityWarning>,
+    /// Raw audio data (if debug mode was enabled) with device sample rate
+    pub raw_audio: Option<(Vec<f32>, u32)>,
 }
 
 /// Commands sent to the audio thread
@@ -273,9 +278,14 @@ fn audio_thread_main(receiver: Receiver<AudioCommand>) {
                     }
                 }
                 stop_signal_rx = None;
+
+                // Get warnings and raw audio from backend (captured during stop)
+                let warnings = backend.take_warnings();
+                let raw_audio = backend.take_raw_audio();
+
                 // Send stop result back
                 if let Some(tx) = response_tx {
-                    let _ = tx.send(StopResult { reason });
+                    let _ = tx.send(StopResult { reason, warnings, raw_audio });
                 }
             }
             AudioCommand::Shutdown => {

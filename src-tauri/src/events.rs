@@ -13,6 +13,7 @@ pub mod event_names {
     pub const RECORDING_ERROR: &str = "recording_error";
     pub const AUDIO_DEVICE_ERROR: &str = "audio_device_error";
     pub const AUDIO_LEVEL: &str = "audio-level";
+    pub const RECORDING_QUALITY_WARNING: &str = "recording_quality_warning";
     pub const TRANSCRIPTION_STARTED: &str = "transcription_started";
     pub const TRANSCRIPTION_COMPLETED: &str = "transcription_completed";
     pub const TRANSCRIPTION_ERROR: &str = "transcription_error";

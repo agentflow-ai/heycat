@@ -12,7 +12,7 @@ use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolat
 use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState, StopReason, MAX_RESAMPLE_BUFFER_SAMPLES, TARGET_SAMPLE_RATE};
 use super::agc::AutomaticGainControl;
 use super::denoiser::{DtlnDenoiser, SharedDenoiser};
-use super::diagnostics::{RecordingDiagnostics, PipelineStage};
+use super::diagnostics::{RecordingDiagnostics, PipelineStage, QualityWarning};
 use super::preprocessing::PreprocessingChain;
 use crate::audio_constants::{PREFERRED_BUFFER_SIZE, RESAMPLE_CHUNK_SIZE};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -26,6 +26,12 @@ pub struct CpalBackend {
     stream: Option<Stream>,
     /// Stores callback state reference for diagnostic logging on stop
     callback_state: Option<Arc<CallbackState>>,
+    /// Quality warnings from the last recording (populated during stop)
+    last_warnings: Vec<QualityWarning>,
+    /// Raw audio from the last recording (if debug mode was enabled)
+    last_raw_audio: Option<Vec<f32>>,
+    /// Device sample rate from last recording (needed for raw audio WAV encoding)
+    last_device_sample_rate: Option<u32>,
 }
 
 impl CpalBackend {
@@ -35,7 +41,28 @@ impl CpalBackend {
             state: CaptureState::Idle,
             stream: None,
             callback_state: None,
+            last_warnings: Vec::new(),
+            last_raw_audio: None,
+            last_device_sample_rate: None,
         }
+    }
+
+    /// Get quality warnings from the last recording
+    ///
+    /// Returns warnings captured during the last recording session.
+    /// Available after stop() is called.
+    pub fn take_warnings(&mut self) -> Vec<QualityWarning> {
+        std::mem::take(&mut self.last_warnings)
+    }
+
+    /// Get raw audio from the last recording (if debug mode was enabled)
+    ///
+    /// Returns the raw (pre-processing) audio along with the device sample rate.
+    /// Available after stop() is called if HEYCAT_DEBUG_AUDIO was set.
+    pub fn take_raw_audio(&mut self) -> Option<(Vec<f32>, u32)> {
+        self.last_raw_audio.take().map(|audio| {
+            (audio, self.last_device_sample_rate.unwrap_or(super::TARGET_SAMPLE_RATE))
+        })
     }
 
     /// Start audio capture with optional shared denoiser
@@ -557,6 +584,11 @@ impl AudioCaptureBackend for CpalBackend {
         if let Some(ref callback_state) = self.callback_state {
             callback_state.flush_residuals();
             callback_state.log_sample_diagnostics();
+
+            // Capture warnings and raw audio before clearing callback_state
+            self.last_warnings = callback_state.diagnostics.check_warnings();
+            self.last_raw_audio = callback_state.diagnostics.raw_audio();
+            self.last_device_sample_rate = Some(callback_state.device_sample_rate);
         }
 
         // Clear callback state
