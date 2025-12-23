@@ -10,6 +10,7 @@ use cpal::{BufferSize, SampleRate, Stream, StreamConfig};
 use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 
 use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CaptureState, StopReason, MAX_RESAMPLE_BUFFER_SAMPLES, TARGET_SAMPLE_RATE};
+use super::agc::AutomaticGainControl;
 use super::denoiser::{DtlnDenoiser, SharedDenoiser};
 use super::preprocessing::PreprocessingChain;
 use crate::audio_constants::{PREFERRED_BUFFER_SIZE, RESAMPLE_CHUNK_SIZE};
@@ -235,6 +236,8 @@ struct CallbackState {
     preprocessing: Arc<Mutex<PreprocessingChain>>,
     /// Optional noise suppression denoiser (None if failed to load)
     denoiser: Option<Arc<Mutex<DtlnDenoiser>>>,
+    /// Automatic gain control for consistent volume levels
+    agc: Arc<Mutex<AutomaticGainControl>>,
 }
 
 impl CallbackState {
@@ -245,9 +248,11 @@ impl CallbackState {
     ///
     /// Processing order:
     /// 1. Channel mixing (stereo → mono)
-    /// 2. Resampling (if needed)
-    /// 3. Noise suppression (if enabled)
-    /// 4. Ring buffer storage
+    /// 2. Voice preprocessing (highpass + pre-emphasis)
+    /// 3. Resampling (if needed)
+    /// 4. Noise suppression (if enabled)
+    /// 5. Automatic gain control
+    /// 6. Ring buffer storage
     fn process_samples(&self, f32_samples: &[f32]) {
         // Check stop flag FIRST - don't process samples after stop is initiated
         // This prevents stale samples from corrupting the shared denoiser state
@@ -326,13 +331,19 @@ impl CallbackState {
         };
 
         // Apply noise suppression if available
-        let processed_samples = if let Some(ref denoiser) = self.denoiser {
+        let denoised_samples = if let Some(ref denoiser) = self.denoiser {
             match denoiser.lock() {
                 Ok(mut d) => d.process(&samples_to_add),
                 Err(_) => samples_to_add, // Skip denoising if lock fails
             }
         } else {
             samples_to_add
+        };
+
+        // Apply automatic gain control for consistent volume levels
+        let processed_samples = match self.agc.lock() {
+            Ok(mut agc) => agc.process(&denoised_samples),
+            Err(_) => denoised_samples, // Skip AGC if lock fails
         };
 
         // Use lock-free ring buffer for reduced contention
@@ -409,29 +420,44 @@ impl CallbackState {
         }
 
         // Step 2: Pass resampled residuals through denoiser (if present)
-        if !resampled_residuals.is_empty() {
+        let denoised_residuals = if !resampled_residuals.is_empty() {
             if let Some(ref denoiser) = self.denoiser {
                 if let Ok(mut d) = denoiser.lock() {
-                    let processed = d.process(&resampled_residuals);
-                    if !processed.is_empty() {
-                        self.output_sample_count.fetch_add(processed.len(), Ordering::Relaxed);
-                        self.buffer.push_samples(&processed);
-                    }
+                    d.process(&resampled_residuals)
+                } else {
+                    resampled_residuals
                 }
             } else {
-                // No denoiser, push directly to buffer
-                self.output_sample_count.fetch_add(resampled_residuals.len(), Ordering::Relaxed);
-                self.buffer.push_samples(&resampled_residuals);
+                resampled_residuals
             }
+        } else {
+            Vec::new()
+        };
+
+        // Step 3: Pass through AGC and push to buffer
+        if !denoised_residuals.is_empty() {
+            let final_samples = if let Ok(mut agc) = self.agc.lock() {
+                agc.process(&denoised_residuals)
+            } else {
+                denoised_residuals
+            };
+            self.output_sample_count.fetch_add(final_samples.len(), Ordering::Relaxed);
+            self.buffer.push_samples(&final_samples);
         }
 
-        // Step 3: Flush denoiser's internal buffers
+        // Step 4: Flush denoiser's internal buffers
         if let Some(ref denoiser) = self.denoiser {
             if let Ok(mut d) = denoiser.lock() {
                 let flushed = d.flush();
                 if !flushed.is_empty() {
-                    self.output_sample_count.fetch_add(flushed.len(), Ordering::Relaxed);
-                    self.buffer.push_samples(&flushed);
+                    // Pass flushed denoiser samples through AGC
+                    let final_flushed = if let Ok(mut agc) = self.agc.lock() {
+                        agc.process(&flushed)
+                    } else {
+                        flushed
+                    };
+                    self.output_sample_count.fetch_add(final_flushed.len(), Ordering::Relaxed);
+                    self.buffer.push_samples(&final_flushed);
                 }
             }
         }
@@ -669,6 +695,7 @@ impl CpalBackend {
             channel_count,
             preprocessing: Arc::new(Mutex::new(preprocessing)),
             denoiser,
+            agc: Arc::new(Mutex::new(AutomaticGainControl::new())),
         });
 
         // Create stream config with preferred buffer size
@@ -935,6 +962,7 @@ mod resampler_tests {
             channel_count: 1, // Tests use mono
             preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
             denoiser: None,
+            agc: Arc::new(Mutex::new(AutomaticGainControl::new())),
         };
 
         // Flush should not panic even when buffer is empty
@@ -975,6 +1003,7 @@ mod resampler_tests {
             channel_count: 1, // Tests use mono
             preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
             denoiser: None,
+            agc: Arc::new(Mutex::new(AutomaticGainControl::new())),
         };
 
         // Flush the residual samples
@@ -1013,6 +1042,7 @@ mod resampler_tests {
                 channel_count: 1, // Tests use mono
                 preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
                 denoiser: None,
+                agc: Arc::new(Mutex::new(AutomaticGainControl::new())),
             };
 
             // Should not panic
@@ -1132,6 +1162,7 @@ mod resampler_tests {
             channel_count: 1, // Tests use mono
             preprocessing: Arc::new(Mutex::new(PreprocessingChain::new(SOURCE_RATE as u32))),
             denoiser: None,
+            agc: Arc::new(Mutex::new(AutomaticGainControl::new())),
         };
 
         // Process some samples normally

@@ -30,6 +30,9 @@ pub use denoiser::SharedDenoiser;
 pub mod preprocessing;
 pub use preprocessing::PreprocessingChain;
 
+pub mod agc;
+pub use agc::AutomaticGainControl;
+
 #[cfg(test)]
 mod mod_test;
 
