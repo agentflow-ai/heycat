@@ -140,3 +140,44 @@ This copies the `agile/` folder from your worktree to the main repo and commits 
 ```bash
 git -C /path/to/main-repo push
 ```
+
+### Complete a feature and merge to main
+
+When a feature is complete in a worktree, use the completion script to merge it to main:
+
+```bash
+# From your worktree
+bun scripts/complete-feature.ts
+```
+
+This "golden path" script:
+1. Fetches latest main
+2. Rebases your feature onto main
+3. Squashes all commits into a single conventional commit (derived from WIP messages)
+4. Fast-forward merges to main
+5. Resets the worktree branch to main (ready for next feature)
+
+**If conflicts occur:**
+
+```bash
+# Resolve conflicts in the listed files, then:
+git add <resolved-files>
+git rebase --continue
+bun scripts/complete-feature.ts --continue
+```
+
+**Preview mode:**
+
+```bash
+bun scripts/complete-feature.ts --dry-run
+```
+
+**For coding agents:**
+
+Use the `/merge-worktree` command to trigger this flow with intelligent conflict resolution.
+
+After completing a feature, remember to sync the agile folder if needed:
+
+```bash
+bun scripts/sync-agile.ts
+```
