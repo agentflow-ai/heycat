@@ -4,12 +4,14 @@
 
 use crate::audio::AudioThreadHandle;
 use crate::commands::logic::{start_recording_impl, stop_recording_impl};
+use crate::keyboard_capture::cgeventtap::set_consume_escape;
 use crate::events::{
-    current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
-    CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, ListeningEventEmitter,
-    RecordingCancelledPayload, RecordingErrorPayload, RecordingEventEmitter,
-    RecordingStartedPayload, RecordingStoppedPayload, TranscriptionCompletedPayload,
-    TranscriptionErrorPayload, TranscriptionEventEmitter, TranscriptionStartedPayload,
+    current_timestamp, hotkey_events, CommandAmbiguousPayload, CommandCandidate,
+    CommandEventEmitter, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
+    HotkeyEventEmitter, ListeningEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
+    RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
+    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
+    TranscriptionStartedPayload,
 };
 use crate::hotkey::double_tap::{DoubleTapDetector, DEFAULT_DOUBLE_TAP_WINDOW_MS};
 use crate::hotkey::ShortcutBackend;
@@ -341,6 +343,10 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     escape_registered: Arc<AtomicBool>,
     /// Double-tap detector for Escape key (created on recording start)
     double_tap_detector: DoubleTapDetectorState,
+
+    // === Hotkey Events ===
+    /// Optional emitter for hotkey-related events (e.g., key blocking unavailable)
+    hotkey_emitter: Option<Arc<dyn HotkeyEventEmitter>>,
 }
 
 impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
@@ -370,6 +376,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             // Escape key runtime state
             escape_registered: Arc::new(AtomicBool::new(false)),
             double_tap_detector: None,
+            // Hotkey events
+            hotkey_emitter: None,
         }
     }
 
@@ -691,6 +699,16 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         self
     }
 
+    /// Set the hotkey event emitter for key blocking notifications (builder pattern)
+    ///
+    /// When set, failures to register the Escape key listener will emit a
+    /// `key_blocking_unavailable` event to notify the user that Escape key
+    /// blocking is unavailable (graceful degradation).
+    pub fn with_hotkey_emitter(mut self, emitter: Arc<dyn HotkeyEventEmitter>) -> Self {
+        self.hotkey_emitter = Some(emitter);
+        self
+    }
+
     /// Set the transcription callback (builder pattern)
     ///
     /// When set, spawn_transcription will delegate to this callback instead of
@@ -759,6 +777,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             // Escape key runtime state
             escape_registered: Arc::new(AtomicBool::new(false)),
             double_tap_detector: None,
+            // Hotkey events
+            hotkey_emitter: None,
         }
     }
 
@@ -834,6 +854,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                         // Register Escape key listener for cancel functionality
                         self.register_escape_listener();
 
+                        // Enable Escape key consumption to prevent propagation to other apps
+                        set_consume_escape(true);
+
                         // Start silence detection if enabled and configured
                         self.start_silence_detection(state);
 
@@ -853,6 +876,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
 
                 // Unregister Escape key listener first
                 self.unregister_escape_listener();
+
+                // Disable Escape key consumption since recording is stopping
+                set_consume_escape(false);
 
                 // Stop silence detection first to prevent it from interfering
                 // Manual stop takes precedence over auto-stop
@@ -1562,6 +1588,15 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                 Err(e) => {
                     crate::warn!("Failed to register Escape key listener: {}", e);
                     self.double_tap_detector = None;
+                    // Emit notification that key blocking is unavailable
+                    if let Some(ref emitter) = self.hotkey_emitter {
+                        emitter.emit_key_blocking_unavailable(
+                            hotkey_events::KeyBlockingUnavailablePayload {
+                                reason: format!("Failed to register Escape key listener: {}", e),
+                                timestamp: current_timestamp(),
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -1570,6 +1605,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         {
             // Clone the Arc<AtomicBool> for the spawned thread to set after successful registration
             let escape_registered = self.escape_registered.clone();
+            // Clone the hotkey emitter for the spawned thread to emit notifications on failure
+            let hotkey_emitter = self.hotkey_emitter.clone();
 
             // Spawn registration on a separate thread to avoid re-entrancy deadlock
             // This is necessary because we're called from within a global shortcut callback,
@@ -1595,6 +1632,15 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                     Err(e) => {
                         crate::warn!("Failed to register Escape key listener: {}", e);
                         // escape_registered remains false, so unregister won't attempt cleanup
+                        // Emit notification that key blocking is unavailable
+                        if let Some(ref emitter) = hotkey_emitter {
+                            emitter.emit_key_blocking_unavailable(
+                                hotkey_events::KeyBlockingUnavailablePayload {
+                                    reason: format!("Failed to register Escape key listener: {}", e),
+                                    timestamp: current_timestamp(),
+                                },
+                            );
+                        }
                     }
                 }
             });
@@ -1706,10 +1752,13 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         // 1. Unregister Escape key listener first
         self.unregister_escape_listener();
 
-        // 2. Stop silence detection if active
+        // 2. Disable Escape key consumption since recording is being cancelled
+        set_consume_escape(false);
+
+        // 3. Stop silence detection if active
         self.stop_silence_detection();
 
-        // 3. Stop audio capture (discard result - we don't want the audio)
+        // 4. Stop audio capture (discard result - we don't want the audio)
         if let Some(ref audio_thread) = self.audio_thread {
             // Stop the audio thread to halt capture
             if let Err(e) = audio_thread.stop() {
@@ -1718,7 +1767,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             }
         }
 
-        // 4. Abort recording - this clears the buffer and transitions directly to Idle
+        // 5. Abort recording - this clears the buffer and transitions directly to Idle
         //    (bypassing Processing state, so no transcription will be triggered)
         let abort_result = match state.lock() {
             Ok(mut guard) => guard.abort_recording(RecordingState::Idle),
@@ -1733,7 +1782,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
 
         match abort_result {
             Ok(()) => {
-                // 5. Emit recording_cancelled event
+                // 6. Emit recording_cancelled event
                 self.recording_emitter.emit_recording_cancelled(RecordingCancelledPayload {
                     reason: reason.to_string(),
                     timestamp: current_timestamp(),

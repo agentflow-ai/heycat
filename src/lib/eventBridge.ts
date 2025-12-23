@@ -41,6 +41,9 @@ export const eventNames = {
   // Dictionary events
   DICTIONARY_UPDATED: "dictionary_updated",
 
+  // Hotkey events
+  KEY_BLOCKING_UNAVAILABLE: "key_blocking_unavailable",
+
   // UI state events
   OVERLAY_MODE: "overlay-mode",
 } as const;
@@ -60,6 +63,12 @@ export interface TranscriptionCompletedPayload {
 /** Payload for transcription_error event */
 export interface TranscriptionErrorPayload {
   error: string;
+}
+
+/** Payload for key_blocking_unavailable event */
+export interface KeyBlockingUnavailablePayload {
+  reason: string;
+  timestamp: string;
 }
 
 /**
@@ -163,6 +172,17 @@ export async function setupEventBridge(
       queryClient.invalidateQueries({
         queryKey: queryKeys.dictionary.all,
       });
+    })
+  );
+
+  // Hotkey events - log warnings for edge cases
+  unlistenFns.push(
+    await listen<KeyBlockingUnavailablePayload>(eventNames.KEY_BLOCKING_UNAVAILABLE, (event) => {
+      console.warn(
+        "[heycat] Key blocking unavailable:",
+        event.payload.reason,
+        "- Escape key may propagate to other apps during recording cancel"
+      );
     })
   );
 

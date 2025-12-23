@@ -46,7 +46,6 @@ impl RecordingDetectors {
     }
 
     /// Create a new recording detectors coordinator with custom configuration
-    #[cfg(test)]
     pub fn with_config(silence_config: SilenceConfig) -> Self {
         Self::with_config_and_recordings_dir(
             silence_config,

@@ -18,11 +18,12 @@ use logic::{
 use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus, WakeWordEvent};
 
 use crate::events::{
-    command_events, event_names, listening_events, CommandAmbiguousPayload, CommandEventEmitter,
-    CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload, ListeningEventEmitter,
-    RecordingCancelledPayload, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
-    RecordingStoppedPayload, TranscriptionCompletedPayload, TranscriptionErrorPayload,
-    TranscriptionEventEmitter, TranscriptionStartedPayload,
+    command_events, event_names, hotkey_events, listening_events, CommandAmbiguousPayload,
+    CommandEventEmitter, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
+    HotkeyEventEmitter, ListeningEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
+    RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
+    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
+    TranscriptionStartedPayload,
 };
 use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, SharedDenoiser, StopReason, encode_wav, SystemFileWriter};
 use crate::parakeet::SharedTranscriptionModel;
@@ -163,6 +164,19 @@ impl ListeningEventEmitter for TauriEventEmitter {
         emit_or_warn!(
             self.app_handle,
             listening_events::LISTENING_UNAVAILABLE,
+            payload
+        );
+    }
+}
+
+impl HotkeyEventEmitter for TauriEventEmitter {
+    fn emit_key_blocking_unavailable(
+        &self,
+        payload: hotkey_events::KeyBlockingUnavailablePayload,
+    ) {
+        emit_or_warn!(
+            self.app_handle,
+            hotkey_events::KEY_BLOCKING_UNAVAILABLE,
             payload
         );
     }

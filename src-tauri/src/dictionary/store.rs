@@ -82,6 +82,11 @@ impl DictionaryStore {
         Ok(Self::new(config_path))
     }
 
+    /// Create a store using the default config path (API-compatible, uses main repo path)
+    pub fn with_default_path() -> Result<Self, DictionaryError> {
+        Self::with_default_path_context(None)
+    }
+
     /// Load entries from the persistence file
     pub fn load(&mut self) -> Result<(), DictionaryError> {
         crate::debug!("Loading dictionary from {:?}", self.config_path);
@@ -226,7 +231,6 @@ impl DictionaryStore {
     }
 
     /// Get an entry by ID
-    #[cfg(test)]
     pub fn get(&self, id: &str) -> Option<&DictionaryEntry> {
         self.entries.get(id)
     }

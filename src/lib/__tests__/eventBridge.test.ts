@@ -80,14 +80,15 @@ describe("eventBridge", () => {
       expect(eventHandlers.has(eventNames.WAKE_WORD_DETECTED)).toBe(true);
       expect(eventHandlers.has(eventNames.MODEL_DOWNLOAD_COMPLETED)).toBe(true);
       expect(eventHandlers.has(eventNames.DICTIONARY_UPDATED)).toBe(true);
+      expect(eventHandlers.has(eventNames.KEY_BLOCKING_UNAVAILABLE)).toBe(true);
       expect(eventHandlers.has(eventNames.OVERLAY_MODE)).toBe(true);
     });
 
     it("cleanup function unsubscribes all listeners", async () => {
       const cleanup = await setupEventBridge(queryClient, mockStore);
 
-      // Should have registered 14 listeners (10 server state + 4 UI state)
-      expect(mockUnlistenFns.length).toBe(14);
+      // Should have registered 15 listeners (11 server state + 4 UI state)
+      expect(mockUnlistenFns.length).toBe(15);
 
       // Call cleanup
       cleanup();
@@ -262,6 +263,26 @@ describe("eventBridge", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: queryKeys.dictionary.all,
       });
+    });
+  });
+
+  describe("hotkey events log warnings", () => {
+    it("key_blocking_unavailable logs warning to console", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await setupEventBridge(queryClient, mockStore);
+
+      emitMockEvent(eventNames.KEY_BLOCKING_UNAVAILABLE, {
+        reason: "Accessibility permission denied",
+        timestamp: "2025-01-01T12:00:00Z",
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[heycat] Key blocking unavailable:",
+        "Accessibility permission denied",
+        "- Escape key may propagate to other apps during recording cancel"
+      );
+
+      warnSpy.mockRestore();
     });
   });
 

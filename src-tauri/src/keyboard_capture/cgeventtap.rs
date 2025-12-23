@@ -70,6 +70,28 @@ const NX_KEYTYPE_ILLUMINATION_DOWN: u32 = 22;
 /// CGEventMask type for raw FFI
 type CGEventMask = u64;
 
+/// Escape key code on macOS
+const ESCAPE_KEY_CODE: u16 = 53;
+
+/// Global flag to control Escape key consumption during recording.
+/// When true, Escape key events are blocked from reaching other applications.
+/// This flag is thread-safe and can be set from the HotkeyIntegration layer.
+static CONSUME_ESCAPE: AtomicBool = AtomicBool::new(false);
+
+/// Set whether Escape key events should be consumed (blocked from other apps).
+/// Call with `true` when recording starts, `false` when recording stops/cancels.
+pub fn set_consume_escape(consume: bool) {
+    CONSUME_ESCAPE.store(consume, Ordering::SeqCst);
+    crate::debug!("Escape key consume mode: {}", consume);
+}
+
+/// Get the current state of the Escape key consumption flag.
+/// Returns true if Escape events are being blocked.
+#[cfg(test)]
+pub fn get_consume_escape() -> bool {
+    CONSUME_ESCAPE.load(Ordering::SeqCst)
+}
+
 /// Internal callback type for raw FFI
 type CGEventTapCallBackInternal = unsafe extern "C" fn(
     proxy: CGEventTapProxy,
@@ -272,6 +294,10 @@ impl Drop for CGEventTapCapture {
 }
 
 /// Internal callback for raw CGEventTap FFI
+///
+/// Returns:
+/// - Event pointer: passes the event through to other applications
+/// - null_mut(): blocks/consumes the event (requires DefaultTap mode)
 unsafe extern "C" fn cg_event_tap_callback_internal(
     _proxy: CGEventTapProxy,
     event_type: CGEventType,
@@ -281,11 +307,19 @@ unsafe extern "C" fn cg_event_tap_callback_internal(
     let callback = user_info as *mut CGEventTapCallBackFn;
     let event = CGEvent::from_ptr(event_ref as *mut _);
     let new_event = (*callback)(_proxy, event_type, &event);
-    let event = match new_event {
-        Some(new_event) => new_event,
-        None => event,
-    };
-    ManuallyDrop::new(event).as_ptr() as *mut c_void
+
+    match new_event {
+        Some(returned_event) => {
+            // Pass through the returned event to other applications
+            ManuallyDrop::new(returned_event).as_ptr() as *mut c_void
+        }
+        None => {
+            // Block/consume the event - prevent it from reaching other applications
+            // Keep original event alive to avoid premature drop
+            let _ = ManuallyDrop::new(event);
+            std::ptr::null_mut()
+        }
+    }
 }
 
 /// Run the CGEventTap capture loop
@@ -313,10 +347,28 @@ fn run_cgeventtap_loop(
     let callback_state = state.clone();
 
     // Create boxed callback closure
+    // Returns Some(event) to pass through, None to block
     let callback: CGEventTapCallBackFn = Box::new(move |_proxy, event_type, event| {
+        // Always process the event for hotkey detection first
         handle_cg_event(event_type, event, &callback_state);
-        // Return None to pass the event through unchanged
-        None
+
+        // Check if we should consume (block) Escape key events
+        // This prevents Escape from reaching other apps during recording
+        let event_type_raw = event_type as u32;
+        if event_type_raw == 10 || event_type_raw == 11 {
+            // KeyDown (10) or KeyUp (11)
+            let key_code = event.get_integer_value_field(
+                core_graphics::event::EventField::KEYBOARD_EVENT_KEYCODE,
+            ) as u16;
+
+            if key_code == ESCAPE_KEY_CODE && CONSUME_ESCAPE.load(Ordering::SeqCst) {
+                crate::debug!("Blocking Escape key event (consume mode active)");
+                return None; // Block the event
+            }
+        }
+
+        // Pass through all other events
+        Some(event.clone())
     });
     let cb = Box::new(callback);
     let cbr = Box::into_raw(cb);
@@ -326,7 +378,7 @@ fn run_cgeventtap_loop(
         CGEventTapCreate(
             CGEventTapLocation::HID,
             CGEventTapPlacement::HeadInsertEventTap,
-            CGEventTapOptions::ListenOnly,
+            CGEventTapOptions::Default,
             event_mask,
             cg_event_tap_callback_internal,
             cbr as *mut c_void,
@@ -1014,5 +1066,46 @@ mod tests {
         assert_eq!(event.key_name, "VolumeUp");
         assert!(event.pressed);
         assert!(event.is_media_key);
+    }
+
+    // === Escape key consumption tests ===
+
+    #[test]
+    fn test_consume_escape_default_false() {
+        // Reset to known state first
+        set_consume_escape(false);
+        // Default state should be false (Escape passes through)
+        assert!(!get_consume_escape());
+    }
+
+    #[test]
+    fn test_consume_escape_set_true() {
+        // Set consume mode to true
+        set_consume_escape(true);
+        assert!(get_consume_escape());
+        // Clean up
+        set_consume_escape(false);
+    }
+
+    #[test]
+    fn test_consume_escape_set_false() {
+        // First set to true
+        set_consume_escape(true);
+        assert!(get_consume_escape());
+        // Then set back to false
+        set_consume_escape(false);
+        assert!(!get_consume_escape());
+    }
+
+    #[test]
+    fn test_escape_key_code_constant() {
+        // Verify the ESCAPE_KEY_CODE constant is correct (53 on macOS)
+        assert_eq!(ESCAPE_KEY_CODE, 53);
+    }
+
+    #[test]
+    fn test_keycode_to_name_escape() {
+        // Verify Escape key is properly mapped
+        assert_eq!(keycode_to_name(ESCAPE_KEY_CODE as u32), "Escape");
     }
 }

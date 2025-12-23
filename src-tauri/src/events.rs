@@ -94,6 +94,28 @@ pub trait ListeningEventEmitter: Send + Sync {
     fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload);
 }
 
+/// Hotkey-related event names
+pub mod hotkey_events {
+    pub const KEY_BLOCKING_UNAVAILABLE: &str = "key_blocking_unavailable";
+
+    /// Payload for key_blocking_unavailable event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct KeyBlockingUnavailablePayload {
+        /// Reason why key blocking is unavailable
+        pub reason: String,
+        /// ISO 8601 timestamp when the issue was detected
+        pub timestamp: String,
+    }
+}
+
+/// Trait for emitting hotkey events
+/// Allows mocking in tests while using real Tauri AppHandle in production
+pub trait HotkeyEventEmitter: Send + Sync {
+    /// Emit key_blocking_unavailable event
+    fn emit_key_blocking_unavailable(&self, payload: hotkey_events::KeyBlockingUnavailablePayload);
+}
+
 /// Dictionary-related event names
 pub mod dictionary_events {
     pub const DICTIONARY_UPDATED: &str = "dictionary_updated";
@@ -330,6 +352,8 @@ pub(crate) mod tests {
         pub listening_stopped_events: Arc<Mutex<Vec<listening_events::ListeningStoppedPayload>>>,
         pub listening_unavailable_events:
             Arc<Mutex<Vec<listening_events::ListeningUnavailablePayload>>>,
+        pub key_blocking_unavailable_events:
+            Arc<Mutex<Vec<hotkey_events::KeyBlockingUnavailablePayload>>>,
     }
 
     impl MockEventEmitter {
@@ -415,6 +439,18 @@ pub(crate) mod tests {
             payload: listening_events::ListeningUnavailablePayload,
         ) {
             self.listening_unavailable_events
+                .lock()
+                .unwrap()
+                .push(payload);
+        }
+    }
+
+    impl HotkeyEventEmitter for MockEventEmitter {
+        fn emit_key_blocking_unavailable(
+            &self,
+            payload: hotkey_events::KeyBlockingUnavailablePayload,
+        ) {
+            self.key_blocking_unavailable_events
                 .lock()
                 .unwrap()
                 .push(payload);
@@ -582,5 +618,22 @@ pub(crate) mod tests {
         });
 
         assert_eq!(emitter.started_events.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_mock_emitter_records_hotkey_events() {
+        let emitter = MockEventEmitter::new();
+
+        emitter.emit_key_blocking_unavailable(hotkey_events::KeyBlockingUnavailablePayload {
+            reason: "Accessibility permission denied".to_string(),
+            timestamp: "2025-01-01T12:00:00Z".to_string(),
+        });
+
+        assert_eq!(
+            emitter.key_blocking_unavailable_events.lock().unwrap().len(),
+            1
+        );
+        let payload = &emitter.key_blocking_unavailable_events.lock().unwrap()[0];
+        assert_eq!(payload.reason, "Accessibility permission denied");
     }
 }

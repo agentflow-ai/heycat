@@ -80,19 +80,6 @@ pub fn run() {
             }
             app.manage(worktree_state);
 
-            // Set dynamic window title based on worktree context
-            if let Some(window) = app.get_webview_window("main") {
-                let title = match &worktree_context {
-                    Some(ctx) => format!("heycat - {}", ctx.identifier),
-                    None => "heycat".to_string(),
-                };
-                if let Err(e) = window.set_title(&title) {
-                    warn!("Failed to set window title: {}", e);
-                } else {
-                    debug!("Window title set to: {}", title);
-                }
-            }
-
             // Check for collision with another running instance
             // This must happen before any state initialization that writes to data directories
             let collision_result = worktree::check_collision(worktree_context.as_ref());
@@ -319,6 +306,9 @@ pub fn run() {
                     transcription_service_for_callback.process_recording(file_path);
                 });
 
+            // Create hotkey event emitter for key blocking notifications
+            let hotkey_emitter = Arc::new(commands::TauriEventEmitter::new(app.handle().clone()));
+
             let mut integration_builder = hotkey::HotkeyIntegration::<
                 commands::TauriEventEmitter,
                 commands::TauriEventEmitter,
@@ -336,6 +326,7 @@ pub fn run() {
                 .with_recordings_dir(recordings_dir)
                 .with_shortcut_backend(escape_backend)
                 .with_transcription_callback(transcription_callback)
+                .with_hotkey_emitter(hotkey_emitter)
                 .with_silence_detection_enabled(false); // Disable for push-to-talk
 
             // Wire up voice command integration using grouped config if available

@@ -17,6 +17,10 @@ pub struct VoiceCommandsState {
 }
 
 impl VoiceCommandsState {
+    pub fn new() -> Result<Self, RegistryError> {
+        Self::new_with_context(None)
+    }
+
     pub fn new_with_context(
         worktree_context: Option<&crate::worktree::WorktreeContext>,
     ) -> Result<Self, RegistryError> {

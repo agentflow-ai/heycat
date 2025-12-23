@@ -63,6 +63,7 @@ struct MockEmitter {
     command_executed: Arc<Mutex<Vec<CommandExecutedPayload>>>,
     command_failed: Arc<Mutex<Vec<CommandFailedPayload>>>,
     command_ambiguous: Arc<Mutex<Vec<CommandAmbiguousPayload>>>,
+    key_blocking_unavailable: Arc<Mutex<Vec<crate::events::hotkey_events::KeyBlockingUnavailablePayload>>>,
 }
 
 impl MockEmitter {
@@ -84,6 +85,10 @@ impl MockEmitter {
 
     fn last_cancelled(&self) -> Option<RecordingCancelledPayload> {
         self.cancelled.lock().unwrap().last().cloned()
+    }
+
+    fn key_blocking_unavailable_count(&self) -> usize {
+        self.key_blocking_unavailable.lock().unwrap().len()
     }
 }
 
@@ -152,6 +157,12 @@ impl crate::events::ListeningEventEmitter for MockEmitter {
 
     fn emit_listening_unavailable(&self, _payload: crate::events::listening_events::ListeningUnavailablePayload) {
         // No-op for tests
+    }
+}
+
+impl crate::events::HotkeyEventEmitter for MockEmitter {
+    fn emit_key_blocking_unavailable(&self, payload: crate::events::hotkey_events::KeyBlockingUnavailablePayload) {
+        self.key_blocking_unavailable.lock().unwrap().push(payload);
     }
 }
 
@@ -1253,4 +1264,36 @@ fn test_unregister_not_called_when_registration_failed() {
         0,
         "Unregister should not be called when registration failed"
     );
+}
+
+#[test]
+fn test_key_blocking_unavailable_event_emitted_on_registration_failure() {
+    // When Escape key registration fails, the key_blocking_unavailable event
+    // should be emitted to notify the frontend
+    ensure_test_model_files();
+
+    let emitter = MockEmitter::new();
+    let backend = Arc::new(FailingShortcutBackend::new());
+    let hotkey_emitter = Arc::new(emitter.clone());
+
+    let mut integration: TestIntegration =
+        HotkeyIntegration::with_debounce(emitter.clone(), 0)
+            .with_shortcut_backend(backend)
+            .with_escape_callback(Arc::new(|| {}))
+            .with_hotkey_emitter(hotkey_emitter);
+    let state = Mutex::new(RecordingManager::new());
+
+    // Start recording - this triggers register_escape_listener which will fail
+    integration.handle_toggle(&state);
+
+    // Verify the key_blocking_unavailable event was emitted
+    assert_eq!(
+        emitter.key_blocking_unavailable_count(),
+        1,
+        "key_blocking_unavailable event should be emitted when registration fails"
+    );
+
+    // Recording should still work (graceful degradation)
+    assert_eq!(state.lock().unwrap().get_state(), RecordingState::Recording);
+    assert_eq!(emitter.started_count(), 1);
 }
