@@ -106,20 +106,54 @@ fn create_resampler(
     .map_err(|e| AudioCaptureError::DeviceError(format!("Failed to create resampler: {}", e)))
 }
 
+/// Get the effective buffer size, checking for environment variable override.
+///
+/// For troubleshooting audio issues, the buffer size can be overridden by setting
+/// the `HEYCAT_AUDIO_BUFFER_SIZE` environment variable to a value between 64 and 2048.
+/// If not set or invalid, uses `PREFERRED_BUFFER_SIZE` (256 samples).
+fn get_effective_buffer_size() -> u32 {
+    if let Ok(env_value) = std::env::var("HEYCAT_AUDIO_BUFFER_SIZE") {
+        if let Ok(size) = env_value.parse::<u32>() {
+            if (64..=2048).contains(&size) {
+                crate::info!(
+                    "Using buffer size {} from HEYCAT_AUDIO_BUFFER_SIZE environment variable",
+                    size
+                );
+                return size;
+            } else {
+                crate::warn!(
+                    "HEYCAT_AUDIO_BUFFER_SIZE={} is out of range (64-2048), using default {}",
+                    size,
+                    PREFERRED_BUFFER_SIZE
+                );
+            }
+        } else {
+            crate::warn!(
+                "HEYCAT_AUDIO_BUFFER_SIZE='{}' is not a valid number, using default {}",
+                env_value,
+                PREFERRED_BUFFER_SIZE
+            );
+        }
+    }
+    PREFERRED_BUFFER_SIZE
+}
+
 /// Create a StreamConfig with the preferred buffer size.
 ///
-/// Attempts to use `BufferSize::Fixed(PREFERRED_BUFFER_SIZE)` for consistent timing.
+/// Attempts to use `BufferSize::Fixed(buffer_size)` for consistent timing.
 /// The actual buffer size used by the driver may differ from the requested size.
-fn create_stream_config_with_buffer_size(base_config: cpal::SupportedStreamConfig) -> StreamConfig {
+/// Buffer size can be overridden via `HEYCAT_AUDIO_BUFFER_SIZE` env var for troubleshooting.
+fn create_stream_config_with_buffer_size(base_config: cpal::SupportedStreamConfig) -> (StreamConfig, u32) {
+    let buffer_size = get_effective_buffer_size();
     let mut config: StreamConfig = base_config.into();
-    config.buffer_size = BufferSize::Fixed(PREFERRED_BUFFER_SIZE);
+    config.buffer_size = BufferSize::Fixed(buffer_size);
     crate::info!(
         "Requesting buffer size: {} samples (~{:.1}ms at {}Hz)",
-        PREFERRED_BUFFER_SIZE,
-        PREFERRED_BUFFER_SIZE as f32 / config.sample_rate.0 as f32 * 1000.0,
+        buffer_size,
+        buffer_size as f32 / config.sample_rate.0 as f32 * 1000.0,
         config.sample_rate.0
     );
-    config
+    (config, buffer_size)
 }
 
 /// Shared state for audio processing callback
@@ -537,7 +571,7 @@ impl CpalBackend {
         });
 
         // Create stream config with preferred buffer size
-        let stream_config = create_stream_config_with_buffer_size(config.clone());
+        let (stream_config, effective_buffer_size) = create_stream_config_with_buffer_size(config.clone());
         let sample_format = config.sample_format();
 
         // Build the input stream based on sample format
@@ -566,13 +600,13 @@ impl CpalBackend {
                 );
                 match result {
                     Ok(stream) => {
-                        crate::info!("Stream created with fixed buffer size: {} samples", PREFERRED_BUFFER_SIZE);
+                        crate::info!("Stream created with fixed buffer size: {} samples", effective_buffer_size);
                         Ok(stream)
                     }
                     Err(e) => {
                         crate::warn!(
                             "Fixed buffer size {} rejected ({}), falling back to platform default",
-                            PREFERRED_BUFFER_SIZE, e
+                            effective_buffer_size, e
                         );
                         let default_config: StreamConfig = config.clone().into();
                         let state = callback_state.clone();
@@ -610,13 +644,13 @@ impl CpalBackend {
                 );
                 match result {
                     Ok(stream) => {
-                        crate::info!("Stream created with fixed buffer size: {} samples", PREFERRED_BUFFER_SIZE);
+                        crate::info!("Stream created with fixed buffer size: {} samples", effective_buffer_size);
                         Ok(stream)
                     }
                     Err(e) => {
                         crate::warn!(
                             "Fixed buffer size {} rejected ({}), falling back to platform default",
-                            PREFERRED_BUFFER_SIZE, e
+                            effective_buffer_size, e
                         );
                         let default_config: StreamConfig = config.clone().into();
                         let state = callback_state.clone();
@@ -655,13 +689,13 @@ impl CpalBackend {
                 );
                 match result {
                     Ok(stream) => {
-                        crate::info!("Stream created with fixed buffer size: {} samples", PREFERRED_BUFFER_SIZE);
+                        crate::info!("Stream created with fixed buffer size: {} samples", effective_buffer_size);
                         Ok(stream)
                     }
                     Err(e) => {
                         crate::warn!(
                             "Fixed buffer size {} rejected ({}), falling back to platform default",
-                            PREFERRED_BUFFER_SIZE, e
+                            effective_buffer_size, e
                         );
                         let default_config: StreamConfig = config.clone().into();
                         let state = callback_state.clone();
