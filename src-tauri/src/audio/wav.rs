@@ -59,14 +59,6 @@ impl SystemFileWriter {
         Self { recordings_dir }
     }
 
-    /// Create a SystemFileWriter using the default path with optional worktree context
-    pub fn with_worktree_context(
-        worktree_context: Option<&crate::worktree::WorktreeContext>,
-    ) -> Self {
-        let recordings_dir = crate::paths::get_recordings_dir(worktree_context)
-            .unwrap_or_else(|_| PathBuf::from(".").join("heycat").join("recordings"));
-        Self { recordings_dir }
-    }
 }
 
 impl FileWriter for SystemFileWriter {
