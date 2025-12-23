@@ -47,15 +47,18 @@ pub trait FileWriter {
 }
 
 /// Production file writer using system paths and real filesystem
+///
+/// Currently uses the main repo path for recordings. To support worktree-specific
+/// recordings, the WAV encoding flow would need to pass worktree context through
+/// the encode_wav function.
 pub struct SystemFileWriter;
 
 impl FileWriter for SystemFileWriter {
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn output_dir(&self) -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("heycat")
-            .join("recordings")
+        // Use paths module with None context for API compatibility
+        crate::paths::get_recordings_dir(None)
+            .unwrap_or_else(|_| PathBuf::from(".").join("heycat").join("recordings"))
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]

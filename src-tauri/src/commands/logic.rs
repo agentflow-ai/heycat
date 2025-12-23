@@ -301,14 +301,19 @@ pub fn clear_last_recording_buffer_impl(state: &Mutex<RecordingManager>) -> Resu
     Ok(())
 }
 
-/// Get the recordings directory path
+/// Get the recordings directory path with worktree context
 ///
 /// Uses the same path as SystemFileWriter for consistency
+fn get_recordings_dir_with_context(
+    worktree_context: Option<&crate::worktree::WorktreeContext>,
+) -> PathBuf {
+    crate::paths::get_recordings_dir(worktree_context)
+        .unwrap_or_else(|_| PathBuf::from(".").join("heycat").join("recordings"))
+}
+
+/// Get the recordings directory path (API-compatible, uses main repo path)
 fn get_recordings_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("heycat")
-        .join("recordings")
+    get_recordings_dir_with_context(None)
 }
 
 /// Implementation of list_recordings
