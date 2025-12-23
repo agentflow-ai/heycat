@@ -17,6 +17,7 @@ mod parakeet;
 mod recording;
 mod transcription;
 mod voice_commands;
+mod worktree;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -65,6 +66,15 @@ pub fn run() {
         )
         .setup(|app| {
             info!("Setting up heycat...");
+
+            // Detect worktree context for data isolation
+            let worktree_context = worktree::detect_worktree();
+            if let Some(ref ctx) = worktree_context {
+                info!("Running in worktree: {} (gitdir: {:?})", ctx.identifier, ctx.gitdir_path);
+            } else {
+                info!("Running in main repository");
+            }
+            app.manage(worktree::WorktreeState { context: worktree_context });
 
             // Create shared state for recording manager
             let recording_state = Arc::new(Mutex::new(recording::RecordingManager::new()));

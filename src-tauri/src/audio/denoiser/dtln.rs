@@ -6,6 +6,7 @@
 
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::f32::consts::PI;
+use std::sync::Arc;
 use tract_onnx::prelude::*;
 
 use super::{DtlnModels, RunnableModel};
@@ -28,9 +29,9 @@ const LSTM_UNITS: usize = 128;
 /// for temporal continuity. Uses overlap-add for smooth output.
 pub struct DtlnDenoiser {
     /// Model 1: Magnitude masking (frequency domain)
-    model_1: RunnableModel,
+    model_1: Arc<RunnableModel>,
     /// Model 2: Time-domain refinement
-    model_2: RunnableModel,
+    model_2: Arc<RunnableModel>,
 
     /// Input frame buffer (accumulates samples until full frame)
     input_buffer: Vec<f32>,

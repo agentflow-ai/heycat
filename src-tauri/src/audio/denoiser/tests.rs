@@ -6,6 +6,12 @@ use super::*;
 use dtln::{FRAME_SHIFT, FRAME_SIZE};
 use std::f32::consts::PI;
 use std::path::PathBuf;
+use std::sync::LazyLock;
+
+/// Cached models loaded once for all tests - avoids repeated ~200ms model loads
+static CACHED_MODELS: LazyLock<DtlnModels> = LazyLock::new(|| {
+    load_embedded_models().expect("Models should load for tests")
+});
 
 /// Test that embedded models load successfully
 ///
@@ -92,10 +98,9 @@ fn test_loaded_models_are_runnable() {
 // DtlnDenoiser behavior tests
 // ============================================================================
 
-/// Helper function to create a denoiser for tests
+/// Helper function to create a denoiser for tests using cached models
 fn create_test_denoiser() -> DtlnDenoiser {
-    let models = load_embedded_models().expect("Models should load for tests");
-    DtlnDenoiser::new(models)
+    DtlnDenoiser::new(CACHED_MODELS.clone())
 }
 
 /// Test: Process silent audio returns silent output
@@ -171,7 +176,7 @@ fn test_process_speech_like_signal_preserves_content() {
 /// all at once (within numerical tolerance).
 #[test]
 fn test_multiple_calls_maintain_continuity() {
-    let models = load_embedded_models().expect("Models should load");
+    let models = CACHED_MODELS.clone();
 
     // Create a test signal (speech-like frequencies)
     let test_signal: Vec<f32> = (0..8000)

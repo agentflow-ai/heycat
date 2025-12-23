@@ -87,6 +87,12 @@ impl std::fmt::Debug for SharedDenoiser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
+
+    /// Cached SharedDenoiser for tests - avoids repeated model loads
+    static CACHED_SHARED_DENOISER: LazyLock<SharedDenoiser> = LazyLock::new(|| {
+        SharedDenoiser::try_load().expect("Models should load for tests")
+    });
 
     // ==================== Behavior Tests ====================
 
@@ -94,6 +100,7 @@ mod tests {
     fn test_try_load_succeeds_with_embedded_models() {
         // This test verifies that the embedded models can be loaded
         // It's a critical behavior test since the app won't function without models
+        // Note: This test intentionally calls try_load() directly to verify the load path
         let result = SharedDenoiser::try_load();
         assert!(result.is_ok(), "Failed to load embedded models: {:?}", result.err());
     }
@@ -101,7 +108,7 @@ mod tests {
     #[test]
     fn test_reset_does_not_panic() {
         // Reset should always succeed, even if called multiple times
-        let denoiser = SharedDenoiser::try_load().expect("Failed to load denoiser");
+        let denoiser = CACHED_SHARED_DENOISER.clone();
         denoiser.reset();
         denoiser.reset(); // Multiple resets should be safe
     }
@@ -109,7 +116,7 @@ mod tests {
     #[test]
     fn test_inner_returns_same_instance() {
         // Verify that inner() returns clones pointing to the same denoiser
-        let denoiser = SharedDenoiser::try_load().expect("Failed to load denoiser");
+        let denoiser = CACHED_SHARED_DENOISER.clone();
         let inner1 = denoiser.inner();
         let inner2 = denoiser.inner();
 
@@ -120,7 +127,7 @@ mod tests {
     #[test]
     fn test_clone_shares_same_denoiser() {
         // Verify that cloning SharedDenoiser shares the same inner instance
-        let denoiser1 = SharedDenoiser::try_load().expect("Failed to load denoiser");
+        let denoiser1 = CACHED_SHARED_DENOISER.clone();
         let denoiser2 = denoiser1.clone();
 
         // Both clones should share the same inner Arc

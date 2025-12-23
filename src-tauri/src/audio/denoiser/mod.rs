@@ -5,6 +5,7 @@
 //! two-stage processing: magnitude masking followed by time-domain refinement.
 
 use std::path::Path;
+use std::sync::Arc;
 use thiserror::Error;
 use tract_onnx::prelude::*;
 
@@ -53,11 +54,14 @@ pub type RunnableModel = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact
 /// - Model 2: Time-domain refinement (LSTM-based)
 ///
 /// Both models have LSTM states that must be tracked between frames.
+///
+/// Models are wrapped in Arc for efficient sharing (e.g., in tests).
+#[derive(Clone)]
 pub struct DtlnModels {
     /// Stage 1 model: Magnitude masking
-    pub model_1: RunnableModel,
+    pub model_1: Arc<RunnableModel>,
     /// Stage 2 model: Time-domain refinement
-    pub model_2: RunnableModel,
+    pub model_2: Arc<RunnableModel>,
 }
 
 impl DtlnModels {
@@ -91,10 +95,10 @@ impl DtlnModels {
         }
 
         // Load model 1
-        let model_1 = Self::load_and_optimize_model(model_1_path)?;
+        let model_1 = Arc::new(Self::load_and_optimize_model(model_1_path)?);
 
         // Load model 2
-        let model_2 = Self::load_and_optimize_model(model_2_path)?;
+        let model_2 = Arc::new(Self::load_and_optimize_model(model_2_path)?);
 
         Ok(Self { model_1, model_2 })
     }
@@ -111,8 +115,8 @@ impl DtlnModels {
     /// * `Ok(DtlnModels)` - Successfully loaded and optimized models
     /// * `Err(DenoiserError)` - If loading or optimization fails
     pub fn load_from_bytes(model_1_bytes: &[u8], model_2_bytes: &[u8]) -> Result<Self, DenoiserError> {
-        let model_1 = Self::load_and_optimize_model_from_bytes(model_1_bytes, "model_1")?;
-        let model_2 = Self::load_and_optimize_model_from_bytes(model_2_bytes, "model_2")?;
+        let model_1 = Arc::new(Self::load_and_optimize_model_from_bytes(model_1_bytes, "model_1")?);
+        let model_2 = Arc::new(Self::load_and_optimize_model_from_bytes(model_2_bytes, "model_2")?);
 
         Ok(Self { model_1, model_2 })
     }
