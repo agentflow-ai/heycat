@@ -190,7 +190,7 @@ describe("useDictionary", () => {
       expect(mockInvoke).toHaveBeenCalledWith("add_dictionary_entry", {
         trigger: "brb",
         expansion: "be right back",
-        auto_enter: true,
+        autoEnter: true,
       });
     });
 
@@ -306,7 +306,7 @@ describe("useDictionary", () => {
         id: "1",
         trigger: "brb",
         expansion: "be right back",
-        auto_enter: true,
+        autoEnter: true,
       });
     });
   });

@@ -113,7 +113,7 @@ describe("Dictionary", () => {
         trigger: "afk",
         expansion: "away from keyboard",
         suffix: "!",
-        auto_enter: true,
+        autoEnter: true,
       });
     });
 
@@ -212,7 +212,7 @@ describe("Dictionary", () => {
         trigger: "brb",
         expansion: "be right back soon",
         suffix: "?",
-        auto_enter: undefined,
+        autoEnter: undefined,
       });
     });
 
