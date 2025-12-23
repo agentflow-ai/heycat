@@ -488,27 +488,15 @@ impl CpalBackend {
         let chunk_buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.0f32; RESAMPLE_CHUNK_SIZE]));
 
         // Initialize noise suppression denoiser
-        // Use shared denoiser if provided (eliminates ~2s loading delay), otherwise load inline
+        // Use shared denoiser if provided, otherwise no denoising (user disabled or unavailable)
         let denoiser: Option<Arc<Mutex<DtlnDenoiser>>> = if let Some(shared) = shared_denoiser {
             // Reset the shared denoiser's LSTM states for this new recording
             shared.reset();
             Some(shared.inner())
         } else {
-            // Fallback: load denoiser inline (slow path, ~2s delay)
-            crate::debug!("No shared denoiser provided, loading inline...");
-            match load_embedded_models() {
-                Ok(models) => {
-                    crate::info!("DTLN noise suppression initialized inline");
-                    Some(Arc::new(Mutex::new(DtlnDenoiser::new(models))))
-                }
-                Err(e) => {
-                    crate::warn!(
-                        "Failed to initialize noise suppression, continuing without denoising: {}",
-                        e
-                    );
-                    None
-                }
-            }
+            // No denoiser - either disabled by user setting or shared denoiser unavailable
+            crate::debug!("No denoiser - noise suppression disabled or unavailable");
+            None
         };
 
         // Create shared callback state - all callbacks use the same processing logic
