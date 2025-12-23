@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 created: 2025-12-23
 completed: null
 dependencies: ["worktree-detection"]

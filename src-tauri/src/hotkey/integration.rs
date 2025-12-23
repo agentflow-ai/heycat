@@ -375,11 +375,23 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         self
     }
 
+    /// Get the settings file name for the current worktree context.
+    /// Falls back to "settings.json" if worktree state is not available.
+    fn get_settings_file(&self) -> String {
+        use tauri::Manager;
+        self.app_handle
+            .as_ref()
+            .and_then(|app| app.try_state::<crate::worktree::WorktreeState>())
+            .map(|s| s.settings_file_name())
+            .unwrap_or_else(|| crate::worktree::DEFAULT_SETTINGS_FILE.to_string())
+    }
+
     /// Get the selected audio device from persistent settings store
     fn get_selected_audio_device(&self) -> Option<String> {
         use tauri_plugin_store::StoreExt;
+        let settings_file = self.get_settings_file();
         self.app_handle.as_ref().and_then(|app| {
-            app.store("settings.json")
+            app.store(&settings_file)
                 .ok()
                 .and_then(|store| store.get("audio.selectedDevice"))
                 .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -389,10 +401,11 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     /// Check if noise suppression is enabled from persistent settings store
     fn is_noise_suppression_enabled(&self) -> bool {
         use tauri_plugin_store::StoreExt;
+        let settings_file = self.get_settings_file();
         self.app_handle
             .as_ref()
             .and_then(|app| {
-                app.store("settings.json")
+                app.store(&settings_file)
                     .ok()
                     .and_then(|store| store.get("audio.noiseSuppression"))
                     .and_then(|v| v.as_bool())

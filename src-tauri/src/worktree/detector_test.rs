@@ -6,7 +6,7 @@
 // - Same worktree path always generates same identifier (deterministic)
 // - Different worktree paths generate different identifiers
 
-use super::{detect_worktree_at, WorktreeContext};
+use super::detect_worktree_at;
 use std::fs;
 use tempfile::TempDir;
 
@@ -143,4 +143,69 @@ fn test_trims_whitespace_from_gitdir() {
 
     assert!(result.is_some());
     assert_eq!(result.unwrap().identifier, "my-branch");
+}
+
+// =============================================================================
+// WorktreeContext settings_file_name tests
+// =============================================================================
+
+#[test]
+fn test_worktree_context_settings_file_name() {
+    let temp_dir = create_worktree("feature-branch");
+    let git_path = temp_dir.path().join(".git");
+
+    let context = detect_worktree_at(&git_path).unwrap();
+
+    assert_eq!(
+        context.settings_file_name(),
+        "settings-feature-branch.json",
+        "Worktree settings file should be named settings-{{identifier}}.json"
+    );
+}
+
+#[test]
+fn test_worktree_context_settings_file_name_with_special_chars() {
+    let temp_dir = create_worktree("feature_with-special.chars");
+    let git_path = temp_dir.path().join(".git");
+
+    let context = detect_worktree_at(&git_path).unwrap();
+
+    assert_eq!(
+        context.settings_file_name(),
+        "settings-feature_with-special.chars.json",
+        "Worktree settings file should preserve identifier special characters"
+    );
+}
+
+// =============================================================================
+// WorktreeState settings_file_name tests
+// =============================================================================
+
+use super::WorktreeState;
+
+#[test]
+fn test_worktree_state_settings_file_in_worktree() {
+    let temp_dir = create_worktree("my-worktree");
+    let git_path = temp_dir.path().join(".git");
+    let context = detect_worktree_at(&git_path);
+
+    let state = WorktreeState { context };
+
+    assert_eq!(
+        state.settings_file_name(),
+        "settings-my-worktree.json",
+        "WorktreeState should return worktree-specific settings file when in worktree"
+    );
+}
+
+#[test]
+fn test_worktree_state_settings_file_in_main_repo() {
+    // Simulate main repo (no worktree context)
+    let state = WorktreeState { context: None };
+
+    assert_eq!(
+        state.settings_file_name(),
+        "settings.json",
+        "WorktreeState should return default settings.json when in main repo"
+    );
 }

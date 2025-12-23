@@ -5,6 +5,7 @@ import {
   useSettingsCache,
   useIsSettingsLoaded,
 } from "../stores/appStore";
+import { getSettingsFile } from "../lib/settingsFile";
 
 /** Settings related to listening mode */
 export interface ListeningSettings {
@@ -47,8 +48,6 @@ export interface UseSettingsReturn {
   updateNoiseSuppression: (enabled: boolean) => Promise<void>;
 }
 
-const STORE_FILE = "settings.json";
-
 /**
  * Initialize settings from Tauri Store into Zustand on app startup.
  * Called once from AppInitializer before the app renders.
@@ -58,7 +57,8 @@ const STORE_FILE = "settings.json";
  */
 export async function initializeSettings(): Promise<void> {
   /* v8 ignore start -- @preserve */
-  const store = await load(STORE_FILE);
+  const settingsFile = await getSettingsFile();
+  const store = await load(settingsFile);
   const setSettings = useAppStore.getState().setSettings;
 
   // Load existing settings or use defaults
@@ -120,7 +120,8 @@ async function updateSettingInBothStores<K extends keyof AppSettings>(
   useAppStore.getState().updateSetting(key, updatedCategory);
 
   // Persist to Tauri Store for backend access and restart persistence
-  const store = await load(STORE_FILE);
+  const settingsFile = await getSettingsFile();
+  const store = await load(settingsFile);
   await store.set(`${key}.${String(nestedKey)}`, value);
   await store.save();
   /* v8 ignore stop */

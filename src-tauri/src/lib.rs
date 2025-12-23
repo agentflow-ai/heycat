@@ -69,12 +69,15 @@ pub fn run() {
 
             // Detect worktree context for data isolation
             let worktree_context = worktree::detect_worktree();
+            let worktree_state = worktree::WorktreeState { context: worktree_context.clone() };
+            let settings_file = worktree_state.settings_file_name();
             if let Some(ref ctx) = worktree_context {
                 info!("Running in worktree: {} (gitdir: {:?})", ctx.identifier, ctx.gitdir_path);
+                info!("Using worktree-specific settings file: {}", settings_file);
             } else {
                 info!("Running in main repository");
             }
-            app.manage(worktree::WorktreeState { context: worktree_context });
+            app.manage(worktree_state);
 
             // Create shared state for recording manager
             let recording_state = Arc::new(Mutex::new(recording::RecordingManager::new()));
@@ -84,7 +87,7 @@ pub fn run() {
 
             // Create and manage listening state, restoring persisted auto-start setting
             let listening_enabled = app
-                .store("settings.json")
+                .store(&settings_file)
                 .ok()
                 .and_then(|store| store.get("listening.autoStartOnLaunch"))
                 .and_then(|v| v.as_bool())
@@ -319,7 +322,7 @@ pub fn run() {
             // Uses CGEventTap on macOS (supports fn key, media keys), Tauri on Windows/Linux
             // Load saved shortcut from settings - user must set one during onboarding
             let saved_shortcut = app
-                .store("settings.json")
+                .store(&settings_file)
                 .ok()
                 .and_then(|store| store.get("hotkey.recordingShortcut"))
                 .and_then(|v| v.as_str().map(|s| s.to_string()));
@@ -374,8 +377,13 @@ pub fn run() {
                 // Unregister hotkey on window close - use saved shortcut from settings
                 if let Some(service) = window.app_handle().try_state::<HotkeyServiceHandle>() {
                     use tauri_plugin_store::StoreExt;
+                    // Get worktree-aware settings file name
+                    let settings_file = window.app_handle()
+                        .try_state::<worktree::WorktreeState>()
+                        .map(|s| s.settings_file_name())
+                        .unwrap_or_else(|| worktree::DEFAULT_SETTINGS_FILE.to_string());
                     if let Some(shortcut) = window.app_handle()
-                        .store("settings.json")
+                        .store(&settings_file)
                         .ok()
                         .and_then(|store| store.get("hotkey.recordingShortcut"))
                         .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -418,6 +426,7 @@ pub fn run() {
             commands::start_shortcut_recording,
             commands::stop_shortcut_recording,
             commands::open_accessibility_preferences,
+            commands::get_settings_file_name,
             commands::dictionary::list_dictionary_entries,
             commands::dictionary::add_dictionary_entry,
             commands::dictionary::update_dictionary_entry,

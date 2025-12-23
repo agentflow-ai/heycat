@@ -3,12 +3,13 @@ import { renderHook } from "@testing-library/react";
 import { useAutoStartListening } from "./useAutoStartListening";
 
 // Mock store instance - must be hoisted with vi.hoisted
-const { mockStore, mockLoad, mockInvoke } = vi.hoisted(() => ({
+const { mockStore, mockLoad, mockInvoke, mockGetSettingsFile } = vi.hoisted(() => ({
   mockStore: {
     get: vi.fn(),
   },
   mockLoad: vi.fn(),
   mockInvoke: vi.fn(),
+  mockGetSettingsFile: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-store", () => ({
@@ -19,9 +20,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mockInvoke,
 }));
 
+vi.mock("../lib/settingsFile", () => ({
+  getSettingsFile: mockGetSettingsFile,
+}));
+
 describe("useAutoStartListening", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetSettingsFile.mockResolvedValue("settings.json");
     mockLoad.mockResolvedValue(mockStore);
     mockInvoke.mockResolvedValue(undefined);
   });

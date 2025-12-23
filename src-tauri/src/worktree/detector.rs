@@ -1,6 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Default settings file name used in main repository
+pub const DEFAULT_SETTINGS_FILE: &str = "settings.json";
+
 /// Context for a git worktree, providing isolation identifier
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorktreeContext {
@@ -10,12 +13,34 @@ pub struct WorktreeContext {
     pub gitdir_path: PathBuf,
 }
 
+impl WorktreeContext {
+    /// Returns the worktree-specific settings file name.
+    ///
+    /// Format: `settings-{identifier}.json`
+    pub fn settings_file_name(&self) -> String {
+        format!("settings-{}.json", self.identifier)
+    }
+}
+
 /// State wrapper for worktree context, managed by Tauri.
 /// Fields are consumed by dependent specs (worktree-paths, worktree-config).
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct WorktreeState {
     pub context: Option<WorktreeContext>,
+}
+
+impl WorktreeState {
+    /// Returns the appropriate settings file name based on worktree context.
+    ///
+    /// - Returns `settings-{identifier}.json` when running in a worktree
+    /// - Returns `settings.json` when running in main repository
+    pub fn settings_file_name(&self) -> String {
+        match &self.context {
+            Some(ctx) => ctx.settings_file_name(),
+            None => DEFAULT_SETTINGS_FILE.to_string(),
+        }
+    }
 }
 
 /// Detects if the application is running from a git worktree directory.

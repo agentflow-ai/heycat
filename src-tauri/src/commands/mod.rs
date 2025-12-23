@@ -28,7 +28,7 @@ use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, Shared
 use crate::parakeet::SharedTranscriptionModel;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Helper macro to emit events with error logging
@@ -38,6 +38,15 @@ macro_rules! emit_or_warn {
             crate::warn!("Failed to emit event '{}': {}", $event, e);
         }
     };
+}
+
+/// Get the settings file name for the current worktree context.
+/// Falls back to "settings.json" if worktree state is not available.
+fn get_settings_file(app_handle: &AppHandle) -> String {
+    app_handle
+        .try_state::<crate::worktree::WorktreeState>()
+        .map(|s| s.settings_file_name())
+        .unwrap_or_else(|| crate::worktree::DEFAULT_SETTINGS_FILE.to_string())
 }
 
 /// Type alias for audio thread state
@@ -195,8 +204,9 @@ pub fn start_recording(
     }
 
     // Read noise suppression setting from persistent store (defaults to true)
+    let settings_file = get_settings_file(&app_handle);
     let noise_suppression_enabled = app_handle
-        .store("settings.json")
+        .store(&settings_file)
         .ok()
         .and_then(|store| store.get("audio.noiseSuppression"))
         .and_then(|v| v.as_bool())
@@ -412,9 +422,10 @@ pub fn enable_listening(
 ) -> Result<(), String> {
     // If device_name not provided, read from persistent settings store as fallback
     use tauri_plugin_store::StoreExt;
+    let settings_file = get_settings_file(&app_handle);
     let device_name = device_name.or_else(|| {
         app_handle
-            .store("settings.json")
+            .store(&settings_file)
             .ok()
             .and_then(|store| store.get("audio.selectedDevice"))
             .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -505,8 +516,9 @@ async fn handle_wake_word_events(
                 );
                 // Read selected device from persistent settings store
                 use tauri_plugin_store::StoreExt;
+                let settings_file = get_settings_file(&app_handle);
                 let device_name = app_handle
-                    .store("settings.json")
+                    .store(&settings_file)
                     .ok()
                     .and_then(|store| store.get("audio.selectedDevice"))
                     .and_then(|v| v.as_str().map(|s| s.to_string()));
@@ -764,8 +776,9 @@ pub fn suspend_recording_shortcut(
     use tauri_plugin_store::StoreExt;
 
     // Get current shortcut from settings
+    let settings_file = get_settings_file(&app_handle);
     let shortcut = app_handle
-        .store("settings.json")
+        .store(&settings_file)
         .ok()
         .and_then(|store| store.get("hotkey.recordingShortcut"))
         .and_then(|v| v.as_str().map(|s| s.to_string()));
@@ -793,8 +806,9 @@ pub fn resume_recording_shortcut(
     use tauri_plugin_store::StoreExt;
 
     // Get shortcut from settings - must be set by user during onboarding
+    let settings_file = get_settings_file(&app_handle);
     let shortcut = app_handle
-        .store("settings.json")
+        .store(&settings_file)
         .ok()
         .and_then(|store| store.get("hotkey.recordingShortcut"))
         .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -846,8 +860,9 @@ pub fn update_recording_shortcut(
     crate::info!("Updating recording shortcut to: {}", new_shortcut);
 
     // Get current shortcut from settings to unregister it (if any)
+    let settings_file = get_settings_file(&app_handle);
     let current_shortcut = app_handle
-        .store("settings.json")
+        .store(&settings_file)
         .ok()
         .and_then(|store| store.get("hotkey.recordingShortcut"))
         .and_then(|v| v.as_str().map(|s| s.to_string()));
@@ -888,7 +903,7 @@ pub fn update_recording_shortcut(
         .map_err(|e| format!("Failed to register new shortcut: {}", e))?;
 
     // Save to settings
-    if let Ok(store) = app_handle.store("settings.json") {
+    if let Ok(store) = app_handle.store(&settings_file) {
         store.set("hotkey.recordingShortcut", serde_json::json!(new_shortcut));
         if let Err(e) = store.save() {
             crate::warn!("Failed to persist settings: {}", e);
@@ -907,8 +922,9 @@ pub fn update_recording_shortcut(
 pub fn get_recording_shortcut(app_handle: AppHandle) -> String {
     use tauri_plugin_store::StoreExt;
 
+    let settings_file = get_settings_file(&app_handle);
     app_handle
-        .store("settings.json")
+        .store(&settings_file)
         .ok()
         .and_then(|store| store.get("hotkey.recordingShortcut"))
         .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -984,6 +1000,23 @@ pub fn open_accessibility_preferences() -> Result<(), String> {
 
     crate::info!("Opened Accessibility preferences");
     Ok(())
+}
+
+// =============================================================================
+// Worktree Commands
+// =============================================================================
+
+/// Get the settings file name for the current worktree context
+///
+/// Returns the appropriate settings file name based on worktree context:
+/// - `settings-{identifier}.json` when running in a worktree
+/// - `settings.json` when running in main repository
+///
+/// This enables worktree-specific settings isolation so multiple heycat
+/// instances can run with different configurations (e.g., different hotkeys).
+#[tauri::command]
+pub fn get_settings_file_name(worktree_state: State<'_, crate::worktree::WorktreeState>) -> String {
+    worktree_state.settings_file_name()
 }
 
 #[cfg(test)]

@@ -1,8 +1,7 @@
 import { useEffect, useRef } from "react";
 import { load } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
-
-const STORE_FILE = "settings.json";
+import { getSettingsFile } from "../lib/settingsFile";
 
 /**
  * Hook that checks settings on mount and auto-enables listening if configured.
@@ -19,7 +18,8 @@ export function useAutoStartListening(): void {
     /* v8 ignore start -- @preserve */
     const checkAndAutoStart = async () => {
       try {
-        const store = await load(STORE_FILE);
+        const settingsFile = await getSettingsFile();
+        const store = await load(settingsFile);
         const autoStartOnLaunch = await store.get<boolean>(
           "listening.autoStartOnLaunch"
         );
