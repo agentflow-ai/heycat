@@ -408,6 +408,9 @@ fn run_cgeventtap_loop(
         guard.run_loop = Some(run_loop.clone());
     }
 
+    // Register run loop globally for graceful shutdown on SIGINT
+    crate::shutdown::register_cgeventtap_run_loop(run_loop.clone());
+
     // Add the source to the run loop (use DefaultMode which we'll run in)
     run_loop.add_source(&run_loop_source, unsafe { kCFRunLoopDefaultMode });
 

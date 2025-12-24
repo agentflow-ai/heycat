@@ -16,6 +16,7 @@ mod model;
 mod parakeet;
 mod paths;
 mod recording;
+mod shutdown;
 mod transcription;
 mod voice_commands;
 mod worktree;
@@ -67,6 +68,23 @@ pub fn run() {
         )
         .setup(|app| {
             info!("Setting up heycat...");
+
+            // Handle Ctrl+C to prevent paste during terminal termination
+            // Must be configured early so SIGINT in `tauri dev` triggers a clean exit path.
+            // We avoid `std::process::exit(0)` here because it skips destructors and can leave
+            // CoreGraphics keyboard synthesis mid-flight (leading to stuck keys / multi-paste).
+            shutdown::register_app_handle(app.handle().clone());
+            if let Err(e) = ctrlc::set_handler(|| {
+                eprintln!("[PASTE-TRACE] ctrlc handler fired - about to call signal_shutdown()");
+                shutdown::signal_shutdown();
+                eprintln!("[PASTE-TRACE] ctrlc handler - about to stop CGEventTap");
+                // Stop CGEventTap run loop to prevent spurious events during exit
+                shutdown::stop_cgeventtap();
+                eprintln!("[PASTE-TRACE] ctrlc handler - requesting graceful app exit");
+                shutdown::request_app_exit(0);
+            }) {
+                warn!("Failed to set Ctrl+C handler: {}", e);
+            }
 
             // Detect worktree context for data isolation
             let worktree_context = worktree::detect_worktree();
@@ -441,6 +459,9 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
+                // Signal shutdown FIRST - prevents async tasks from pasting during cleanup
+                shutdown::signal_shutdown();
+
                 debug!("Window destroyed, cleaning up...");
 
                 // Get worktree context for cleanup

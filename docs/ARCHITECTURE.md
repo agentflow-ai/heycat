@@ -353,7 +353,18 @@ crate::error!("Failed to start recording: {}", e);
 
 ---
 
-## 7. Checklist for New Features
+## 7. Shutdown Coordination
+
+**Important:** Never use `std::process::exit()` from a signal handler - it's not async-signal-safe and causes undefined behavior on macOS.
+
+Use the graceful exit pattern in `src-tauri/src/shutdown.rs`:
+- `register_app_handle()` - Store handle at startup
+- `request_app_exit()` - Use `AppHandle::exit()` for clean shutdown
+- `is_shutting_down()` - Guard operations that shouldn't run during shutdown
+
+---
+
+## 8. Checklist for New Features
 
 ### Before Implementation
 

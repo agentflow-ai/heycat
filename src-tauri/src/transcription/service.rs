@@ -31,30 +31,19 @@ pub const DEFAULT_TRANSCRIPTION_TIMEOUT_SECS: u64 = 60;
 /// Simulate Cmd+V paste keystroke on macOS using CoreGraphics
 #[cfg(target_os = "macos")]
 fn simulate_paste() -> Result<(), String> {
-    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, CGKeyCode};
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    eprintln!("[PASTE-TRACE] service.rs::simulate_paste() ENTRY, shutting_down={}", crate::shutdown::is_shutting_down());
 
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| "Failed to create event source")?;
+    // Safety check: don't paste during shutdown
+    if crate::shutdown::is_shutting_down() {
+        eprintln!("[PASTE-TRACE] service.rs::simulate_paste() - BLOCKED by shutdown check");
+        crate::debug!("Skipping paste - app is shutting down");
+        return Ok(());
+    }
 
-    // V key = keycode 9
-    let key_v: CGKeyCode = 9;
+    // Centralized synthesis ensures key-up always follows key-down and sequences don't interleave.
+    crate::keyboard::synth::simulate_cmd_v_paste()?;
 
-    // Key down with Command modifier
-    let event_down = CGEvent::new_keyboard_event(source.clone(), key_v, true)
-        .map_err(|_| "Failed to create key down event")?;
-    event_down.set_flags(CGEventFlags::CGEventFlagCommand);
-    event_down.post(CGEventTapLocation::HID);
-
-    // Small delay for event processing
-    std::thread::sleep(std::time::Duration::from_millis(10));
-
-    // Key up
-    let event_up = CGEvent::new_keyboard_event(source, key_v, false)
-        .map_err(|_| "Failed to create key up event")?;
-    event_up.set_flags(CGEventFlags::CGEventFlagCommand);
-    event_up.post(CGEventTapLocation::HID);
-
+    eprintln!("[PASTE-TRACE] service.rs::simulate_paste() EXIT - paste completed");
     Ok(())
 }
 
@@ -348,11 +337,15 @@ where
                     .await;
 
             // Fallback to clipboard if no command was handled (using expanded text)
-            if !command_handled {
+            // Safety check: don't paste during shutdown
+            eprintln!("[PASTE-TRACE] process_recording: command_handled={}, shutting_down={}", command_handled, crate::shutdown::is_shutting_down());
+            if !command_handled && !crate::shutdown::is_shutting_down() {
+                eprintln!("[PASTE-TRACE] process_recording: about to write to clipboard and paste");
                 if let Err(e) = app_handle.clipboard().write_text(&expanded_text) {
                     crate::warn!("Failed to copy to clipboard: {}", e);
                 } else {
                     crate::debug!("Transcribed text copied to clipboard");
+                    eprintln!("[PASTE-TRACE] process_recording: about to call simulate_paste()");
                     if let Err(e) = simulate_paste() {
                         crate::warn!("Failed to auto-paste: {}", e);
                     } else {

@@ -2,6 +2,8 @@
 // Uses Core Graphics on macOS (for consistency with paste simulation)
 // Uses enigo crate for Windows and Linux support
 
+pub mod synth;
+
 #[cfg(not(target_os = "macos"))]
 use enigo::{Enigo, Key, Keyboard, Settings};
 
