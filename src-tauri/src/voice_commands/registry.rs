@@ -99,11 +99,6 @@ impl CommandRegistry {
         Ok(Self::new(config_path))
     }
 
-    /// Create a registry using the default config path (API-compatible, uses main repo path)
-    pub fn with_default_path() -> Result<Self, RegistryError> {
-        Self::with_default_path_context(None)
-    }
-
     /// Load commands from the persistence file
     pub fn load(&mut self) -> Result<(), RegistryError> {
         crate::debug!("Loading commands from {:?}", self.config_path);
