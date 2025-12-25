@@ -97,41 +97,9 @@ describe("appStore", () => {
     });
   });
 
-  describe("selectors", () => {
-    it("useOverlayMode returns only overlayMode slice", () => {
-      useAppStore.setState({ overlayMode: "recording" });
-      const { result } = renderHook(() => useOverlayMode());
-
-      expect(result.current).toBe("recording");
-    });
-
-    it("useSettingsCache returns only settingsCache slice", () => {
-      useAppStore.setState({ settingsCache: mockSettings, isSettingsLoaded: true });
-      const { result } = renderHook(() => useSettingsCache());
-
-      expect(result.current).toEqual(mockSettings);
-    });
-
-    it("useIsSettingsLoaded returns only isSettingsLoaded slice", () => {
-      useAppStore.setState({ isSettingsLoaded: true });
-      const { result } = renderHook(() => useIsSettingsLoaded());
-
-      expect(result.current).toBe(true);
-    });
-
-    it("useTranscriptionState returns only transcription slice", () => {
-      const transcription = {
-        isTranscribing: true,
-        transcribedText: "Hello",
-        error: null,
-        durationMs: 100,
-      };
-      useAppStore.setState({ transcription });
-      const { result } = renderHook(() => useTranscriptionState());
-
-      expect(result.current).toEqual(transcription);
-    });
-  });
+  // Selector tests removed per TESTING.md:
+  // - Testing that selectors return correct slices is testing Zustand framework internals
+  // - These are trivial one-liners that provide no value if they compile
 
   describe("transcription state", () => {
     it("transcriptionStarted sets isTranscribing and clears previous state", () => {

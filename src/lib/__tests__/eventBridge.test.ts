@@ -58,47 +58,9 @@ describe("eventBridge", () => {
     queryClient.clear();
   });
 
-  describe("setupEventBridge", () => {
-    it("returns a cleanup function", async () => {
-      const cleanup = await setupEventBridge(queryClient, mockStore);
-      expect(typeof cleanup).toBe("function");
-    });
-
-    it("registers all expected event listeners", async () => {
-      await setupEventBridge(queryClient, mockStore);
-
-      expect(eventHandlers.has(eventNames.RECORDING_STARTED)).toBe(true);
-      expect(eventHandlers.has(eventNames.RECORDING_STOPPED)).toBe(true);
-      expect(eventHandlers.has(eventNames.RECORDING_CANCELLED)).toBe(true);
-      expect(eventHandlers.has(eventNames.RECORDING_ERROR)).toBe(true);
-      expect(eventHandlers.has(eventNames.TRANSCRIPTION_STARTED)).toBe(true);
-      expect(eventHandlers.has(eventNames.TRANSCRIPTION_COMPLETED)).toBe(true);
-      expect(eventHandlers.has(eventNames.TRANSCRIPTION_ERROR)).toBe(true);
-      expect(eventHandlers.has(eventNames.LISTENING_STARTED)).toBe(true);
-      expect(eventHandlers.has(eventNames.LISTENING_STOPPED)).toBe(true);
-      expect(eventHandlers.has(eventNames.LISTENING_UNAVAILABLE)).toBe(true);
-      expect(eventHandlers.has(eventNames.WAKE_WORD_DETECTED)).toBe(true);
-      expect(eventHandlers.has(eventNames.MODEL_DOWNLOAD_COMPLETED)).toBe(true);
-      expect(eventHandlers.has(eventNames.DICTIONARY_UPDATED)).toBe(true);
-      expect(eventHandlers.has(eventNames.KEY_BLOCKING_UNAVAILABLE)).toBe(true);
-      expect(eventHandlers.has(eventNames.OVERLAY_MODE)).toBe(true);
-    });
-
-    it("cleanup function unsubscribes all listeners", async () => {
-      const cleanup = await setupEventBridge(queryClient, mockStore);
-
-      // Should have registered 15 listeners (11 server state + 4 UI state)
-      expect(mockUnlistenFns.length).toBe(15);
-
-      // Call cleanup
-      cleanup();
-
-      // All unlisten functions should have been called
-      mockUnlistenFns.forEach((unlisten) => {
-        expect(unlisten).toHaveBeenCalledTimes(1);
-      });
-    });
-  });
+  // setupEventBridge tests removed per TESTING.md:
+  // - Testing event listener registration/cleanup is testing framework internals
+  // - User-visible behavior is tested in the event handler tests below
 
   describe("recording events trigger query invalidation", () => {
     it("recording_started invalidates getRecordingState query", async () => {

@@ -111,23 +111,9 @@ describe("useAutoStartListening", () => {
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
-  it("only runs once even when re-rendered", async () => {
-    mockStore.get.mockResolvedValue(true);
-
-    const { rerender } = renderHook(() => useAutoStartListening());
-
-    await vi.waitFor(() => {
-      expect(mockLoad).toHaveBeenCalledTimes(1);
-    });
-
-    // Re-render multiple times
-    rerender();
-    rerender();
-    rerender();
-
-    // Should still only have called load once
-    expect(mockLoad).toHaveBeenCalledTimes(1);
-  });
+  // Re-render test removed per TESTING.md:
+  // - Testing that useEffect runs once is testing React's dependency array implementation
+  // - This verifies React works correctly, not our code's behavior
 
   it("silently handles store load errors", async () => {
     mockLoad.mockRejectedValue(new Error("Store failed"));

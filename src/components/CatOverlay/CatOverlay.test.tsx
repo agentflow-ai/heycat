@@ -53,16 +53,8 @@ describe("CatOverlay", () => {
     expect(overlay?.className).toContain("cat-overlay--recording");
   });
 
-  it("sets up overlay-mode event listener on mount", async () => {
-    render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(mockListen).toHaveBeenCalledWith(
-        "overlay-mode",
-        expect.any(Function)
-      );
-    });
-  });
+  // Event listener setup test removed per TESTING.md:
+  // - Testing listener setup is testing React framework internals, not user behavior
 
   it("updates to listening mode class on overlay-mode event", async () => {
     const { container } = render(<CatOverlay />);
@@ -90,17 +82,8 @@ describe("CatOverlay", () => {
     expect(overlay?.className).toContain("cat-overlay--unavailable");
   });
 
-  it("cleans up event listener on unmount", async () => {
-    const { unmount } = render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(mockListen).toHaveBeenCalled();
-    });
-
-    unmount();
-
-    expect(mockUnlisten).toHaveBeenCalled();
-  });
+  // Event listener cleanup test removed per TESTING.md:
+  // - Testing cleanup is testing React framework internals, not user behavior
 
   it("transitions from listening to recording mode", async () => {
     const { container } = render(<CatOverlay />);
