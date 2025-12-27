@@ -1,4 +1,3 @@
-// Note: defineConfig is optional - plain object works too
 export default {
   tcr: {
     maxFailures: 5,
@@ -7,24 +6,44 @@ export default {
   },
 
   agile: {
-    backend: "clickup",
+    customTemplates: {},
     review: {
       instructionsFile: "agile/review.md",
     },
-    clickup: {
-      // API token from CLICKUP_API_TOKEN env var
-      workspaceId: "90152143084",
-      spaceId: "90158993029",
-      listId: "901519150299",
-      templateId: "t-901519150157",
-      statusMapping: {
-        "1-backlog": "backlog",
-        "2-todo": "to do",
-        "3-in-progress": "in progress",
-        "4-review": "review",
-        "5-done": "done",
+    featureReview: {
+      instructionsFile: "",
+      smokeTestCommand: "",
+      templateFile: "",
+      minIntegrationTests: 1,
+      flagMockedIntegrations: true,
+    },
+    linear: {
+      teamId: "cb5ea72f-7c34-4cd9-9d22-9bd49074f3f2",
+      stateMapping: {
+        "1-backlog": "Backlog",
+        "2-todo": "Todo",
+        "3-in-progress": "In Progress",
+        "4-review": "In Review",
+        "5-done": "Done",
       },
-      rateLimitPerMinute: 90,
+      labels: {
+        feature: "feature",
+        bug: "bug",
+        spec: "spec",
+        fix: "fix",
+        specStatuses: {
+          pending: "spec:pending",
+          inProgress: "spec:in-progress",
+          inReview: "spec:in-review",
+          completed: "spec:completed",
+        },
+        fixStatuses: {
+          pending: "fix:pending",
+          inProgress: "fix:in-progress",
+          inReview: "fix:in-review",
+          completed: "fix:completed",
+        },
+      },
     },
   },
 };

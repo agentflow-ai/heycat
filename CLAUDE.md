@@ -10,7 +10,7 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 |-------|----------|------|
 | Architecture | frontend, backend, Tauri, React, Rust, invoke | docs/ARCHITECTURE.md |
 | Development | commands, dev, build, run, prerequisites | docs/DEVELOPMENT.md |
-| Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `devloop:agile` plugin (ClickUp backend) |
+| Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `devloop:agile` plugin (Linear backend) |
 | TCR/Testing | writing and test, TDD, coverage, commit, tcr check | `devloop:tcr` plugin and docs/TESTING.md |
 
 ## Key Entry Points
