@@ -33,6 +33,14 @@ export const queryKeys = {
     /** Query key for list_dictionary_entries command */
     list: () => [...queryKeys.dictionary.all, "list"] as const,
   },
+  windowContext: {
+    /** Base key for all window context queries */
+    all: ["windowContext"] as const,
+    /** Query key for list_window_contexts command */
+    list: () => [...queryKeys.windowContext.all, "list"] as const,
+    /** Query key for list_running_applications command */
+    runningApps: () => [...queryKeys.windowContext.all, "runningApps"] as const,
+  },
 } as const;
 
 /** Type for the query keys object */

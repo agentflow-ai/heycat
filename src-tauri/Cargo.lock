@@ -2272,6 +2272,7 @@ dependencies = [
  "hound",
  "io-kit-sys",
  "libc",
+ "objc",
  "parakeet-rs",
  "regex",
  "ringbuf",

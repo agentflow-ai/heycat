@@ -48,6 +48,7 @@ const defaultNavItems: NavItem[] = [
   { id: "recordings", label: "Recordings", icon: "Mic" },
   { id: "commands", label: "Commands", icon: "MessageSquare" },
   { id: "dictionary", label: "Dictionary", icon: "Book" },
+  { id: "contexts", label: "Contexts", icon: "Layers" },
   { id: "settings", label: "Settings", icon: "Settings" },
 ];
 

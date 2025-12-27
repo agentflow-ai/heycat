@@ -65,3 +65,11 @@ export type { ConnectedStatusPillProps } from "./ConnectedStatusPill";
 // Audio Level Meter (ui.md 3.4)
 export { AudioLevelMeter, MiniAudioMeter } from "./AudioLevelMeter";
 export type { AudioLevelMeterProps, MiniAudioMeterProps } from "./AudioLevelMeter";
+
+// Combobox/Autocomplete (custom component)
+export { Combobox } from "./Combobox";
+export type { ComboboxProps, ComboboxOption } from "./Combobox";
+
+// MultiSelect (custom component)
+export { MultiSelect } from "./MultiSelect";
+export type { MultiSelectProps, MultiSelectOption } from "./MultiSelect";

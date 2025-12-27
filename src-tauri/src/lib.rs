@@ -19,6 +19,7 @@ mod recording;
 mod shutdown;
 mod transcription;
 mod voice_commands;
+mod window_context;
 mod worktree;
 
 use std::sync::{Arc, Mutex};
@@ -293,7 +294,7 @@ pub fn run() {
 
             // Create shared dictionary store (used by both transcription and CRUD commands)
             debug!("Loading dictionary entries...");
-            let dictionary_store = {
+            let dictionary_store = Arc::new({
                 let mut store = match dictionary::DictionaryStore::with_default_path_context(worktree_context.as_ref()) {
                     Ok(store) => store,
                     Err(e) => {
@@ -305,7 +306,41 @@ pub fn run() {
                     warn!("Failed to load dictionary entries: {}, using empty dictionary", e);
                 }
                 Mutex::new(store)
-            };
+            });
+
+            // Create shared window context store for context-sensitive commands
+            // This must be created before transcription service so resolver can be wired in
+            debug!("Loading window contexts...");
+            let window_context_store = Arc::new({
+                let mut store = match window_context::WindowContextStore::with_default_path_context(worktree_context.as_ref()) {
+                    Ok(store) => store,
+                    Err(e) => {
+                        warn!("Failed to initialize window context store: {}, using empty store", e);
+                        window_context::WindowContextStore::new(std::path::PathBuf::new())
+                    }
+                };
+                if let Err(e) = store.load() {
+                    warn!("Failed to load window contexts: {}, using empty store", e);
+                }
+                Mutex::new(store)
+            });
+
+            // Start window monitor for context-sensitive commands
+            debug!("Starting window monitor...");
+            let window_monitor = Arc::new({
+                let mut monitor = window_context::WindowMonitor::new();
+                if let Err(e) = monitor.start(app.handle().clone(), window_context_store.clone()) {
+                    warn!("Failed to start window monitor: {}", e);
+                }
+                Mutex::new(monitor)
+            });
+
+            // Create context resolver for window-aware command/dictionary resolution
+            debug!("Creating context resolver...");
+            let context_resolver = Arc::new(window_context::ContextResolver::new(
+                window_monitor.clone(),
+                window_context_store.clone(),
+            ));
 
             // Create expander for transcription service from shared store
             {
@@ -331,6 +366,12 @@ pub fn run() {
                     .with_command_emitter(service_command_emitter);
                 debug!("Voice commands wired to TranscriptionService");
             }
+
+            // Wire context resolver to transcription service for window-aware command resolution
+            transcription_service = transcription_service
+                .with_context_resolver(context_resolver)
+                .with_dictionary_store(dictionary_store.clone());
+            debug!("Context resolver wired to TranscriptionService");
 
             let transcription_service = Arc::new(transcription_service);
             app.manage(transcription_service.clone());
@@ -464,8 +505,12 @@ pub fn run() {
             let keyboard_capture = Arc::new(Mutex::new(keyboard_capture::KeyboardCapture::new()));
             app.manage(keyboard_capture);
 
-            // Manage shared dictionary store for CRUD commands
+            // Manage shared stores for CRUD commands
+            // Note: dictionary_store, window_context_store, and window_monitor were created earlier
+            // and wired to the transcription service. We manage them here for the Tauri commands.
             app.manage(dictionary_store);
+            app.manage(window_context_store);
+            app.manage(window_monitor);
 
             info!("Setup complete! Ready to record.");
             Ok(())
@@ -510,6 +555,17 @@ pub fn run() {
                         }
                     }
                 }
+
+                // Stop window monitor on window close
+                if let Some(monitor) = window.app_handle().try_state::<Arc<Mutex<window_context::WindowMonitor>>>() {
+                    if let Ok(mut monitor) = monitor.lock() {
+                        if let Err(e) = monitor.stop() {
+                            warn!("Failed to stop window monitor: {}", e);
+                        } else {
+                            debug!("Window monitor stopped successfully");
+                        }
+                    }
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -545,7 +601,13 @@ pub fn run() {
             commands::dictionary::list_dictionary_entries,
             commands::dictionary::add_dictionary_entry,
             commands::dictionary::update_dictionary_entry,
-            commands::dictionary::delete_dictionary_entry
+            commands::dictionary::delete_dictionary_entry,
+            commands::window_context::get_active_window_info,
+            commands::window_context::list_running_applications,
+            commands::window_context::list_window_contexts,
+            commands::window_context::add_window_context,
+            commands::window_context::update_window_context,
+            commands::window_context::delete_window_context
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

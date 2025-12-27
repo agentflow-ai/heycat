@@ -15,3 +15,6 @@ export type { SettingsProps, SettingsTab } from "./Settings";
 
 export { Dictionary } from "./Dictionary";
 export type { DictionaryProps } from "./Dictionary";
+
+export { WindowContexts } from "./WindowContexts";
+export type { WindowContextsProps } from "./WindowContexts";

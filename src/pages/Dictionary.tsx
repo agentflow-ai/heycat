@@ -1,9 +1,11 @@
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Book, Pencil, Trash2, Check, X, Settings } from "lucide-react";
+import { Plus, Search, Book, Pencil, Trash2, Check, X, Settings, Layers } from "lucide-react";
 import { Card, CardContent, Button, Input, FormField, Toggle } from "../components/ui";
 import { useToast } from "../components/overlays";
 import { useDictionary } from "../hooks/useDictionary";
+import { useWindowContext } from "../hooks/useWindowContext";
 import type { DictionaryEntry } from "../types/dictionary";
+import type { WindowContext } from "../types/windowContext";
 
 export interface DictionaryProps {
   /** Navigate to another page */
@@ -89,6 +91,65 @@ function SettingsPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+interface ContextBadgesProps {
+  contexts: WindowContext[];
+}
+
+function ContextBadges({ contexts }: ContextBadgesProps) {
+  if (contexts.length === 0) {
+    return (
+      <span
+        className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+        data-testid="context-badge-global"
+      >
+        Global
+      </span>
+    );
+  }
+
+  if (contexts.length === 1) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+        data-testid="context-badge"
+      >
+        <Layers className="h-3 w-3" />
+        {contexts[0].name}
+      </span>
+    );
+  }
+
+  if (contexts.length === 2) {
+    return (
+      <div className="flex gap-1">
+        {contexts.map((ctx) => (
+          <span
+            key={ctx.id}
+            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+            data-testid="context-badge"
+          >
+            <Layers className="h-3 w-3" />
+            {ctx.name}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  // 3+ contexts: show count with tooltip
+  const contextNames = contexts.map((c) => c.name).join(", ");
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 cursor-help"
+      title={contextNames}
+      data-testid="context-badge-count"
+    >
+      <Layers className="h-3 w-3" />
+      {contexts.length} contexts
+    </span>
   );
 }
 
@@ -241,6 +302,7 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
 
 interface EntryItemProps {
   entry: DictionaryEntry;
+  assignedContexts: WindowContext[];
   onEdit: (entry: DictionaryEntry) => void;
   onDelete: (id: string) => void;
   isEditing: boolean;
@@ -257,6 +319,7 @@ interface EntryItemProps {
 
 function EntryItem({
   entry,
+  assignedContexts,
   onEdit,
   onDelete,
   isEditing,
@@ -393,6 +456,7 @@ function EntryItem({
               <Settings className="h-4 w-4" />
             </span>
           )}
+          <ContextBadges contexts={assignedContexts} />
         </div>
         <div className="flex gap-2 shrink-0">
           <Button
@@ -444,6 +508,7 @@ function DictionaryEmptyState({ onAddFocus }: { onAddFocus: () => void }) {
 export function Dictionary(_props: DictionaryProps) {
   const { toast } = useToast();
   const { entries, addEntry, updateEntry, deleteEntry } = useDictionary();
+  const { contexts } = useWindowContext();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -459,6 +524,20 @@ export function Dictionary(_props: DictionaryProps) {
   const [editSuffixError, setEditSuffixError] = useState<string | null>(null);
 
   const entryList = Array.isArray(entries.data) ? entries.data : [];
+  const contextList = Array.isArray(contexts.data) ? contexts.data : [];
+
+  // Reverse lookup: entry ID -> contexts that include it
+  const contextsByEntryId = useMemo(() => {
+    const map = new Map<string, WindowContext[]>();
+    for (const ctx of contextList) {
+      for (const entryId of ctx.dictionaryEntryIds) {
+        const existing = map.get(entryId) ?? [];
+        existing.push(ctx);
+        map.set(entryId, existing);
+      }
+    }
+    return map;
+  }, [contextList]);
 
   const existingTriggers = useMemo(
     () => entryList.map((e) => e.trigger.toLowerCase()),
@@ -702,6 +781,7 @@ export function Dictionary(_props: DictionaryProps) {
             <EntryItem
               key={entry.id}
               entry={entry}
+              assignedContexts={contextsByEntryId.get(entry.id) ?? []}
               onEdit={handleStartEdit}
               onDelete={(id) => setDeleteConfirmId(id)}
               isEditing={editingId === entry.id}

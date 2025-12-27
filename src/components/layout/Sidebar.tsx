@@ -4,13 +4,14 @@ import {
   MessageSquare,
   Settings,
   Book,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 
 export interface NavItem {
   id: string;
   label: string;
-  icon: "LayoutDashboard" | "Mic" | "MessageSquare" | "Settings" | "Book";
+  icon: "LayoutDashboard" | "Mic" | "MessageSquare" | "Settings" | "Book" | "Layers";
 }
 
 export interface SidebarProps {
@@ -25,6 +26,7 @@ const iconMap: Record<NavItem["icon"], LucideIcon> = {
   MessageSquare,
   Settings,
   Book,
+  Layers,
 };
 
 export function Sidebar({ items, activeItemId, onItemClick }: SidebarProps) {

@@ -51,6 +51,7 @@ core-foundation = "0.10"
 core-graphics = "0.24"
 cocoa = "0.26"
 ctrlc = "3.4"
+objc = "0.2"
 foreign-types = "0.5"
 io-kit-sys = "0.4"
 

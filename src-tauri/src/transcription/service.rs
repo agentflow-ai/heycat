@@ -4,7 +4,7 @@
 // This service decouples transcription from HotkeyIntegration, enabling
 // button-initiated recordings and wake word flows to share the same logic.
 
-use crate::dictionary::{DictionaryEntry, DictionaryExpander, ExpansionResult};
+use crate::dictionary::{DictionaryEntry, DictionaryExpander, DictionaryStore, ExpansionResult};
 use crate::events::{
     current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
     CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
@@ -16,6 +16,7 @@ use crate::recording::RecordingManager;
 use crate::voice_commands::executor::ActionDispatcher;
 use crate::voice_commands::matcher::{CommandMatcher, MatchResult};
 use crate::voice_commands::registry::CommandRegistry;
+use crate::window_context::ContextResolver;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -87,6 +88,10 @@ where
     transcription_timeout: Duration,
     /// Dictionary expander for text expansion (interior mutable for runtime updates)
     dictionary_expander: Arc<RwLock<Option<DictionaryExpander>>>,
+    /// Optional context resolver for window-aware command/dictionary resolution
+    context_resolver: Option<Arc<ContextResolver>>,
+    /// Optional dictionary store for context-aware dictionary expansion
+    dictionary_store: Option<Arc<Mutex<DictionaryStore>>>,
 }
 
 impl<T, C> RecordingTranscriptionService<T, C>
@@ -113,6 +118,8 @@ where
             app_handle,
             transcription_timeout: Duration::from_secs(DEFAULT_TRANSCRIPTION_TIMEOUT_SECS),
             dictionary_expander: Arc::new(RwLock::new(None)),
+            context_resolver: None,
+            dictionary_store: None,
         }
     }
 
@@ -150,6 +157,18 @@ where
     /// Add dictionary expander for text expansion (builder pattern)
     pub fn with_dictionary_expander(mut self, expander: DictionaryExpander) -> Self {
         self.dictionary_expander = Arc::new(RwLock::new(Some(expander)));
+        self
+    }
+
+    /// Add context resolver for window-aware command/dictionary resolution (builder pattern)
+    pub fn with_context_resolver(mut self, resolver: Arc<ContextResolver>) -> Self {
+        self.context_resolver = Some(resolver);
+        self
+    }
+
+    /// Add dictionary store for context-aware dictionary expansion (builder pattern)
+    pub fn with_dictionary_store(mut self, store: Arc<Mutex<DictionaryStore>>) -> Self {
+        self.dictionary_store = Some(store);
         self
     }
 
@@ -210,6 +229,8 @@ where
         let semaphore = self.transcription_semaphore.clone();
         let timeout_duration = self.transcription_timeout;
         let dictionary_expander = self.dictionary_expander.clone();
+        let context_resolver = self.context_resolver.clone();
+        let dictionary_store = self.dictionary_store.clone();
 
         crate::info!("Spawning transcription task for: {}", file_path);
 
@@ -301,31 +322,73 @@ where
                 text.len()
             );
 
-            // Apply dictionary expansion if configured
-            let expansion_result = match dictionary_expander.read() {
-                Ok(guard) => {
-                    if let Some(ref expander) = *guard {
-                        let result = expander.expand(&text);
-                        if result.expanded_text != text {
-                            crate::debug!(
-                                "Dictionary expansion applied: '{}' -> '{}'",
-                                text,
-                                result.expanded_text
-                            );
-                        }
-                        result
-                    } else {
-                        ExpansionResult {
-                            expanded_text: text,
-                            should_press_enter: false,
+            // Apply dictionary expansion using context-resolved entries when available
+            let expansion_result = {
+                // Try context-aware dictionary expansion first
+                let context_entries = match (&context_resolver, &dictionary_store) {
+                    (Some(resolver), Some(store)) => {
+                        match store.lock() {
+                            Ok(store_guard) => {
+                                let entries = resolver.get_effective_dictionary(&store_guard);
+                                if !entries.is_empty() {
+                                    crate::debug!(
+                                        "Using {} context-resolved dictionary entries for expansion",
+                                        entries.len()
+                                    );
+                                    Some(entries)
+                                } else {
+                                    None
+                                }
+                            }
+                            Err(_) => {
+                                crate::warn!("Failed to lock dictionary store for context resolution");
+                                None
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    crate::warn!("Failed to acquire dictionary expander lock: {}", e);
-                    ExpansionResult {
-                        expanded_text: text,
-                        should_press_enter: false,
+                    _ => None,
+                };
+
+                // Use context entries if available, otherwise fall back to global expander
+                if let Some(entries) = context_entries {
+                    let context_expander = DictionaryExpander::new(&entries);
+                    let result = context_expander.expand(&text);
+                    if result.expanded_text != text {
+                        crate::debug!(
+                            "Context-aware dictionary expansion applied: '{}' -> '{}'",
+                            text,
+                            result.expanded_text
+                        );
+                    }
+                    result
+                } else {
+                    // Fall back to global dictionary expander
+                    match dictionary_expander.read() {
+                        Ok(guard) => {
+                            if let Some(ref expander) = *guard {
+                                let result = expander.expand(&text);
+                                if result.expanded_text != text {
+                                    crate::debug!(
+                                        "Dictionary expansion applied: '{}' -> '{}'",
+                                        text,
+                                        result.expanded_text
+                                    );
+                                }
+                                result
+                            } else {
+                                ExpansionResult {
+                                    expanded_text: text,
+                                    should_press_enter: false,
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            crate::warn!("Failed to acquire dictionary expander lock: {}", e);
+                            ExpansionResult {
+                                expanded_text: text,
+                                should_press_enter: false,
+                            }
+                        }
                     }
                 }
             };
@@ -333,7 +396,7 @@ where
 
             // Try voice command matching if configured (using expanded text)
             let command_handled =
-                Self::try_command_matching(&expanded_text, &command_registry, &command_matcher, &action_dispatcher, &command_emitter, &transcription_emitter)
+                Self::try_command_matching(&expanded_text, &command_registry, &command_matcher, &action_dispatcher, &command_emitter, &transcription_emitter, &context_resolver)
                     .await;
 
             // Fallback to clipboard if no command was handled (using expanded text)
@@ -391,6 +454,7 @@ where
     /// Try to match the transcribed text against voice commands
     ///
     /// Returns true if a command was matched and handled, false otherwise.
+    /// When a context_resolver is provided, uses context-resolved commands for matching.
     async fn try_command_matching(
         text: &str,
         command_registry: &Option<Arc<Mutex<CommandRegistry>>>,
@@ -398,6 +462,7 @@ where
         action_dispatcher: &Option<Arc<ActionDispatcher>>,
         command_emitter: &Option<Arc<C>>,
         transcription_emitter: &Arc<T>,
+        context_resolver: &Option<Arc<ContextResolver>>,
     ) -> bool {
         // Check if all voice command components are configured
         let (registry, matcher, dispatcher, emitter) = match (
@@ -441,7 +506,23 @@ where
                 }
             };
 
-            let match_result = matcher.match_input(text, &registry_guard);
+            // Get effective commands - either context-resolved or all commands
+            let match_result = match context_resolver {
+                Some(resolver) => {
+                    let effective_commands = resolver.get_effective_commands(&registry_guard);
+                    if effective_commands.is_empty() {
+                        crate::debug!("No effective commands for current context, falling back to global");
+                        matcher.match_input(text, &registry_guard)
+                    } else {
+                        crate::debug!(
+                            "Using {} context-resolved commands for matching",
+                            effective_commands.len()
+                        );
+                        matcher.match_commands(text, &effective_commands)
+                    }
+                }
+                None => matcher.match_input(text, &registry_guard),
+            };
 
             match match_result {
                 MatchResult::Exact {

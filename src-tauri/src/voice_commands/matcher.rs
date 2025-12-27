@@ -193,8 +193,15 @@ impl CommandMatcher {
 
     /// Match input against all commands in the registry
     pub fn match_input(&self, input: &str, registry: &CommandRegistry) -> MatchResult {
-        let commands = registry.list();
+        let commands: Vec<_> = registry.list().iter().map(|c| (*c).clone()).collect();
+        self.match_commands(input, &commands)
+    }
 
+    /// Match input against a slice of commands
+    ///
+    /// This method is useful when you have a pre-filtered list of commands,
+    /// such as context-resolved commands from ContextResolver.
+    pub fn match_commands(&self, input: &str, commands: &[CommandDefinition]) -> MatchResult {
         // Collect all matches, filtering out any with NaN scores (defensive)
         let mut candidates: Vec<MatchCandidate> = commands
             .iter()

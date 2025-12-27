@@ -41,6 +41,9 @@ export const eventNames = {
   // Dictionary events
   DICTIONARY_UPDATED: "dictionary_updated",
 
+  // Window context events
+  WINDOW_CONTEXTS_UPDATED: "window_contexts_updated",
+
   // Hotkey events
   KEY_BLOCKING_UNAVAILABLE: "key_blocking_unavailable",
 
@@ -171,6 +174,15 @@ export async function setupEventBridge(
     await listen(eventNames.DICTIONARY_UPDATED, () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.dictionary.all,
+      });
+    })
+  );
+
+  // Window context events - invalidate window context list query
+  unlistenFns.push(
+    await listen(eventNames.WINDOW_CONTEXTS_UPDATED, () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.windowContext.all,
       });
     })
   );

@@ -5,6 +5,7 @@
 
 pub mod dictionary;
 pub mod logic;
+pub mod window_context;
 
 pub use logic::{RecordingInfo, RecordingStateInfo};
 use logic::{

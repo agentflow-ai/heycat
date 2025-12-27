@@ -226,7 +226,6 @@ impl DictionaryStore {
     }
 
     /// Get an entry by ID
-    #[cfg(test)]
     pub fn get(&self, id: &str) -> Option<&DictionaryEntry> {
         self.entries.get(id)
     }

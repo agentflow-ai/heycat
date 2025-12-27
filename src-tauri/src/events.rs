@@ -131,6 +131,38 @@ pub mod dictionary_events {
     }
 }
 
+/// Window context-related event names
+pub mod window_context_events {
+    pub const WINDOW_CONTEXTS_UPDATED: &str = "window_contexts_updated";
+    pub const ACTIVE_WINDOW_CHANGED: &str = "active_window_changed";
+
+    /// Payload for window_contexts_updated event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct WindowContextsUpdatedPayload {
+        /// Type of mutation: "add", "update", or "delete"
+        pub action: String,
+        /// ID of the affected context (present for all actions)
+        pub context_id: String,
+    }
+
+    /// Payload for active_window_changed event
+    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ActiveWindowChangedPayload {
+        /// Name of the foreground application
+        pub app_name: String,
+        /// Bundle ID of the application (macOS)
+        pub bundle_id: Option<String>,
+        /// Title of the active window
+        pub window_title: Option<String>,
+        /// ID of the matched context, if any
+        pub matched_context_id: Option<String>,
+        /// Name of the matched context, if any
+        pub matched_context_name: Option<String>,
+    }
+}
+
 /// Model-related event names
 pub mod model_events {
     pub const MODEL_DOWNLOAD_COMPLETED: &str = "model_download_completed";

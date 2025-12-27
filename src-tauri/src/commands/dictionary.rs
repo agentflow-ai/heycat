@@ -7,11 +7,11 @@
 use crate::commands::TranscriptionServiceState;
 use crate::dictionary::{DictionaryEntry, DictionaryError, DictionaryStore};
 use crate::events::dictionary_events::{self, DictionaryUpdatedPayload};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
 /// Type alias for dictionary store state
-pub type DictionaryStoreState = Mutex<DictionaryStore>;
+pub type DictionaryStoreState = Arc<Mutex<DictionaryStore>>;
 
 /// Helper macro to emit events with error logging
 macro_rules! emit_or_warn {
