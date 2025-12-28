@@ -94,12 +94,27 @@ Label.displayName = "Label";
 
 // FormField wrapper
 export interface FormFieldProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Label text to display above the field */
+  label?: string;
+  /** Help text to display below the label */
+  help?: string;
+  /** Error message to display */
   error?: string;
+  /** Whether the field is required */
+  required?: boolean;
 }
 
 export const FormField = forwardRef<HTMLDivElement, FormFieldProps>(
-  ({ error, className = "", children, ...props }, ref) => (
+  ({ label, help, error, required, className = "", children, ...props }, ref) => (
     <div ref={ref} className={`mb-4 ${className}`} {...props}>
+      {label && (
+        <Label required={required}>
+          {label}
+        </Label>
+      )}
+      {help && (
+        <p className="text-xs text-text-secondary mb-1.5">{help}</p>
+      )}
       {children}
       {error && (
         <p className="mt-1.5 text-sm text-error" role="alert">

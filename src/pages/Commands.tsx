@@ -11,6 +11,8 @@ import { useToast } from "../components/overlays";
 import { CommandItem } from "./components/CommandItem";
 import { CommandModal } from "./components/CommandModal";
 import { CommandsEmptyState } from "./components/CommandsEmptyState";
+import { useWindowContext } from "../hooks/useWindowContext";
+import type { WindowContext } from "../types/windowContext";
 
 export interface CommandDto {
   id: string;
@@ -27,6 +29,7 @@ export interface CommandsProps {
 
 export function Commands(_props: CommandsProps) {
   const { toast } = useToast();
+  const { contexts: contextsQuery, updateContext } = useWindowContext();
   const [commands, setCommands] = useState<CommandDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +41,21 @@ export function Commands(_props: CommandsProps) {
 
   // Delete confirmation state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const contextList = contextsQuery.data ?? [];
+
+  // Reverse lookup: which contexts contain each command
+  const contextsByCommandId = useMemo(() => {
+    const map = new Map<string, WindowContext[]>();
+    for (const ctx of contextList) {
+      for (const cmdId of ctx.commandIds) {
+        const existing = map.get(cmdId) ?? [];
+        existing.push(ctx);
+        map.set(cmdId, existing);
+      }
+    }
+    return map;
+  }, [contextList]);
 
   const loadCommands = useCallback(async () => {
     try {
@@ -80,9 +98,12 @@ export function Commands(_props: CommandsProps) {
   const handleSaveCommand = async (
     trigger: string,
     actionType: string,
-    parameters: Record<string, string>
+    parameters: Record<string, string>,
+    contextIds: string[]
   ) => {
     try {
+      let commandId: string;
+
       if (editingCommand) {
         // Update existing command
         const updatedCommand = await invoke<CommandDto>("update_command", {
@@ -94,6 +115,7 @@ export function Commands(_props: CommandsProps) {
             enabled: editingCommand.enabled,
           },
         });
+        commandId = updatedCommand.id;
         setCommands((prev) =>
           prev.map((c) => (c.id === editingCommand.id ? updatedCommand : c))
         );
@@ -112,6 +134,7 @@ export function Commands(_props: CommandsProps) {
             enabled: true,
           },
         });
+        commandId = newCommand.id;
         setCommands((prev) => [...prev, newCommand]);
         toast({
           type: "success",
@@ -119,6 +142,57 @@ export function Commands(_props: CommandsProps) {
           description: `"${trigger}" has been added.`,
         });
       }
+
+      // Update window contexts to reflect the new associations
+      const previousContextIds = editingCommand
+        ? (contextsByCommandId.get(editingCommand.id) ?? []).map((c) => c.id)
+        : [];
+
+      // Contexts to add the command to
+      const contextsToAdd = contextIds.filter((id) => !previousContextIds.includes(id));
+      // Contexts to remove the command from
+      const contextsToRemove = previousContextIds.filter((id) => !contextIds.includes(id));
+
+      // Update contexts that should now include this command
+      for (const ctxId of contextsToAdd) {
+        const ctx = contextList.find((c) => c.id === ctxId);
+        if (ctx) {
+          await updateContext.mutateAsync({
+            id: ctx.id,
+            name: ctx.name,
+            appName: ctx.matcher.appName,
+            titlePattern: ctx.matcher.titlePattern,
+            bundleId: ctx.matcher.bundleId,
+            commandMode: ctx.commandMode,
+            dictionaryMode: ctx.dictionaryMode,
+            commandIds: [...ctx.commandIds, commandId],
+            dictionaryEntryIds: ctx.dictionaryEntryIds,
+            priority: ctx.priority,
+            enabled: ctx.enabled,
+          });
+        }
+      }
+
+      // Update contexts that should no longer include this command
+      for (const ctxId of contextsToRemove) {
+        const ctx = contextList.find((c) => c.id === ctxId);
+        if (ctx) {
+          await updateContext.mutateAsync({
+            id: ctx.id,
+            name: ctx.name,
+            appName: ctx.matcher.appName,
+            titlePattern: ctx.matcher.titlePattern,
+            bundleId: ctx.matcher.bundleId,
+            commandMode: ctx.commandMode,
+            dictionaryMode: ctx.dictionaryMode,
+            commandIds: ctx.commandIds.filter((id) => id !== commandId),
+            dictionaryEntryIds: ctx.dictionaryEntryIds,
+            priority: ctx.priority,
+            enabled: ctx.enabled,
+          });
+        }
+      }
+
       setIsModalOpen(false);
       setEditingCommand(null);
     } catch (e) {
@@ -258,6 +332,7 @@ export function Commands(_props: CommandsProps) {
             <CommandItem
               key={command.id}
               command={command}
+              assignedContexts={contextsByCommandId.get(command.id) ?? []}
               onEdit={handleEditCommand}
               onDelete={(id) => setDeleteConfirmId(id)}
               onToggleEnabled={handleToggleEnabled}
@@ -275,6 +350,12 @@ export function Commands(_props: CommandsProps) {
         onOpenChange={handleModalClose}
         command={editingCommand}
         existingTriggers={existingTriggers}
+        contexts={contextList}
+        assignedContextIds={
+          editingCommand
+            ? (contextsByCommandId.get(editingCommand.id) ?? []).map((c) => c.id)
+            : []
+        }
         onSave={handleSaveCommand}
       />
     </div>

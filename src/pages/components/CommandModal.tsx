@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, ChevronDown, ChevronUp } from "lucide-react";
 import {
@@ -9,8 +9,11 @@ import {
   FormField,
   Select,
   SelectItem,
+  MultiSelect,
 } from "../../components/ui";
+import type { MultiSelectOption } from "../../components/ui";
 import type { CommandDto } from "../Commands";
+import type { WindowContext } from "../../types/windowContext";
 
 type ActionType =
   | "open_app"
@@ -39,10 +42,15 @@ export interface CommandModalProps {
   onOpenChange: (open: boolean) => void;
   command: CommandDto | null;
   existingTriggers: string[];
+  /** Available window contexts to select from */
+  contexts: WindowContext[];
+  /** Context IDs that currently include this command */
+  assignedContextIds: string[];
   onSave: (
     trigger: string,
     actionType: string,
-    parameters: Record<string, string>
+    parameters: Record<string, string>,
+    contextIds: string[]
   ) => Promise<void>;
 }
 
@@ -51,14 +59,30 @@ export function CommandModal({
   onOpenChange,
   command,
   existingTriggers,
+  contexts,
+  assignedContextIds,
   onSave,
 }: CommandModalProps) {
   const [trigger, setTrigger] = useState("");
   const [actionType, setActionType] = useState<ActionType>("open_app");
   const [parameters, setParameters] = useState<Record<string, string>>({});
+  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Convert contexts to MultiSelect options
+  const contextOptions: MultiSelectOption[] = useMemo(
+    () =>
+      contexts
+        .filter((ctx) => ctx.enabled)
+        .map((ctx) => ({
+          value: ctx.id,
+          label: ctx.name,
+          description: ctx.matcher.appName,
+        })),
+    [contexts]
+  );
 
   // Reset form when modal opens/command changes
   useEffect(() => {
@@ -67,6 +91,7 @@ export function CommandModal({
         setTrigger(command.trigger);
         setActionType(command.action_type as ActionType);
         setParameters(command.parameters);
+        setSelectedContextIds(assignedContextIds);
         // Show advanced if any advanced params are set
         setShowAdvanced(
           Boolean(
@@ -79,11 +104,12 @@ export function CommandModal({
         setTrigger("");
         setActionType("open_app");
         setParameters({});
+        setSelectedContextIds([]);
         setShowAdvanced(false);
       }
       setErrors({});
     }
-  }, [open, command]);
+  }, [open, command, assignedContextIds]);
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -128,7 +154,7 @@ export function CommandModal({
 
     try {
       setSaving(true);
-      await onSave(trigger.trim(), actionType, parameters);
+      await onSave(trigger.trim(), actionType, parameters, selectedContextIds);
     } catch {
       // Error handled by parent via toast
     } finally {
@@ -315,6 +341,19 @@ export function CommandModal({
 
             {/* Dynamic Parameter Fields */}
             {renderParameterFields()}
+
+            {/* Window Context Selection */}
+            {contextOptions.length > 0 && (
+              <FormField label="Window Contexts" help="Assign this command to specific app contexts. Leave empty for global availability.">
+                <MultiSelect
+                  selected={selectedContextIds}
+                  onChange={setSelectedContextIds}
+                  options={contextOptions}
+                  placeholder="Select contexts (optional)..."
+                  aria-label="Window contexts"
+                />
+              </FormField>
+            )}
 
             {/* Progressive Disclosure: Advanced Options */}
             <div className="border-t border-border pt-4">

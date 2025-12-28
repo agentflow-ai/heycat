@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { Plus, Search, Book, Pencil, Trash2, Check, X, Settings, Layers } from "lucide-react";
-import { Card, CardContent, Button, Input, FormField, Toggle } from "../components/ui";
+import { Card, CardContent, Button, Input, FormField, Toggle, MultiSelect } from "../components/ui";
+import type { MultiSelectOption } from "../components/ui";
 import { useToast } from "../components/overlays";
 import { useDictionary } from "../hooks/useDictionary";
 import { useWindowContext } from "../hooks/useWindowContext";
@@ -157,19 +158,22 @@ interface AddEntryFormProps {
   onSubmit: (
     trigger: string,
     expansion: string,
+    contextIds: string[],
     suffix?: string,
     autoEnter?: boolean,
     disableSuffix?: boolean
   ) => Promise<void>;
   existingTriggers: string[];
+  contextOptions: MultiSelectOption[];
 }
 
-function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
+function AddEntryForm({ onSubmit, existingTriggers, contextOptions }: AddEntryFormProps) {
   const [trigger, setTrigger] = useState("");
   const [expansion, setExpansion] = useState("");
   const [suffix, setSuffix] = useState("");
   const [autoEnter, setAutoEnter] = useState(false);
   const [disableSuffix, setDisableSuffix] = useState(false);
+  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [suffixError, setSuffixError] = useState<string | null>(null);
@@ -216,6 +220,7 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
       await onSubmit(
         trigger.trim(),
         expansion.trim(),
+        selectedContextIds,
         disableSuffix ? undefined : (suffix.trim() || undefined),
         autoEnter || undefined,
         disableSuffix || undefined
@@ -226,6 +231,7 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
       setSuffixError(null);
       setAutoEnter(false);
       setDisableSuffix(false);
+      setSelectedContextIds([]);
       setIsSettingsOpen(false);
     } finally {
       setIsSubmitting(false);
@@ -284,15 +290,32 @@ function AddEntryForm({ onSubmit, existingTriggers }: AddEntryFormProps) {
             </div>
           </div>
           {isSettingsOpen && (
-            <SettingsPanel
-              suffix={suffix}
-              autoEnter={autoEnter}
-              disableSuffix={disableSuffix}
-              onSuffixChange={handleSuffixChange}
-              onAutoEnterChange={setAutoEnter}
-              onDisableSuffixChange={setDisableSuffix}
-              suffixError={suffixError}
-            />
+            <>
+              <SettingsPanel
+                suffix={suffix}
+                autoEnter={autoEnter}
+                disableSuffix={disableSuffix}
+                onSuffixChange={handleSuffixChange}
+                onAutoEnterChange={setAutoEnter}
+                onDisableSuffixChange={setDisableSuffix}
+                suffixError={suffixError}
+              />
+              {contextOptions.length > 0 && (
+                <FormField
+                  label="Window Contexts"
+                  help="Assign this entry to specific app contexts. Leave empty for global availability."
+                  className="mt-3"
+                >
+                  <MultiSelect
+                    selected={selectedContextIds}
+                    onChange={setSelectedContextIds}
+                    options={contextOptions}
+                    placeholder="Select contexts (optional)..."
+                    aria-label="Window contexts"
+                  />
+                </FormField>
+              )}
+            </>
           )}
         </form>
       </CardContent>
@@ -417,7 +440,7 @@ function EntryItem({
           <div className="flex gap-2">
             <Button
               size="sm"
-              variant="destructive"
+              variant="danger"
               onClick={onConfirmDelete}
               aria-label="Confirm delete"
             >
@@ -508,7 +531,7 @@ function DictionaryEmptyState({ onAddFocus }: { onAddFocus: () => void }) {
 export function Dictionary(_props: DictionaryProps) {
   const { toast } = useToast();
   const { entries, addEntry, updateEntry, deleteEntry } = useDictionary();
-  const { contexts } = useWindowContext();
+  const { contexts, updateContext } = useWindowContext();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -539,6 +562,19 @@ export function Dictionary(_props: DictionaryProps) {
     return map;
   }, [contextList]);
 
+  // Convert contexts to MultiSelect options (only enabled contexts)
+  const contextOptions: MultiSelectOption[] = useMemo(
+    () =>
+      contextList
+        .filter((ctx) => ctx.enabled)
+        .map((ctx) => ({
+          value: ctx.id,
+          label: ctx.name,
+          description: ctx.matcher?.appName,
+        })),
+    [contextList]
+  );
+
   const existingTriggers = useMemo(
     () => entryList.map((e) => e.trigger.toLowerCase()),
     [entryList]
@@ -558,12 +594,34 @@ export function Dictionary(_props: DictionaryProps) {
     async (
       trigger: string,
       expansion: string,
+      contextIds: string[],
       suffix?: string,
       autoEnter?: boolean,
       disableSuffix?: boolean
     ) => {
       try {
-        await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter, disableSuffix });
+        const newEntry = await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter, disableSuffix });
+
+        // Update selected contexts to include the new entry
+        for (const ctxId of contextIds) {
+          const ctx = contextList.find((c) => c.id === ctxId);
+          if (ctx) {
+            await updateContext.mutateAsync({
+              id: ctx.id,
+              name: ctx.name,
+              appName: ctx.matcher?.appName,
+              titlePattern: ctx.matcher?.titlePattern,
+              bundleId: ctx.matcher?.bundleId,
+              commandMode: ctx.commandMode,
+              dictionaryMode: ctx.dictionaryMode,
+              commandIds: ctx.commandIds,
+              dictionaryEntryIds: [...ctx.dictionaryEntryIds, newEntry.id],
+              priority: ctx.priority,
+              enabled: ctx.enabled,
+            });
+          }
+        }
+
         toast({
           type: "success",
           title: "Entry added",
@@ -578,7 +636,7 @@ export function Dictionary(_props: DictionaryProps) {
         throw e;
       }
     },
-    [addEntry, toast]
+    [addEntry, contextList, updateContext, toast]
   );
 
   const handleStartEdit = useCallback((entry: DictionaryEntry) => {
@@ -747,6 +805,7 @@ export function Dictionary(_props: DictionaryProps) {
         existingTriggers={existingTriggers.filter(
           (t) => t !== editValues.trigger.toLowerCase()
         )}
+        contextOptions={contextOptions}
       />
 
       {/* Search Bar */}

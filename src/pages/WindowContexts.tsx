@@ -174,7 +174,7 @@ function AddContextForm({ onSubmit, runningApps, dictionaryEntries }: AddContext
             </FormField>
           </div>
           <div className="flex gap-3 items-center mt-3">
-            <FormField label="Command Mode" className="flex-1">
+            <FormField label="Command Mode" help="Merge: add to global commands. Replace: use only context commands." className="flex-1">
               <select
                 value={commandMode}
                 onChange={(e) => setCommandMode(e.target.value as OverrideMode)}
@@ -185,7 +185,7 @@ function AddContextForm({ onSubmit, runningApps, dictionaryEntries }: AddContext
                 <option value="replace">Replace</option>
               </select>
             </FormField>
-            <FormField label="Dictionary Mode" className="flex-1">
+            <FormField label="Dictionary Mode" help="Merge: add to global dictionary. Replace: use only context dictionary." className="flex-1">
               <select
                 value={dictionaryMode}
                 onChange={(e) => setDictionaryMode(e.target.value as OverrideMode)}
@@ -196,7 +196,7 @@ function AddContextForm({ onSubmit, runningApps, dictionaryEntries }: AddContext
                 <option value="replace">Replace</option>
               </select>
             </FormField>
-            <FormField label="Priority" className="w-24">
+            <FormField label="Priority" help="Higher values match first." className="w-24">
               <Input
                 type="number"
                 value={priority}
@@ -312,7 +312,7 @@ function ContextItem({
           </FormField>
         </div>
         <div className="flex gap-3 items-center mt-3">
-          <FormField label="Command Mode" className="flex-1">
+          <FormField label="Command Mode" help="Merge: add to global commands. Replace: use only context commands." className="flex-1">
             <select
               value={editValues.commandMode}
               onChange={(e) => onEditChange("commandMode", e.target.value)}
@@ -322,7 +322,7 @@ function ContextItem({
               <option value="replace">Replace</option>
             </select>
           </FormField>
-          <FormField label="Dictionary Mode" className="flex-1">
+          <FormField label="Dictionary Mode" help="Merge: add to global dictionary. Replace: use only context dictionary." className="flex-1">
             <select
               value={editValues.dictionaryMode}
               onChange={(e) => onEditChange("dictionaryMode", e.target.value)}
@@ -332,7 +332,7 @@ function ContextItem({
               <option value="replace">Replace</option>
             </select>
           </FormField>
-          <FormField label="Priority" className="w-24">
+          <FormField label="Priority" help="Higher values match first." className="w-24">
             <Input
               type="number"
               value={editValues.priority}

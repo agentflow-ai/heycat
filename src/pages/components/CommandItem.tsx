@@ -1,6 +1,7 @@
-import { Pencil, X } from "lucide-react";
+import { Pencil, X, Layers } from "lucide-react";
 import { Card, CardContent, Button, Toggle } from "../../components/ui";
 import type { CommandDto } from "../Commands";
+import type { WindowContext } from "../../types/windowContext";
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
   open_app: "Open App",
@@ -16,8 +17,51 @@ const ACTION_TYPE_COLORS: Record<string, string> = {
   custom: "bg-text-secondary/10 text-text-secondary",
 };
 
+interface ContextBadgesProps {
+  contexts: WindowContext[];
+}
+
+function ContextBadges({ contexts }: ContextBadgesProps) {
+  if (contexts.length === 0) {
+    return (
+      <span
+        className="text-xs px-2 py-0.5 rounded bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+        data-testid="context-badge-global"
+      >
+        Global
+      </span>
+    );
+  }
+
+  if (contexts.length === 1) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+        data-testid="context-badge"
+      >
+        <Layers className="h-3 w-3" />
+        {contexts[0].name}
+      </span>
+    );
+  }
+
+  // For 2+ contexts, show count
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
+      data-testid="context-badge"
+      title={contexts.map((c) => c.name).join(", ")}
+    >
+      <Layers className="h-3 w-3" />
+      {contexts.length} contexts
+    </span>
+  );
+}
+
 export interface CommandItemProps {
   command: CommandDto;
+  /** Window contexts this command is assigned to */
+  assignedContexts: WindowContext[];
   onEdit: (command: CommandDto) => void;
   onDelete: (id: string) => void;
   onToggleEnabled: (command: CommandDto) => void;
@@ -49,6 +93,7 @@ function getActionDescription(command: CommandDto): string {
 
 export function CommandItem({
   command,
+  assignedContexts,
   onEdit,
   onDelete,
   onToggleEnabled,
@@ -89,6 +134,8 @@ export function CommandItem({
             >
               {actionLabel}
             </span>
+            {/* Context badge */}
+            <ContextBadges contexts={assignedContexts} />
           </div>
           {/* Description */}
           {description && (

@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Commands, type CommandDto } from "./Commands";
 
 // Mock Tauri invoke
@@ -18,6 +19,18 @@ vi.mock("../components/overlays", () => ({
     dismissAll: vi.fn(),
   }),
 }));
+
+// Helper to render with providers
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+  );
+}
 
 // Sample command data
 const sampleCommands: CommandDto[] = [
@@ -49,11 +62,16 @@ const sampleCommands: CommandDto[] = [
 describe("Commands", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInvoke.mockResolvedValue([]);
+    // Mock both get_commands and list_window_contexts by default
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve([]);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
   });
 
   it("renders page with header, search, and new command button", async () => {
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(
@@ -73,9 +91,13 @@ describe("Commands", () => {
   });
 
   it("shows empty state when no commands exist", async () => {
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve([]);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText("No voice commands yet")).toBeDefined();
@@ -92,9 +114,13 @@ describe("Commands", () => {
   });
 
   it("displays commands list with toggle, trigger, and action type", async () => {
-    mockInvoke.mockResolvedValue(sampleCommands);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -116,9 +142,13 @@ describe("Commands", () => {
 
   it("filters commands by search query", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue(sampleCommands);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -138,9 +168,13 @@ describe("Commands", () => {
 
   it("shows no results message when search has no matches", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue(sampleCommands);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -156,11 +190,18 @@ describe("Commands", () => {
 
   it("toggles command enabled state", async () => {
     const user = userEvent.setup();
-    mockInvoke
-      .mockResolvedValueOnce(sampleCommands) // Initial load
-      .mockResolvedValueOnce({ ...sampleCommands[0], enabled: false }); // Toggle response
+    let callCount = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      if (cmd === "update_command") {
+        callCount++;
+        return Promise.resolve({ ...sampleCommands[0], enabled: false });
+      }
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -185,9 +226,13 @@ describe("Commands", () => {
 
   it("opens modal for new command when clicking New Command button", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve([]);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText("No voice commands yet")).toBeDefined();
@@ -208,9 +253,13 @@ describe("Commands", () => {
 
   it("opens modal for editing when clicking edit button", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue(sampleCommands);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -238,11 +287,14 @@ describe("Commands", () => {
       enabled: true,
     };
 
-    mockInvoke
-      .mockResolvedValueOnce([]) // Initial load
-      .mockResolvedValueOnce(newCommand); // add_command response
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve([]);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      if (cmd === "add_command") return Promise.resolve(newCommand);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText("No voice commands yet")).toBeDefined();
@@ -291,9 +343,13 @@ describe("Commands", () => {
 
   it("validates required fields in modal", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve([]);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText("No voice commands yet")).toBeDefined();
@@ -316,18 +372,20 @@ describe("Commands", () => {
     });
     expect(screen.getByText("Application name is required")).toBeDefined();
 
-    // Should not have called API (only get_commands should have been called)
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
-    expect(mockInvoke).toHaveBeenCalledWith("get_commands");
+    // Should not have called add_command API
+    expect(mockInvoke).not.toHaveBeenCalledWith("add_command", expect.anything());
   });
 
   it("shows delete confirmation and deletes command", async () => {
     const user = userEvent.setup();
-    mockInvoke
-      .mockResolvedValueOnce(sampleCommands) // Initial load
-      .mockResolvedValueOnce(undefined); // remove_command response
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      if (cmd === "remove_command") return Promise.resolve(undefined);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -358,9 +416,13 @@ describe("Commands", () => {
 
   it("cancels delete when cancel button clicked", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue(sampleCommands);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve(sampleCommands);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText('"open slack"')).toBeDefined();
@@ -388,9 +450,13 @@ describe("Commands", () => {
 
   it("shows advanced options in modal when expanded", async () => {
     const user = userEvent.setup();
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.resolve([]);
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText("No voice commands yet")).toBeDefined();
@@ -423,9 +489,13 @@ describe("Commands", () => {
   });
 
   it("displays error state when loading fails", async () => {
-    mockInvoke.mockRejectedValue(new Error("Network error"));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") return Promise.reject(new Error("Network error"));
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeDefined();
@@ -437,11 +507,20 @@ describe("Commands", () => {
 
   it("retries loading when retry button clicked", async () => {
     const user = userEvent.setup();
-    mockInvoke
-      .mockRejectedValueOnce(new Error("Network error"))
-      .mockResolvedValueOnce(sampleCommands);
+    let getCommandsCallCount = 0;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_commands") {
+        getCommandsCallCount++;
+        if (getCommandsCallCount === 1) {
+          return Promise.reject(new Error("Network error"));
+        }
+        return Promise.resolve(sampleCommands);
+      }
+      if (cmd === "list_window_contexts") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
 
-    render(<Commands />);
+    renderWithProviders(<Commands />);
 
     await waitFor(() => {
       expect(screen.getByText("Network error")).toBeDefined();

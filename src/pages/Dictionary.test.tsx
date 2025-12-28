@@ -46,7 +46,7 @@ const sampleContexts: WindowContext[] = [
   {
     id: "ctx-1",
     name: "Slack",
-    appName: "Slack",
+    matcher: { appName: "Slack" },
     enabled: true,
     priority: 0,
     commandMode: "merge",
@@ -57,7 +57,7 @@ const sampleContexts: WindowContext[] = [
   {
     id: "ctx-2",
     name: "VS Code",
-    appName: "Code",
+    matcher: { appName: "Code" },
     enabled: true,
     priority: 0,
     commandMode: "merge",
@@ -68,7 +68,7 @@ const sampleContexts: WindowContext[] = [
   {
     id: "ctx-3",
     name: "Terminal",
-    appName: "Terminal",
+    matcher: { appName: "Terminal" },
     enabled: true,
     priority: 0,
     commandMode: "merge",
@@ -442,7 +442,7 @@ describe("Dictionary", () => {
         {
           id: "ctx-1",
           name: "Slack",
-          appName: "Slack",
+          matcher: { appName: "Slack" },
           enabled: true,
           priority: 0,
           commandMode: "merge",
@@ -453,7 +453,7 @@ describe("Dictionary", () => {
         {
           id: "ctx-2",
           name: "VS Code",
-          appName: "Code",
+          matcher: { appName: "Code" },
           enabled: true,
           priority: 0,
           commandMode: "merge",
