@@ -6,7 +6,6 @@ export default {
   },
 
   agile: {
-    customTemplates: {},
     review: {
       instructionsFile: "agile/review.md",
     },
@@ -17,6 +16,7 @@ export default {
       minIntegrationTests: 1,
       flagMockedIntegrations: true,
     },
+    customTemplates: {},
     linear: {
       teamId: "cb5ea72f-7c34-4cd9-9d22-9bd49074f3f2",
       stateMapping: {
