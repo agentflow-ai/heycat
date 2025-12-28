@@ -72,22 +72,23 @@ If the script reports conflicts, you MUST:
 
 **Why this matters:** Automatic conflict resolution can silently discard important changes. The user must understand and approve how conflicts are resolved.
 
-### Step 3: Verify success
+### Step 3: Update Linear
 
 After successful completion:
 
 1. Confirm the squashed commit message is appropriate for the feature
 2. Verify the worktree is reset and ready for the next feature
-3. Remind about syncing agile folder if applicable:
+3. Move the associated issue to done in Linear:
    ```bash
-   bun scripts/sync-agile.ts
+   bun <agile-plugin-path>/agile.ts move <issue-name> 5-done
    ```
+   - If the issue name isn't obvious, ask the user which issue to update
 
 ## Notes
 
 - This creates a single conventional commit on main
 - The worktree branch is preserved but reset to main
-- Agile folder sync is a separate step
+- The associated Linear issue should be moved to done after merge
 - The commit message is automatically derived from your WIP commits
 
 ## Troubleshooting
