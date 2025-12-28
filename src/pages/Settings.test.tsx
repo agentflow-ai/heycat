@@ -30,7 +30,6 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 // Mock hooks
-const mockUpdateAutoStartListening = vi.fn();
 const mockUpdateAudioDevice = vi.fn();
 const mockDownloadModel = vi.fn();
 const mockRefreshStatus = vi.fn();
@@ -39,10 +38,6 @@ const mockRefetchDevices = vi.fn();
 vi.mock("../hooks/useSettings", () => ({
   useSettings: () => ({
     settings: {
-      listening: {
-        enabled: false,
-        autoStartOnLaunch: false,
-      },
       audio: {
         selectedDevice: null,
       },
@@ -51,8 +46,6 @@ vi.mock("../hooks/useSettings", () => ({
       },
     },
     isLoading: false,
-    updateListeningEnabled: vi.fn(),
-    updateAutoStartListening: mockUpdateAutoStartListening,
     updateAudioDevice: mockUpdateAudioDevice,
     updateDistinguishLeftRight: vi.fn(),
   }),
@@ -125,7 +118,6 @@ describe("Settings Page", () => {
 
       // General settings should be visible
       expect(screen.getByText("Launch at Login")).toBeDefined();
-      expect(screen.getByText("Auto-start Listening")).toBeDefined();
       expect(screen.getByText("Keyboard Shortcuts")).toBeDefined();
     });
 
@@ -181,22 +173,6 @@ describe("Settings Page", () => {
   });
 
   describe("General Tab", () => {
-    it("toggles auto-start listening and shows toast", async () => {
-      const user = userEvent.setup();
-      render(<Settings />);
-
-      const autoStartToggle = screen.getByLabelText(/Auto-start Listening/i);
-      await user.click(autoStartToggle);
-
-      expect(mockUpdateAutoStartListening).toHaveBeenCalledWith(true);
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "success",
-          title: "Setting saved",
-        })
-      );
-    });
-
     it("opens shortcut editor when Change button is clicked", async () => {
       const user = userEvent.setup();
       render(<Settings />);

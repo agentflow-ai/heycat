@@ -20,9 +20,6 @@ export const queryKeys = {
     /** Query key for list_audio_devices command */
     listAudioDevices: ["tauri", "list_audio_devices"] as const,
 
-    /** Query key for get_listening_status command */
-    getListeningStatus: ["tauri", "get_listening_status"] as const,
-
     /** Query key factory for check_parakeet_model_status command */
     checkModelStatus: (type: string) =>
       ["tauri", "check_parakeet_model_status", type] as const,
@@ -51,5 +48,4 @@ export type TauriQueryKey =
   | typeof queryKeys.tauri.listRecordings
   | typeof queryKeys.tauri.getRecordingState
   | typeof queryKeys.tauri.listAudioDevices
-  | typeof queryKeys.tauri.getListeningStatus
   | ReturnType<typeof queryKeys.tauri.checkModelStatus>;

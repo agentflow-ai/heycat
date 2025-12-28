@@ -4,16 +4,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import * as useCatOverlayModule from "./hooks/useCatOverlay";
 import * as useAppStatusModule from "./hooks/useAppStatus";
-import * as useAutoStartListeningModule from "./hooks/useAutoStartListening";
-import * as useListeningModule from "./hooks/useListening";
 import * as useRecordingModule from "./hooks/useRecording";
 import * as useMultiModelStatusModule from "./hooks/useMultiModelStatus";
 import * as useSettingsModule from "./hooks/useSettings";
 
 vi.mock("./hooks/useCatOverlay");
 vi.mock("./hooks/useAppStatus");
-vi.mock("./hooks/useAutoStartListening");
-vi.mock("./hooks/useListening");
 vi.mock("./hooks/useRecording");
 vi.mock("./hooks/useMultiModelStatus");
 vi.mock("./hooks/useSettings", () => ({
@@ -29,8 +25,6 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 const mockUseCatOverlay = vi.mocked(useCatOverlayModule.useCatOverlay);
 const mockUseAppStatus = vi.mocked(useAppStatusModule.useAppStatus);
-const mockUseAutoStartListening = vi.mocked(useAutoStartListeningModule.useAutoStartListening);
-const mockUseListening = vi.mocked(useListeningModule.useListening);
 const mockUseRecording = vi.mocked(useRecordingModule.useRecording);
 const mockUseMultiModelStatus = vi.mocked(useMultiModelStatusModule.useMultiModelStatus);
 const mockUseSettings = vi.mocked(useSettingsModule.useSettings);
@@ -40,17 +34,7 @@ describe("App Integration", () => {
     status: "idle",
     isRecording: false,
     isTranscribing: false,
-    isListening: false,
     error: null,
-  };
-
-  const defaultListeningMock: useListeningModule.UseListeningReturn = {
-    isListening: false,
-    isWakeWordDetected: false,
-    isMicAvailable: true,
-    error: null,
-    enableListening: vi.fn(),
-    disableListening: vi.fn(),
   };
 
   const defaultRecordingMock: useRecordingModule.UseRecordingResult = {
@@ -76,20 +60,15 @@ describe("App Integration", () => {
 
   const defaultCatOverlayMock = {
     isRecording: false,
-    isListening: false,
     overlayMode: "hidden" as useCatOverlayModule.OverlayMode,
-    isMicUnavailable: false,
   };
 
   const defaultSettingsMock: useSettingsModule.UseSettingsReturn = {
     settings: {
       audio: { selectedDevice: null },
-      listening: { enabled: false, autoStartOnLaunch: false },
       shortcuts: { distinguishLeftRight: false },
     },
     isLoading: false,
-    updateListeningEnabled: vi.fn(),
-    updateAutoStartListening: vi.fn(),
     updateAudioDevice: vi.fn(),
     updateDistinguishLeftRight: vi.fn(),
   };
@@ -98,8 +77,6 @@ describe("App Integration", () => {
     vi.clearAllMocks();
     mockUseCatOverlay.mockReturnValue(defaultCatOverlayMock);
     mockUseAppStatus.mockReturnValue(defaultAppStatusMock);
-    mockUseAutoStartListening.mockReturnValue(undefined);
-    mockUseListening.mockReturnValue(defaultListeningMock);
     mockUseRecording.mockReturnValue(defaultRecordingMock);
     mockUseMultiModelStatus.mockReturnValue(defaultMultiModelStatusMock);
     mockUseSettings.mockReturnValue(defaultSettingsMock);

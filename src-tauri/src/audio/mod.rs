@@ -6,8 +6,8 @@ use ringbuf::{
 };
 use std::sync::{Arc, Mutex};
 
-mod cpal_backend;
-pub use cpal_backend::CpalBackend;
+mod swift_backend;
+pub use swift_backend::SwiftBackend;
 
 mod device;
 pub use device::{list_input_devices, AudioInputDevice};
@@ -24,17 +24,9 @@ pub use thread::AudioThreadHandle;
 pub mod wav;
 pub use wav::{encode_wav, parse_duration_from_file, SystemFileWriter};
 
-pub mod denoiser;
-pub use denoiser::SharedDenoiser;
-
-pub mod preprocessing;
-pub use preprocessing::PreprocessingChain;
-
-pub mod agc;
-pub use agc::AutomaticGainControl;
-
 pub mod diagnostics;
-pub use diagnostics::{RecordingDiagnostics, QualityWarning, QualityWarningType, WarningSeverity, PipelineStage};
+#[allow(unused_imports)]
+pub use diagnostics::{RecordingDiagnostics, QualityWarning};
 
 #[cfg(test)]
 mod mod_test;
@@ -123,6 +115,7 @@ impl AudioBuffer {
     }
 
     /// Check if buffer has reached maximum capacity
+    #[allow(dead_code)]
     pub fn is_full(&self) -> bool {
         self.accumulated_len() >= MAX_BUFFER_SAMPLES
     }
@@ -177,6 +170,7 @@ pub const MAX_BUFFER_SAMPLES: usize = 16000 * 60 * 10;
 /// Maximum resampling buffer size in samples (~3 seconds at 48kHz)
 /// This limits memory growth if resampling can't keep up with input rate.
 /// Typically source rates are 44.1kHz or 48kHz, so 3 seconds = ~144k samples.
+#[allow(dead_code)]
 pub const MAX_RESAMPLE_BUFFER_SAMPLES: usize = 48000 * 3;
 
 /// State of the audio capture process
@@ -204,6 +198,7 @@ pub enum AudioCaptureError {
     /// Error with the audio device
     DeviceError(String),
     /// Error with the audio stream
+    #[allow(dead_code)]
     StreamError(String),
 }
 
@@ -223,13 +218,16 @@ impl std::error::Error for AudioCaptureError {}
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum StopReason {
     /// Buffer reached maximum capacity (~10 minutes)
+    #[allow(dead_code)]
     BufferFull,
     /// Lock poisoning error in audio callback (legacy, kept for serialization compatibility)
     #[allow(dead_code)]
     LockError,
     /// Audio stream error (device disconnected, etc.)
+    #[allow(dead_code)]
     StreamError,
     /// Resample buffer overflow (resampling can't keep up)
+    #[allow(dead_code)]
     ResampleOverflow,
     /// Silence detected after speech (user finished talking)
     #[allow(dead_code)] // Used by silence detection in listening module
@@ -248,11 +246,6 @@ pub trait AudioCaptureBackend {
     /// * `buffer` - The audio buffer to capture samples into
     /// * `stop_signal` - Optional sender to signal stop (e.g., buffer full, lock error)
     /// * `device_name` - Optional device name to use; falls back to default if not found
-    ///
-    /// Note: Production code uses `CpalBackend::start_with_denoiser()` directly for
-    /// SharedDenoiser support. This trait method is kept for API completeness and
-    /// future mock implementations.
-    #[allow(dead_code)]
     fn start(
         &mut self,
         buffer: AudioBuffer,

@@ -78,42 +78,6 @@ pub const VAD_THRESHOLD_SILENCE: f32 = 0.5;
 pub const VAD_THRESHOLD_AGGRESSIVE: f32 = 0.6;
 
 // =============================================================================
-// WAKE WORD DETECTION
-// =============================================================================
-
-/// Default transcription timeout for wake word detection (seconds).
-///
-/// This is shorter than the hotkey timeout since wake word detection
-/// only processes ~2 second audio windows. If transcription exceeds
-/// this duration, a warning is logged.
-pub const WAKE_WORD_TRANSCRIPTION_TIMEOUT_SECS: u64 = 10;
-
-/// Wake word detection window duration (seconds).
-///
-/// How much audio history to analyze for wake word. Reduced from 3s
-/// to 2s for faster response with short utterances like "hey cat".
-/// At 16kHz: 2.0 * 16000 = 32000 samples = ~128KB memory.
-pub const WAKE_WORD_WINDOW_SECS: f32 = 2.0;
-
-/// Minimum new samples required before wake word re-analysis.
-///
-/// Set to 0.75 seconds of new audio (12000 samples at 16kHz) to reduce
-/// noise from overlapping transcriptions while still catching "hey cat".
-pub const WAKE_WORD_MIN_NEW_SAMPLES: usize = 12000;
-
-/// Minimum speech frames required for wake word VAD check.
-///
-/// Require 4+ frames (~128ms) above threshold to filter brief noise
-/// spikes while catching short utterances like "hey cat".
-pub const WAKE_WORD_MIN_SPEECH_FRAMES: usize = 4;
-
-/// Fingerprint overlap threshold for duplicate audio detection (0.0 - 1.0).
-///
-/// Audio segments with >50% overlap are considered duplicates and
-/// skipped to prevent re-transcribing the same audio.
-pub const FINGERPRINT_OVERLAP_THRESHOLD: f32 = 0.5;
-
-// =============================================================================
 // SILENCE DETECTION
 // =============================================================================
 
@@ -146,13 +110,6 @@ pub const SILENCE_MIN_SPEECH_FRAMES: usize = 2;
 // PIPELINE CONFIGURATION
 // =============================================================================
 
-/// Analysis interval for wake word pipeline (milliseconds).
-///
-/// How often the listening pipeline analyzes accumulated audio for
-/// wake word. 150ms provides responsive detection (trades ~3x more
-/// CPU for ~3x faster response time).
-pub const ANALYSIS_INTERVAL_MS: u64 = 150;
-
 /// Detection check interval for silence/speech detection (milliseconds).
 ///
 /// How often the recording coordinator checks accumulated audio for
@@ -167,23 +124,12 @@ pub const DETECTION_INTERVAL_MS: u64 = 100;
 /// for the VAD to make accurate decisions.
 pub const MIN_DETECTION_SAMPLES: usize = 1600;
 
-/// Minimum samples before first wake word analysis.
-///
-/// Need at least 0.25 seconds of audio before analyzing.
-/// At 16kHz: 0.25 * 16000 = 4000 samples.
-pub const MIN_SAMPLES_FOR_ANALYSIS: usize = 4000;
-
-/// Event channel buffer size for wake word events.
-///
-/// Small buffer since events should be processed quickly. Bounded
-/// to handle backpressure gracefully if receiver falls behind.
-pub const EVENT_CHANNEL_BUFFER_SIZE: usize = 16;
-
 /// Chunk size for real-time audio resampling (samples).
 ///
 /// When the audio device doesn't support 16kHz natively, we resample
 /// in chunks of this size. 1024 samples provides a good balance between
 /// latency (~64ms at 16kHz) and processing efficiency.
+#[allow(dead_code)]
 pub const RESAMPLE_CHUNK_SIZE: usize = 1024;
 
 // =============================================================================
@@ -194,15 +140,15 @@ pub const RESAMPLE_CHUNK_SIZE: usize = 1024;
 ///
 /// 256 samples = ~16ms at 16kHz, ~5ms at 48kHz.
 /// Smaller values reduce latency but increase CPU usage.
-/// This is passed to cpal's `BufferSize::Fixed` to request a specific
-/// buffer size from the audio driver, reducing glitches caused by
-/// variable platform defaults.
+/// This is used to configure the audio buffer size for processing,
+/// reducing glitches caused by variable platform defaults.
 ///
 /// | Buffer Size | Latency @ 16kHz | Latency @ 48kHz | Notes |
 /// |-------------|-----------------|-----------------|-------|
 /// | 128         | 8ms             | 2.7ms           | Very low latency, higher CPU |
 /// | 256         | 16ms            | 5.3ms           | Good balance (recommended) |
 /// | 512         | 32ms            | 10.7ms          | Lower CPU, higher latency |
+#[allow(dead_code)]
 pub const PREFERRED_BUFFER_SIZE: u32 = 256;
 
 // =============================================================================
@@ -214,6 +160,7 @@ pub const PREFERRED_BUFFER_SIZE: u32 = 256;
 /// Removes low-frequency rumble (HVAC, traffic, handling noise) below this
 /// frequency. 80Hz is above typical voice fundamentals (85-255Hz) but removes
 /// room noise effectively.
+#[allow(dead_code)]
 pub const HIGHPASS_CUTOFF_HZ: f32 = 80.0;
 
 /// Pre-emphasis filter coefficient.
@@ -221,6 +168,7 @@ pub const HIGHPASS_CUTOFF_HZ: f32 = 80.0;
 /// Standard ASR coefficient that boosts frequencies above ~300Hz to improve
 /// speech intelligibility. The filter is: y[n] = x[n] - alpha * x[n-1]
 /// Higher values (closer to 1.0) = stronger high-frequency boost.
+#[allow(dead_code)]
 pub const PRE_EMPHASIS_ALPHA: f32 = 0.97;
 
 // =============================================================================
@@ -285,33 +233,6 @@ mod tests {
     fn test_sample_rate_valid_for_silero() {
         // Silero VAD only supports 8000 or 16000 Hz
         assert!(DEFAULT_SAMPLE_RATE == 16000 || DEFAULT_SAMPLE_RATE == 8000);
-    }
-
-    #[test]
-    fn test_wake_word_window_memory_bounded() {
-        // 2 seconds at 16kHz = 32000 samples * 4 bytes = 128KB
-        let samples = (WAKE_WORD_WINDOW_SECS * DEFAULT_SAMPLE_RATE as f32) as usize;
-        let memory = samples * std::mem::size_of::<f32>();
-        assert!(memory < 150 * 1024, "Wake word buffer should be < 150KB");
-        assert!(memory >= 120 * 1024, "Wake word buffer should be >= 120KB");
-    }
-
-    #[test]
-    fn test_min_new_samples_reasonable() {
-        // min_new_samples should be less than one window duration
-        let window_samples = (WAKE_WORD_WINDOW_SECS * DEFAULT_SAMPLE_RATE as f32) as usize;
-        assert!(WAKE_WORD_MIN_NEW_SAMPLES < window_samples);
-        // But at least 0.5 seconds worth
-        let half_second_samples = (DEFAULT_SAMPLE_RATE / 2) as usize;
-        assert!(WAKE_WORD_MIN_NEW_SAMPLES >= half_second_samples);
-    }
-
-    #[test]
-    fn test_analysis_interval_reasonable() {
-        // Analysis interval should be at least 50ms for CPU efficiency
-        assert!(ANALYSIS_INTERVAL_MS >= 50);
-        // But less than 500ms for responsive detection
-        assert!(ANALYSIS_INTERVAL_MS <= 500);
     }
 
     #[test]

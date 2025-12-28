@@ -2,20 +2,20 @@
 // Connects global hotkey to recording state with debouncing
 // Uses unified command implementations for start/stop logic
 
-use crate::audio::AudioThreadHandle;
+use crate::audio::{AudioMonitorHandle, AudioThreadHandle};
 use crate::commands::logic::{start_recording_impl, stop_recording_impl};
 use crate::keyboard_capture::cgeventtap::set_consume_escape;
 use crate::events::{
     current_timestamp, hotkey_events, CommandAmbiguousPayload, CommandCandidate,
     CommandEventEmitter, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
-    HotkeyEventEmitter, ListeningEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
+    HotkeyEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
     RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
     TranscriptionStartedPayload,
 };
 use crate::hotkey::double_tap::{DoubleTapDetector, DEFAULT_DOUBLE_TAP_WINDOW_MS};
 use crate::hotkey::ShortcutBackend;
-use crate::listening::{ListeningManager, ListeningPipeline, RecordingDetectors, SilenceConfig};
+use crate::recording::{RecordingDetectors, SilenceConfig};
 use crate::model::{check_model_exists_for_type, ModelType};
 use crate::recording::{RecordingManager, RecordingState};
 use crate::voice_commands::executor::ActionDispatcher;
@@ -85,7 +85,7 @@ pub struct TranscriptionResult {
 ///
 /// Note: Both `shared_model` and `emitter` must be Some for transcription to work.
 /// The Option wrappers allow incremental builder pattern configuration.
-pub struct TranscriptionConfig<T: TranscriptionEventEmitter + ListeningEventEmitter> {
+pub struct TranscriptionConfig<T: TranscriptionEventEmitter> {
     /// Shared transcription model for performing transcriptions
     pub shared_model: Option<Arc<SharedTranscriptionModel>>,
     /// Event emitter for transcription events (started, completed, error)
@@ -297,7 +297,7 @@ fn copy_and_paste(app_handle: &Option<AppHandle>, text: &str) {
 /// - `silence`: Silence detection configuration
 ///
 /// Top-level fields handle debouncing, listening state, and app integration.
-pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmitter, C: CommandEventEmitter> {
+pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmitter, C: CommandEventEmitter> {
     // === Debounce/Timing ===
     last_toggle_time: Option<Instant>,
     debounce_duration: Duration,
@@ -318,18 +318,12 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     // === Audio (partially grouped - thread is optional, state may be separate) ===
     /// Optional audio thread handle - when present, starts/stops capture on toggle
     audio_thread: Option<Arc<AudioThreadHandle>>,
-    /// Optional shared denoiser for noise suppression (loaded once at startup)
-    shared_denoiser: Option<Arc<crate::audio::SharedDenoiser>>,
+    /// Optional audio monitor handle - stopped before recording to prevent device conflict
+    audio_monitor: Option<Arc<AudioMonitorHandle>>,
     /// Reference to recording state for getting audio buffer in transcription thread
     recording_state: Option<Arc<Mutex<RecordingManager>>>,
-    /// Recording detectors for silence-based auto-stop (shared with wake word flow)
+    /// Recording detectors for silence-based auto-stop
     recording_detectors: Option<Arc<Mutex<RecordingDetectors>>>,
-
-    // === Listening/Wake Word ===
-    /// Optional listening state for determining return state after recording
-    listening_state: Option<Arc<Mutex<ListeningManager>>>,
-    /// Optional listening pipeline for restarting wake word detection after recording
-    listening_pipeline: Option<Arc<Mutex<ListeningPipeline>>>,
 
     // === App Integration ===
     /// Optional app handle for clipboard access
@@ -349,7 +343,7 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     hotkey_emitter: Option<Arc<dyn HotkeyEventEmitter>>,
 }
 
-impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
+impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: CommandEventEmitter + 'static> HotkeyIntegration<R, T, C> {
     /// Create a new HotkeyIntegration with default debounce duration
     pub fn new(recording_emitter: R) -> Self {
         Self {
@@ -363,12 +357,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             silence: SilenceDetectionConfig::default(),
             // Audio (kept separate for flexible builder pattern)
             audio_thread: None,
-            shared_denoiser: None,
+            audio_monitor: None,
             recording_state: None,
             recording_detectors: None,
-            // Listening/wake word
-            listening_state: None,
-            listening_pipeline: None,
             // App integration
             app_handle: None,
             recordings_dir: crate::paths::get_recordings_dir(None)
@@ -416,36 +407,16 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         })
     }
 
-    /// Check if noise suppression is enabled from persistent settings store
-    fn is_noise_suppression_enabled(&self) -> bool {
-        use tauri_plugin_store::StoreExt;
-        let settings_file = self.get_settings_file();
-        self.app_handle
-            .as_ref()
-            .and_then(|app| {
-                app.store(&settings_file)
-                    .ok()
-                    .and_then(|store| store.get("audio.noiseSuppression"))
-                    .and_then(|v| v.as_bool())
-            })
-            .unwrap_or(true) // Default to enabled for new installations
-    }
-
     /// Add an audio thread handle (builder pattern)
     pub fn with_audio_thread(mut self, handle: Arc<AudioThreadHandle>) -> Self {
         self.audio_thread = Some(handle);
         self
     }
 
-    /// Add shared denoiser for noise suppression (builder pattern)
-    ///
-    /// When set, the denoiser will be used for noise suppression during recording.
-    /// The denoiser is loaded once at app startup to eliminate the ~2s loading delay.
-    pub fn with_shared_denoiser(
-        mut self,
-        denoiser: Option<Arc<crate::audio::SharedDenoiser>>,
-    ) -> Self {
-        self.shared_denoiser = denoiser;
+    /// Add an audio monitor handle (builder pattern)
+    /// The monitor is stopped before recording to prevent device conflicts
+    pub fn with_audio_monitor(mut self, handle: Arc<AudioMonitorHandle>) -> Self {
+        self.audio_monitor = Some(handle);
         self
     }
 
@@ -489,12 +460,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
     /// Add recording state reference for transcription thread (builder pattern)
     pub fn with_recording_state(mut self, state: Arc<Mutex<RecordingManager>>) -> Self {
         self.recording_state = Some(state);
-        self
-    }
-
-    /// Add listening state reference for determining return state after recording (builder pattern)
-    pub fn with_listening_state(mut self, state: Arc<Mutex<ListeningManager>>) -> Self {
-        self.listening_state = Some(state);
         self
     }
 
@@ -565,12 +530,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             config.emitter = Some(emitter);
         }
         // If no voice_commands config exists, this is a no-op
-        self
-    }
-
-    /// Add listening pipeline for restarting after hotkey recording (builder pattern)
-    pub fn with_listening_pipeline(mut self, pipeline: Arc<Mutex<ListeningPipeline>>) -> Self {
-        self.listening_pipeline = Some(pipeline);
         self
     }
 
@@ -765,12 +724,9 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             silence: SilenceDetectionConfig::default(),
             // Audio (kept separate for flexible builder pattern)
             audio_thread: None,
-            shared_denoiser: None,
+            audio_monitor: None,
             recording_state: None,
             recording_detectors: None,
-            // Listening/wake word
-            listening_state: None,
-            listening_pipeline: None,
             // App integration
             app_handle: None,
             recordings_dir: std::env::temp_dir().join("heycat-test-recordings"),
@@ -821,29 +777,19 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         crate::debug!("Toggle received, current state: {:?}", current_state);
 
         match current_state {
-            RecordingState::Idle | RecordingState::Listening => {
-                crate::info!("Starting recording from {:?} state...", current_state);
-
-                // If coming from Listening state, stop the pipeline first to prevent zombie
-                // (analysis thread running with orphaned audio buffer)
-                if current_state == RecordingState::Listening {
-                    self.stop_listening_pipeline_for_hotkey();
-                }
+            RecordingState::Idle => {
+                crate::info!("Starting recording from Idle state...");
 
                 // Check model availability (TDT for batch transcription)
                 let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or(false);
 
+                // Note: Audio monitor uses unified SharedAudioEngine with capture, so no need to stop it.
+                // Level monitoring continues during recording via the shared engine.
+
                 // Use unified command implementation
                 // Read selected device from persistent settings store
                 let device_name = self.get_selected_audio_device();
-                // Only use denoiser if noise suppression is enabled
-                let denoiser = if self.is_noise_suppression_enabled() {
-                    self.shared_denoiser.clone()
-                } else {
-                    crate::info!("Noise suppression disabled by user setting (hotkey path)");
-                    None
-                };
-                match start_recording_impl(state, self.audio_thread.as_deref(), model_available, device_name, denoiser) {
+                match start_recording_impl(state, self.audio_thread.as_deref(), model_available, device_name) {
                     Ok(()) => {
                         self.recording_emitter
                             .emit_recording_started(RecordingStartedPayload {
@@ -884,16 +830,8 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                 // Manual stop takes precedence over auto-stop
                 self.stop_silence_detection();
 
-                // Check if listening mode is enabled to determine return state
-                let return_to_listening = self
-                    .listening_state
-                    .as_ref()
-                    .and_then(|ls| ls.lock().ok())
-                    .map(|lm| lm.is_enabled())
-                    .unwrap_or(false);
-
-                // Use unified command implementation
-                match stop_recording_impl(state, self.audio_thread.as_deref(), return_to_listening, self.recordings_dir.clone()) {
+                // Use unified command implementation (always return to Idle)
+                match stop_recording_impl(state, self.audio_thread.as_deref(), false, self.recordings_dir.clone()) {
                     Ok(metadata) => {
                         crate::info!(
                             "Recording stopped: {} samples, {:.2}s duration",
@@ -907,11 +845,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
 
                         // Auto-transcribe if transcription manager is configured
                         self.spawn_transcription(file_path_for_transcription);
-
-                        // Restart listening pipeline if returning to listening mode
-                        if return_to_listening {
-                            self.restart_listening_pipeline();
-                        }
 
                         true
                     }
@@ -1196,115 +1129,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
         });
     }
 
-    /// Stop the listening pipeline before hotkey recording starts
-    /// Called when transitioning from Listening -> Recording via hotkey
-    /// This prevents the "zombie pipeline" issue where the analysis thread
-    /// continues running but the audio buffer is orphaned
-    fn stop_listening_pipeline_for_hotkey(&self) {
-        let pipeline = match &self.listening_pipeline {
-            Some(p) => p,
-            None => return,
-        };
-
-        let audio_thread = match &self.audio_thread {
-            Some(at) => at,
-            None => return,
-        };
-
-        if let Ok(mut p) = pipeline.lock() {
-            if p.is_running() {
-                crate::info!("Stopping listening pipeline before hotkey recording...");
-                // Note: We don't need the buffer since hotkey recording
-                // creates its own fresh buffer (unlike wake word which hands off)
-                if let Err(e) = p.stop(audio_thread.as_ref()) {
-                    crate::warn!("Failed to stop listening pipeline: {:?}", e);
-                    // Continue anyway - recording should still work
-                }
-            }
-        }
-    }
-
-    /// Restart the listening pipeline after recording stops
-    /// Only restarts if pipeline and audio thread are configured and pipeline isn't running
-    fn restart_listening_pipeline(&self) {
-        let pipeline = match &self.listening_pipeline {
-            Some(p) => p,
-            None => {
-                crate::debug!("No listening pipeline configured, skipping restart");
-                return;
-            }
-        };
-
-        let audio_thread = match &self.audio_thread {
-            Some(at) => at,
-            None => {
-                crate::debug!("No audio thread configured, cannot restart pipeline");
-                return;
-            }
-        };
-
-        let emitter = match &self.transcription {
-            Some(ref config) => match &config.emitter {
-                Some(e) => e.clone(),
-                None => {
-                    crate::debug!("No transcription emitter configured, cannot restart pipeline");
-                    return;
-                }
-            },
-            None => {
-                crate::debug!("No transcription config, cannot restart pipeline");
-                return;
-            }
-        };
-
-        let mut p = match pipeline.lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                crate::warn!("Failed to lock listening pipeline for restart");
-                return;
-            }
-        };
-
-        // Stop if still running (shouldn't happen since we now stop before recording,
-        // but keep for safety in case of race conditions or other code paths)
-        if p.is_running() {
-            crate::info!("Pipeline still running unexpectedly, stopping before restart...");
-            match p.stop(audio_thread.as_ref()) {
-                Ok(()) => crate::debug!("Pipeline stopped successfully"),
-                Err(e) => {
-                    // NotRunning error is fine - thread may have exited naturally
-                    crate::warn!("Error stopping pipeline: {:?}", e);
-                }
-            }
-        }
-
-        // Small delay to ensure any thread cleanup completes
-        // The stop() method joins the thread, but this gives a moment for cleanup
-        drop(p); // Release lock during sleep
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        // Re-acquire lock for restart
-        let mut p = match pipeline.lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                crate::warn!("Failed to re-lock listening pipeline for restart");
-                return;
-            }
-        };
-
-        crate::info!("Restarting listening pipeline after hotkey recording");
-        match p.start(audio_thread.as_ref(), emitter) {
-            Ok(_) => crate::info!("Listening pipeline restarted successfully"),
-            Err(crate::listening::PipelineError::AlreadyRunning) => {
-                // Should not happen after stop, but handle gracefully
-                crate::warn!("Pipeline reported AlreadyRunning after stop - unexpected state");
-            }
-            Err(e) => {
-                crate::warn!("Failed to restart listening pipeline: {:?}", e);
-            }
-        }
-    }
-
     /// Start silence detection for hotkey recording
     ///
     /// When silence detection is enabled and all required components are configured,
@@ -1368,14 +1192,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
                 }
             }
         };
-
-        // Check if listening mode is enabled to determine return state after silence
-        let return_to_listening = self
-            .listening_state
-            .as_ref()
-            .and_then(|ls| ls.lock().ok())
-            .map(|lm| lm.is_enabled())
-            .unwrap_or(false);
 
         // Create transcription callback that calls spawn_transcription
         // This is the same pattern used in wake word flow
@@ -1494,8 +1310,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + ListeningEventEmit
             recording_state_arc,
             audio_thread,
             recording_emitter_for_detectors,
-            return_to_listening,
-            self.listening_pipeline.clone(),
             transcription_callback,
         ) {
             crate::warn!("Failed to start silence detection: {}", e);

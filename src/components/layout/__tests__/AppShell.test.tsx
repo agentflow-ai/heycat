@@ -66,13 +66,6 @@ describe("AppShell", () => {
     expect(screen.getByText("Ready")).toBeDefined();
 
     rerender(
-      <AppShell status="listening">
-        <div>Content</div>
-      </AppShell>
-    );
-    expect(screen.getByText("Listening...")).toBeDefined();
-
-    rerender(
       <AppShell status="recording">
         <div>Content</div>
       </AppShell>
@@ -174,50 +167,6 @@ describe("AppShell", () => {
 
     expect(handleStartRecording).toHaveBeenCalledTimes(1);
     expect(handleStopRecording).not.toHaveBeenCalled();
-  });
-
-  it("triggers listening toggle from command palette", async () => {
-    const user = userEvent.setup();
-    const handleEnableListening = vi.fn();
-    const handleDisableListening = vi.fn();
-
-    const { rerender } = render(
-      <AppShell
-        isListening={false}
-        onEnableListening={handleEnableListening}
-        onDisableListening={handleDisableListening}
-      >
-        <div>Content</div>
-      </AppShell>
-    );
-
-    // When not listening, Toggle Listening should enable
-    await user.keyboard("{Meta>}k{/Meta}");
-    const toggleCommand = await screen.findByText("Toggle Listening");
-    await user.click(toggleCommand);
-
-    expect(handleEnableListening).toHaveBeenCalledTimes(1);
-    expect(handleDisableListening).not.toHaveBeenCalled();
-
-    // Reset and test when already listening
-    handleEnableListening.mockClear();
-
-    rerender(
-      <AppShell
-        isListening={true}
-        onEnableListening={handleEnableListening}
-        onDisableListening={handleDisableListening}
-      >
-        <div>Content</div>
-      </AppShell>
-    );
-
-    await user.keyboard("{Meta>}k{/Meta}");
-    const toggleCommand2 = await screen.findByText("Toggle Listening");
-    await user.click(toggleCommand2);
-
-    expect(handleDisableListening).toHaveBeenCalledTimes(1);
-    expect(handleEnableListening).not.toHaveBeenCalled();
   });
 
   it("navigates to settings for audio device command", async () => {

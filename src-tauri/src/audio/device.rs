@@ -1,9 +1,7 @@
 // Audio device enumeration module
 // Provides types and functions for listing available audio input devices
 
-use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
-
 
 /// Represents an audio input device with its properties
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14,44 +12,23 @@ pub struct AudioInputDevice {
     pub is_default: bool,
 }
 
-/// List all available audio input devices
+/// List all available audio input devices using AVFoundation via Swift.
 ///
 /// Returns a vector of audio input devices sorted with the default device first.
 /// Returns an empty vector if no devices are available or if an error occurs.
-/// Errors are logged but not propagated to the caller.
 #[cfg_attr(coverage_nightly, coverage(off))]
 pub fn list_input_devices() -> Vec<AudioInputDevice> {
-    let host = cpal::default_host();
-    crate::debug!("Listing input devices for host: {:?}", host.id());
+    crate::debug!("Listing input devices via AVFoundation/Swift");
 
-    // Get the default device name for comparison
-    let default_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok());
+    let swift_devices = crate::swift::list_audio_devices();
 
-    crate::debug!("Default input device: {:?}", default_name);
-
-    // Get all input devices
-    let devices = match host.input_devices() {
-        Ok(devices) => devices,
-        Err(e) => {
-            crate::warn!("Failed to enumerate input devices: {}", e);
-            return Vec::new();
-        }
-    };
-
-    // Map devices to AudioInputDevice structs
-    let mut device_list: Vec<AudioInputDevice> = devices
-        .filter_map(|device| {
-            device.name().ok().map(|name| {
-                let is_default = default_name.as_ref() == Some(&name);
-                AudioInputDevice { name, is_default }
-            })
+    let device_list: Vec<AudioInputDevice> = swift_devices
+        .into_iter()
+        .map(|d| AudioInputDevice {
+            name: d.name,
+            is_default: d.is_default,
         })
         .collect();
-
-    // Sort with default device first
-    device_list.sort_by(|a, b| b.is_default.cmp(&a.is_default));
 
     crate::debug!("Found {} input devices", device_list.len());
     device_list
@@ -91,5 +68,16 @@ mod tests {
         // Default device should be first
         assert!(devices[0].is_default);
         assert_eq!(devices[0].name, "Device B");
+    }
+
+    #[test]
+    fn test_list_input_devices_via_swift() {
+        // Test that we can call the Swift function and get a valid result
+        let devices = list_input_devices();
+        // Should return a vector (may be empty if no devices)
+        // If devices exist with a default, default should be first
+        if !devices.is_empty() && devices.iter().any(|d| d.is_default) {
+            assert!(devices[0].is_default, "Default device should be first");
+        }
     }
 }

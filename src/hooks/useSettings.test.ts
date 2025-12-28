@@ -35,10 +35,7 @@ describe("useSettings", () => {
   describe("initializeSettings", () => {
     it("loads settings from Tauri Store into Zustand", async () => {
       mockStore.get.mockImplementation((key: string) => {
-        if (key === "listening.enabled") return Promise.resolve(true);
-        if (key === "listening.autoStartOnLaunch") return Promise.resolve(true);
         if (key === "audio.selectedDevice") return Promise.resolve("USB Microphone");
-        if (key === "audio.noiseSuppression") return Promise.resolve(false);
         if (key === "shortcuts.distinguishLeftRight") return Promise.resolve(true);
         return Promise.resolve(undefined);
       });
@@ -49,8 +46,7 @@ describe("useSettings", () => {
       const state = useAppStore.getState();
       expect(state.isSettingsLoaded).toBe(true);
       expect(state.settingsCache).toEqual({
-        listening: { enabled: true, autoStartOnLaunch: true },
-        audio: { selectedDevice: "USB Microphone", noiseSuppression: false },
+        audio: { selectedDevice: "USB Microphone" },
         shortcuts: { distinguishLeftRight: true },
       });
     });
@@ -71,8 +67,7 @@ describe("useSettings", () => {
       // Pre-populate Zustand with settings
       useAppStore.setState({
         settingsCache: {
-          listening: { enabled: true, autoStartOnLaunch: false },
-          audio: { selectedDevice: "My Mic", noiseSuppression: true },
+          audio: { selectedDevice: "My Mic" },
           shortcuts: { distinguishLeftRight: false },
         },
         isSettingsLoaded: true,
@@ -81,7 +76,6 @@ describe("useSettings", () => {
       const { result } = renderHook(() => useSettings());
 
       expect(result.current.isLoading).toBe(false);
-      expect(result.current.settings.listening.enabled).toBe(true);
       expect(result.current.settings.audio.selectedDevice).toBe("My Mic");
     });
 
@@ -92,37 +86,10 @@ describe("useSettings", () => {
       expect(result.current.settings).toEqual(DEFAULT_SETTINGS);
     });
 
-    it("updates both Zustand and Tauri Store when updating settings", async () => {
-      // Pre-populate Zustand with settings
-      useAppStore.setState({
-        settingsCache: {
-          listening: { enabled: false, autoStartOnLaunch: false },
-          audio: { selectedDevice: null, noiseSuppression: true },
-          shortcuts: { distinguishLeftRight: false },
-        },
-        isSettingsLoaded: true,
-      });
-
-      const { result } = renderHook(() => useSettings());
-
-      // Update listening enabled
-      await act(async () => {
-        await result.current.updateListeningEnabled(true);
-      });
-
-      // Verify Tauri Store was updated
-      expect(mockStore.set).toHaveBeenCalledWith("listening.enabled", true);
-      expect(mockStore.save).toHaveBeenCalled();
-
-      // Verify Zustand was updated (reflected in hook)
-      expect(result.current.settings.listening.enabled).toBe(true);
-    });
-
     it("updates audio device in both stores", async () => {
       useAppStore.setState({
         settingsCache: {
-          listening: { enabled: false, autoStartOnLaunch: false },
-          audio: { selectedDevice: null, noiseSuppression: true },
+          audio: { selectedDevice: null },
           shortcuts: { distinguishLeftRight: false },
         },
         isSettingsLoaded: true,
@@ -141,8 +108,7 @@ describe("useSettings", () => {
     it("clears audio device selection", async () => {
       useAppStore.setState({
         settingsCache: {
-          listening: { enabled: false, autoStartOnLaunch: false },
-          audio: { selectedDevice: "USB Microphone", noiseSuppression: true },
+          audio: { selectedDevice: "USB Microphone" },
           shortcuts: { distinguishLeftRight: false },
         },
         isSettingsLoaded: true,
@@ -156,26 +122,6 @@ describe("useSettings", () => {
 
       expect(mockStore.set).toHaveBeenCalledWith("audio.selectedDevice", null);
       expect(result.current.settings.audio.selectedDevice).toBeNull();
-    });
-
-    it("updates noise suppression setting in both stores", async () => {
-      useAppStore.setState({
-        settingsCache: {
-          listening: { enabled: false, autoStartOnLaunch: false },
-          audio: { selectedDevice: null, noiseSuppression: true },
-          shortcuts: { distinguishLeftRight: false },
-        },
-        isSettingsLoaded: true,
-      });
-
-      const { result } = renderHook(() => useSettings());
-
-      await act(async () => {
-        await result.current.updateNoiseSuppression(false);
-      });
-
-      expect(mockStore.set).toHaveBeenCalledWith("audio.noiseSuppression", false);
-      expect(result.current.settings.audio.noiseSuppression).toBe(false);
     });
   });
 });

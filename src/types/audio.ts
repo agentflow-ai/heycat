@@ -12,8 +12,6 @@ export interface AudioInputDevice {
 export interface AudioSettings {
   /** Name of the selected device, or null for system default */
   selectedDevice: string | null;
-  /** Whether noise suppression is enabled (default: true) */
-  noiseSuppression: boolean;
 }
 
 /**
@@ -21,7 +19,6 @@ export interface AudioSettings {
  */
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   selectedDevice: null,
-  noiseSuppression: true,
 };
 
 /**

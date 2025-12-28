@@ -1,47 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { primaryMonitor, LogicalPosition } from "@tauri-apps/api/window";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { useRecording } from "./useRecording";
 import { useSettings } from "./useSettings";
 import { useAppStore } from "../stores/appStore";
-
-/** Response from get_listening_status command */
-interface ListeningStatusResponse {
-  enabled: boolean;
-  active: boolean;
-  micAvailable: boolean;
-}
 
 const OVERLAY_LABEL = "cat-overlay";
 const OVERLAY_SIZE = 120;
 
 /** Overlay visual mode based on app state */
-export type OverlayMode = "hidden" | "listening" | "recording";
-
-/** Payload for listening_started event */
-interface ListeningStartedPayload {
-  timestamp: string;
-}
-
-/** Payload for listening_stopped event */
-interface ListeningStoppedPayload {
-  timestamp: string;
-}
-
-/** Payload for wake_word_detected event */
-interface WakeWordDetectedPayload {
-  confidence: number;
-  transcription: string;
-  timestamp: string;
-}
-
-/** Payload for listening_unavailable event */
-interface ListeningUnavailablePayload {
-  reason: string;
-  timestamp: string;
-}
+export type OverlayMode = "hidden" | "recording";
 
 function getOverlayUrl(): string {
   if (import.meta.env.DEV) {
@@ -74,90 +42,16 @@ export function useCatOverlay() {
   const { isRecording } = useRecording({
     deviceName: settings.audio.selectedDevice,
   });
-  const [isListening, setIsListening] = useState(false);
-  const [isMicUnavailable, setIsMicUnavailable] = useState(false);
   const initializedRef = useRef(false);
 
-  // Fetch initial listening state from backend on mount
-  useEffect(() => {
-    /* v8 ignore start -- @preserve */
-    async function fetchInitialState() {
-      try {
-        const status = await invoke<ListeningStatusResponse>("get_listening_status");
-        setIsListening(status.enabled);
-        setIsMicUnavailable(!status.micAvailable);
-      } catch {
-        // Silently handle error - state will be updated via events
-      }
-    }
-    fetchInitialState();
-    /* v8 ignore stop */
-  }, []);
-
   // Determine the overlay mode based on state
-  const overlayMode: OverlayMode = isRecording
-    ? "recording"
-    : isListening
-      ? "listening"
-      : "hidden";
+  const overlayMode: OverlayMode = isRecording ? "recording" : "hidden";
 
   // Sync overlay mode to Zustand store for global access
   const setOverlayMode = useAppStore((s) => s.setOverlayMode);
   useEffect(() => {
     setOverlayMode(overlayMode === "hidden" ? null : overlayMode);
   }, [overlayMode, setOverlayMode]);
-
-  // Subscribe to listening events
-  useEffect(() => {
-    const unlistenFns: UnlistenFn[] = [];
-
-    /* v8 ignore start -- @preserve */
-    const setupListeners = async () => {
-      const unlistenStarted = await listen<ListeningStartedPayload>(
-        "listening_started",
-        () => {
-          setIsListening(true);
-          setIsMicUnavailable(false);
-        }
-      );
-      unlistenFns.push(unlistenStarted);
-
-      const unlistenStopped = await listen<ListeningStoppedPayload>(
-        "listening_stopped",
-        () => {
-          setIsListening(false);
-        }
-      );
-      unlistenFns.push(unlistenStopped);
-
-      // Wake word detected - listening continues but recording will start
-      // (handled by recording events, no state change needed here)
-      const unlistenWakeWord = await listen<WakeWordDetectedPayload>(
-        "wake_word_detected",
-        () => {
-          // Wake word detection is handled - recording_started will follow
-        }
-      );
-      unlistenFns.push(unlistenWakeWord);
-
-      const unlistenUnavailable = await listen<ListeningUnavailablePayload>(
-        "listening_unavailable",
-        () => {
-          setIsMicUnavailable(true);
-        }
-      );
-      unlistenFns.push(unlistenUnavailable);
-    };
-
-    setupListeners();
-    /* v8 ignore stop */
-
-    return () => {
-      /* v8 ignore start -- @preserve */
-      unlistenFns.forEach((unlisten) => unlisten());
-      /* v8 ignore stop */
-    };
-  }, []);
 
   // Initialize overlay window once (hidden) on mount
   useEffect(() => {
@@ -212,7 +106,7 @@ export function useCatOverlay() {
           await window.setPosition(new LogicalPosition(position.x, position.y));
         }
         // Emit mode to overlay window for visual distinction
-        await window.emit("overlay-mode", { mode: overlayMode, isMicUnavailable });
+        await window.emit("overlay-mode", { mode: overlayMode });
         await window.show();
       } else {
         await window.hide();
@@ -221,7 +115,7 @@ export function useCatOverlay() {
 
     updateOverlay();
     /* v8 ignore stop */
-  }, [overlayMode, isMicUnavailable]);
+  }, [overlayMode]);
 
-  return { isRecording, isListening, overlayMode, isMicUnavailable };
+  return { isRecording, overlayMode };
 }

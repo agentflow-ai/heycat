@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   Mic,
   MicOff,
-  Ear,
   LayoutDashboard,
   ListMusic,
   MessageSquare,
@@ -45,13 +44,6 @@ export const commands: Command[] = [
     shortcut: "Esc",
     category: "actions",
     keywords: ["record", "stop", "end"],
-  },
-  {
-    id: "toggle-listening",
-    label: "Toggle Listening",
-    icon: Ear,
-    category: "actions",
-    keywords: ["listen", "wake", "word", "voice"],
   },
 
   // Navigation

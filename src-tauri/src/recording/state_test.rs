@@ -38,41 +38,6 @@ fn test_complete_recording_flow() {
     assert_eq!(last.sample_rate, 48000);
 }
 
-/// Test listening mode flow: Idle -> Listening -> Recording -> Processing -> Listening
-/// Verifies wake-word detection mode works with recording
-#[test]
-fn test_listening_mode_flow() {
-    let mut manager = RecordingManager::new();
-
-    // Enter listening mode (wake word detection)
-    manager.transition_to(RecordingState::Listening).unwrap();
-    assert_eq!(manager.get_state(), RecordingState::Listening);
-    assert!(manager.get_audio_buffer().is_err()); // No buffer in listening
-
-    // Wake word detected - start recording
-    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
-    assert_eq!(manager.get_state(), RecordingState::Recording);
-
-    // Add audio data
-    {
-        let buffer = manager.get_audio_buffer().unwrap();
-        buffer.lock().unwrap().extend_from_slice(&[0.5, 0.6]);
-    }
-
-    // Process and return to listening
-    manager.transition_to(RecordingState::Processing).unwrap();
-    manager.transition_to(RecordingState::Listening).unwrap();
-    assert_eq!(manager.get_state(), RecordingState::Listening);
-
-    // Last recording should be retained
-    let last = manager.get_last_recording_buffer().unwrap();
-    assert_eq!(last.samples.len(), 2);
-
-    // Can exit listening mode
-    manager.transition_to(RecordingState::Idle).unwrap();
-    assert_eq!(manager.get_state(), RecordingState::Idle);
-}
-
 /// Test abort discards recording without saving
 /// User cancels recording - data should not be retained
 #[test]
@@ -92,19 +57,6 @@ fn test_abort_discards_recording() {
 
     // No data should be retained
     assert!(manager.get_audio_buffer().is_err());
-    assert!(manager.get_last_recording_buffer().is_err());
-
-    // Abort from listening mode
-    let mut manager = RecordingManager::new();
-    manager.transition_to(RecordingState::Listening).unwrap();
-    manager.start_recording(TARGET_SAMPLE_RATE).unwrap();
-    {
-        let buffer = manager.get_audio_buffer().unwrap();
-        buffer.lock().unwrap().push(0.5);
-    }
-
-    manager.abort_recording(RecordingState::Listening).unwrap();
-    assert_eq!(manager.get_state(), RecordingState::Listening);
     assert!(manager.get_last_recording_buffer().is_err());
 }
 

@@ -1,13 +1,12 @@
 // Dedicated audio thread for capturing audio
 //
 // This module provides a thread-safe interface to audio capture.
-// CpalBackend contains cpal::Stream which is NOT Send+Sync, so we isolate
-// it on a dedicated thread and communicate via channels.
+// SwiftBackend handles audio via AVFoundation on a dedicated thread
+// and communicates via channels.
 
-use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, CpalBackend, SharedDenoiser, StopReason};
+use super::{AudioBuffer, AudioCaptureBackend, AudioCaptureError, StopReason, SwiftBackend};
 use super::diagnostics::QualityWarning;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -33,9 +32,6 @@ pub enum AudioCommand {
         buffer: AudioBuffer,
         response_tx: Sender<StartResponse>,
         device_name: Option<String>,
-        /// Optional shared denoiser for noise suppression
-        /// When provided, samples are denoised before being added to the buffer
-        shared_denoiser: Option<Arc<SharedDenoiser>>,
     },
     /// Stop capturing audio and return result via channel
     Stop(Option<Sender<StopResult>>),
@@ -84,33 +80,12 @@ impl AudioThreadHandle {
         buffer: AudioBuffer,
         device_name: Option<String>,
     ) -> Result<u32, AudioThreadError> {
-        self.start_with_device_and_denoiser(buffer, device_name, None)
-    }
-
-    /// Start audio capture with optional noise suppression
-    ///
-    /// Returns the actual sample rate of the audio device on success.
-    /// If the specified device is not found, falls back to the default device.
-    /// Blocks until the audio thread responds.
-    ///
-    /// # Arguments
-    /// * `buffer` - The audio buffer to capture samples into
-    /// * `device_name` - Optional device name; None uses the default device
-    /// * `shared_denoiser` - Optional shared denoiser for noise suppression
-    #[must_use = "this returns a Result that should be handled"]
-    pub fn start_with_device_and_denoiser(
-        &self,
-        buffer: AudioBuffer,
-        device_name: Option<String>,
-        shared_denoiser: Option<Arc<SharedDenoiser>>,
-    ) -> Result<u32, AudioThreadError> {
         let (response_tx, response_rx) = mpsc::channel();
         self.sender
             .send(AudioCommand::Start {
                 buffer,
                 response_tx,
                 device_name,
-                shared_denoiser,
             })
             .map_err(|_| AudioThreadError::ThreadDisconnected)?;
 
@@ -189,13 +164,13 @@ impl std::error::Error for AudioThreadError {
 
 /// Main loop for the audio thread
 ///
-/// Creates CpalBackend and processes commands.
-/// This runs on a dedicated thread where CpalBackend can safely live.
+/// Creates SwiftBackend (AVFoundation) and processes commands.
+/// This runs on a dedicated thread for consistent audio handling.
 #[cfg_attr(coverage_nightly, coverage(off))]
 fn audio_thread_main(receiver: Receiver<AudioCommand>) {
-    crate::info!("Audio thread started, creating CpalBackend...");
-    let mut backend = CpalBackend::new();
-    crate::debug!("CpalBackend created, waiting for commands...");
+    crate::info!("Audio thread started, creating SwiftBackend (AVFoundation)...");
+    let mut backend = SwiftBackend::new();
+    crate::debug!("SwiftBackend created, waiting for commands...");
 
     // Track the stop signal receiver when recording is active
     let mut stop_signal_rx: Option<Receiver<StopReason>> = None;
@@ -239,20 +214,17 @@ fn audio_thread_main(receiver: Receiver<AudioCommand>) {
                 buffer,
                 response_tx,
                 device_name,
-                shared_denoiser,
             } => {
-                crate::debug!("Received START command, device={:?}, denoiser={}",
-                    device_name, shared_denoiser.is_some());
+                crate::debug!("Received START command, device={:?}", device_name);
                 // Create stop signal channel for callbacks
                 let (stop_tx, stop_rx) = mpsc::channel();
                 stop_signal_rx = Some(stop_rx);
                 pending_stop_reason = None;
 
-                let result = backend.start_with_denoiser(
+                let result = backend.start(
                     buffer,
                     Some(stop_tx),
                     device_name,
-                    shared_denoiser,
                 );
                 match &result {
                     Ok(sample_rate) => {
@@ -357,7 +329,6 @@ mod tests {
             buffer: buffer.clone(),
             response_tx: response_tx.clone(),
             device_name: Some("Test Microphone".to_string()),
-            shared_denoiser: None,
         };
 
         // Verify the command can hold device_name (compile-time check)
@@ -374,7 +345,6 @@ mod tests {
             buffer,
             response_tx: response_tx2,
             device_name: None,
-            shared_denoiser: None,
         };
 
         match cmd_without_device {

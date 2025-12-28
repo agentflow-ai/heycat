@@ -16,6 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+swift-rs = { version = "1.0", features = ["build"] }
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api"] }
@@ -23,7 +24,6 @@ tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-cpal = "0.15"
 hound = "3.5"
 chrono = "0.4"
 dirs = "5.0"
@@ -34,7 +34,6 @@ tauri-plugin-shell = "2"
 tauri-plugin-store = "2"
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "rt-multi-thread", "sync"] }
-rubato = "0.15"
 parakeet-rs = "0.2"
 voice_activity_detector = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -45,8 +44,6 @@ enigo = "0.2"
 regex = "1"
 ringbuf = "0.4"
 biquad = "0.4"
-tract-onnx = "0.21"
-rustfft = "6.2"
 core-foundation = "0.10"
 core-graphics = "0.24"
 cocoa = "0.26"
@@ -54,6 +51,7 @@ ctrlc = "3.4"
 objc = "0.2"
 foreign-types = "0.5"
 io-kit-sys = "0.4"
+swift-rs = "1.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

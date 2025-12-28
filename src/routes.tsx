@@ -11,10 +11,8 @@ import { Dashboard, Commands, Recordings, Settings, Dictionary, WindowContexts }
 import { AppShell } from "./components/layout/AppShell";
 import { useAppStatus } from "./hooks/useAppStatus";
 import { useRecording } from "./hooks/useRecording";
-import { useListening } from "./hooks/useListening";
 import { useSettings } from "./hooks/useSettings";
 import { useCatOverlay } from "./hooks/useCatOverlay";
-import { useAutoStartListening } from "./hooks/useAutoStartListening";
 
 /**
  * Maps URL pathname to nav item ID.
@@ -43,19 +41,13 @@ function RootLayout() {
   const location = useLocation();
   const { status: appStatus, isRecording } = useAppStatus();
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const { isListening } = useCatOverlay();
-  useAutoStartListening();
+  useCatOverlay();
 
   // Get settings for device name
   const { settings } = useSettings();
 
   // Get recording actions
   const { startRecording, stopRecording } = useRecording({
-    deviceName: settings.audio.selectedDevice,
-  });
-
-  // Get listening actions
-  const { enableListening, disableListening } = useListening({
     deviceName: settings.audio.selectedDevice,
   });
 
@@ -90,12 +82,9 @@ function RootLayout() {
       status={appStatus}
       recordingDuration={isRecording ? recordingDuration : undefined}
       footerStateDescription="Ready for your command."
-      isListening={isListening}
       isRecording={isRecording}
       onStartRecording={startRecording}
       onStopRecording={stopRecording}
-      onEnableListening={enableListening}
-      onDisableListening={disableListening}
     >
       <Outlet context={{ onNavigate: handleNavigate }} />
     </AppShell>

@@ -21,7 +21,7 @@ function backendToDisplay(shortcut: string): string {
 }
 
 export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
-  const { settings, updateAutoStartListening, updateDistinguishLeftRight } = useSettings();
+  const { settings, updateDistinguishLeftRight } = useSettings();
   const { toast } = useToast();
 
   // Local state for settings that don't have hooks yet
@@ -51,15 +51,6 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
       type: "success",
       title: "Setting saved",
       description: `Launch at login ${checked ? "enabled" : "disabled"}.`,
-    });
-  };
-
-  const handleAutoStartListeningChange = async (checked: boolean) => {
-    await updateAutoStartListening(checked);
-    toast({
-      type: "success",
-      title: "Setting saved",
-      description: `Auto-start listening ${checked ? "enabled" : "disabled"}.`,
     });
   };
 
@@ -96,14 +87,6 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
                 description="Start HeyCat when you log in to your Mac"
                 checked={launchAtLogin}
                 onCheckedChange={handleLaunchAtLoginChange}
-              />
-            </div>
-            <div className="pt-4">
-              <LabeledToggle
-                label="Auto-start Listening"
-                description="Begin listening for wake word on app launch"
-                checked={settings.listening.autoStartOnLaunch}
-                onCheckedChange={handleAutoStartListeningChange}
               />
             </div>
             <div className="pt-4">

@@ -1,5 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { AudioSettings } from "./AudioSettings";
 
@@ -16,19 +15,17 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 // Mock useSettings hook
-const mockUpdateNoiseSuppression = vi.fn().mockResolvedValue(undefined);
 const mockUpdateAudioDevice = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../hooks/useSettings", () => ({
   useSettings: () => ({
     settings: {
       listening: { enabled: false, autoStartOnLaunch: false },
-      audio: { selectedDevice: null, noiseSuppression: true },
+      audio: { selectedDevice: null },
       shortcuts: { distinguishLeftRight: false },
     },
     isLoading: false,
     updateAudioDevice: mockUpdateAudioDevice,
-    updateNoiseSuppression: mockUpdateNoiseSuppression,
     updateListeningEnabled: vi.fn(),
     updateAutoStartListening: vi.fn(),
     updateDistinguishLeftRight: vi.fn(),
@@ -71,47 +68,19 @@ describe("AudioSettings", () => {
     mockInvoke.mockResolvedValue(undefined);
   });
 
-  describe("Noise Suppression Toggle", () => {
-    it("renders noise suppression toggle with label", () => {
+  describe("Audio Input Section", () => {
+    it("renders audio input section with device selector", () => {
       render(<AudioSettings />);
 
-      expect(screen.getByText("Noise Suppression")).toBeDefined();
-      expect(screen.getByText("Reduce background noise during recording")).toBeDefined();
+      expect(screen.getByText("Audio Input")).toBeDefined();
+      expect(screen.getByText("Input Device")).toBeDefined();
     });
 
-    it("toggle is checked by default (noise suppression enabled)", () => {
+    it("renders audio level meter", () => {
       render(<AudioSettings />);
 
-      const toggle = screen.getByRole("switch", { name: /noise suppression/i });
-      expect(toggle).toHaveAttribute("data-state", "checked");
-    });
-
-    it("clicking toggle calls updateNoiseSuppression with false", async () => {
-      const user = userEvent.setup();
-      render(<AudioSettings />);
-
-      const toggle = screen.getByRole("switch", { name: /noise suppression/i });
-      await user.click(toggle);
-
-      await waitFor(() => {
-        expect(mockUpdateNoiseSuppression).toHaveBeenCalledWith(false);
-      });
-    });
-
-    it("shows toast notification after toggling", async () => {
-      const user = userEvent.setup();
-      render(<AudioSettings />);
-
-      const toggle = screen.getByRole("switch", { name: /noise suppression/i });
-      await user.click(toggle);
-
-      await waitFor(() => {
-        expect(mockToast).toHaveBeenCalledWith({
-          type: "success",
-          title: "Setting saved",
-          description: "Noise suppression disabled.",
-        });
-      });
+      expect(screen.getByText("Audio Level")).toBeDefined();
+      expect(screen.getByText("Good")).toBeDefined(); // Based on level=50
     });
   });
 });

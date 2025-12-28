@@ -9,12 +9,13 @@
 //! - Frontend warning events
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Threshold for "too quiet" warning (-30dBFS RMS ≈ 0.0316 linear)
 const QUIET_THRESHOLD_RMS: f32 = 0.0316;
 
 /// Threshold for clipping detection (samples at or near ±1.0)
+#[allow(dead_code)]
 const CLIPPING_THRESHOLD: f32 = 0.99;
 
 /// Minimum sample count before issuing warnings (avoid false positives on short bursts)
@@ -51,6 +52,7 @@ pub enum WarningSeverity {
 }
 
 /// Pipeline processing stages for timing metrics
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineStage {
     /// Voice preprocessing (highpass + pre-emphasis)
@@ -84,6 +86,7 @@ pub struct LevelMetrics {
 
 impl LevelMetrics {
     /// Calculate peak and RMS from samples
+    #[allow(dead_code)]
     pub fn from_samples(samples: &[f32]) -> Self {
         if samples.is_empty() {
             return Self::default();
@@ -110,6 +113,7 @@ impl LevelMetrics {
     }
 
     /// Convert peak to dBFS
+    #[allow(dead_code)]
     pub fn peak_dbfs(&self) -> f32 {
         if self.peak <= 0.0 {
             f32::NEG_INFINITY
@@ -129,6 +133,7 @@ impl LevelMetrics {
 }
 
 /// Pipeline stage timing metrics
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct TimingMetrics {
     /// Total time spent in preprocessing stage
@@ -143,6 +148,7 @@ pub struct TimingMetrics {
     pub sample_count: usize,
 }
 
+#[allow(dead_code)]
 impl TimingMetrics {
     /// Get average preprocessing time in microseconds
     pub fn avg_preprocessing_us(&self) -> f64 {
@@ -222,6 +228,7 @@ impl RecordingDiagnostics {
     }
 
     /// Record timing for a pipeline stage
+    #[allow(dead_code)]
     pub fn record_timing(&self, stage: PipelineStage, duration: Duration) {
         if let Ok(mut timing) = self.timing.lock() {
             let ns = duration.as_nanos() as u64;
@@ -236,11 +243,13 @@ impl RecordingDiagnostics {
     }
 
     /// Get timing metrics
+    #[allow(dead_code)]
     pub fn timing_metrics(&self) -> TimingMetrics {
         self.timing.lock().map(|t| t.clone()).unwrap_or_default()
     }
 
     /// Record input samples (call before processing)
+    #[allow(dead_code)]
     pub fn record_input(&self, samples: &[f32]) {
         let count = samples.len();
         self.input_sample_count.fetch_add(count, Ordering::Relaxed);
@@ -310,6 +319,7 @@ impl RecordingDiagnostics {
     }
 
     /// Get output level metrics
+    #[allow(dead_code)]
     pub fn output_metrics(&self) -> LevelMetrics {
         let sample_count = self.output_sample_count.load(Ordering::Relaxed);
         let peak = self.output_peak.lock().map(|p| *p).unwrap_or(0.0);
@@ -385,6 +395,7 @@ impl RecordingDiagnostics {
     /// Get raw audio buffer for debug mode
     ///
     /// Returns the raw audio if debug mode is enabled, otherwise None.
+    #[allow(dead_code)]
     pub fn raw_audio(&self) -> Option<Vec<f32>> {
         if self.debug_enabled {
             self.raw_audio_buffer.lock().ok().map(|b| b.clone())
@@ -394,6 +405,7 @@ impl RecordingDiagnostics {
     }
 
     /// Log comprehensive diagnostics (call at end of recording)
+    #[allow(dead_code)]
     pub fn log_summary(&self, agc_gain_db: Option<f32>) {
         let input = self.input_metrics();
         let output = self.output_metrics();

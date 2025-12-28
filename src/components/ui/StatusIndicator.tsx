@@ -1,6 +1,6 @@
 import { type HTMLAttributes, forwardRef } from "react";
 
-export type StatusIndicatorVariant = "recording" | "listening" | "processing" | "idle";
+export type StatusIndicatorVariant = "recording" | "processing" | "idle";
 
 export interface StatusIndicatorProps extends HTMLAttributes<HTMLDivElement> {
   variant: StatusIndicatorVariant;
@@ -24,10 +24,6 @@ const variantStyles: Record<StatusIndicatorVariant, { dotClass: string; label: s
   recording: {
     dotClass: "bg-recording recording-dot",
     label: "Recording",
-  },
-  listening: {
-    dotClass: "bg-listening listening-glow",
-    label: "Listening",
   },
   processing: {
     dotClass: "bg-processing animate-pulse",
@@ -96,22 +92,3 @@ export const RecordingDot = forwardRef<HTMLSpanElement, RecordingDotProps>(
 );
 
 RecordingDot.displayName = "RecordingDot";
-
-// Listening glow effect for containers
-export interface ListeningGlowProps extends HTMLAttributes<HTMLDivElement> {
-  active?: boolean;
-}
-
-export const ListeningGlow = forwardRef<HTMLDivElement, ListeningGlowProps>(
-  ({ active = true, className = "", children, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={`${active ? "listening-glow" : ""} ${className}`}
-      {...props}
-    >
-      {children}
-    </div>
-  )
-);
-
-ListeningGlow.displayName = "ListeningGlow";

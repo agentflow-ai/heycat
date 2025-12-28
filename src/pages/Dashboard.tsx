@@ -6,9 +6,7 @@ import {
   CardHeader,
   CardContent,
   Button,
-  Toggle,
 } from "../components/ui";
-import { useListening } from "../hooks/useListening";
 import { useRecording } from "../hooks/useRecording";
 import { useMultiModelStatus } from "../hooks/useMultiModelStatus";
 import { useSettings } from "../hooks/useSettings";
@@ -25,9 +23,6 @@ export function Dashboard({ onNavigate: onNavigateProp }: DashboardProps) {
   const routeContext = useRouteContext();
   const onNavigate = onNavigateProp ?? routeContext?.onNavigate;
   const { settings } = useSettings();
-  const { isListening, enableListening, disableListening } = useListening({
-    deviceName: settings.audio.selectedDevice,
-  });
   const { isRecording, startRecording, stopRecording } = useRecording({
     deviceName: settings.audio.selectedDevice,
   });
@@ -55,14 +50,6 @@ export function Dashboard({ onNavigate: onNavigateProp }: DashboardProps) {
     }
     fetchRecordings();
   }, []);
-
-  const handleListeningToggle = async (checked: boolean) => {
-    if (checked) {
-      await enableListening();
-    } else {
-      await disableListening();
-    }
-  };
 
   const handleRecordingToggle = async () => {
     if (isRecording) {
@@ -126,26 +113,7 @@ export function Dashboard({ onNavigate: onNavigateProp }: DashboardProps) {
       </header>
 
       {/* Status Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Listening Card */}
-        <Card>
-          <CardHeader>
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Listening
-            </span>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <span className="text-sm text-text-primary">
-              {isListening ? "'Hey Cat' ready." : "Listening off"}
-            </span>
-            <Toggle
-              checked={isListening}
-              onCheckedChange={handleListeningToggle}
-              aria-label="Toggle listening mode"
-            />
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Recordings Card */}
         <Card
           variant="interactive"
@@ -243,8 +211,7 @@ export function Dashboard({ onNavigate: onNavigateProp }: DashboardProps) {
           <Card className="text-center py-8">
             <CardContent>
               <p className="text-text-secondary">
-                No recordings yet. Click "Start Recording" or say "Hey Cat" to
-                get started!
+                No recordings yet. Click "Start Recording" to get started!
               </p>
             </CardContent>
           </Card>

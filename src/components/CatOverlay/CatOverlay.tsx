@@ -4,18 +4,16 @@ import catVideo from "../../assets/video/cat_listening.webm";
 import "./CatOverlay.css";
 
 /** Overlay visual mode */
-type OverlayMode = "hidden" | "listening" | "recording";
+type OverlayMode = "hidden" | "recording";
 
 /** Payload for overlay-mode event from main window */
 interface OverlayModePayload {
   mode: OverlayMode;
-  isMicUnavailable: boolean;
 }
 
 export function CatOverlay() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<OverlayMode>("recording");
-  const [isMicUnavailable, setIsMicUnavailable] = useState(false);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -34,7 +32,6 @@ export function CatOverlay() {
     const setupListener = async () => {
       unlisten = await listen<OverlayModePayload>("overlay-mode", (event) => {
         setMode(event.payload.mode);
-        setIsMicUnavailable(event.payload.isMicUnavailable);
       });
     };
 
@@ -46,11 +43,7 @@ export function CatOverlay() {
   }, []);
 
   // Build CSS class names based on state
-  const containerClasses = [
-    "cat-overlay",
-    `cat-overlay--${mode}`,
-    isMicUnavailable ? "cat-overlay--unavailable" : "",
-  ]
+  const containerClasses = ["cat-overlay", `cat-overlay--${mode}`]
     .filter(Boolean)
     .join(" ");
 

@@ -7,22 +7,22 @@ const mockListen = vi.fn();
 const mockUnlisten = vi.fn();
 
 // Track callbacks for overlay-mode event
-let overlayModeCallback: ((event: { payload: { mode: string; isMicUnavailable: boolean } }) => void) | null = null;
+let overlayModeCallback: ((event: { payload: { mode: string } }) => void) | null = null;
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (eventName: string, callback: (event: { payload: unknown }) => void) => {
     mockListen(eventName, callback);
     if (eventName === "overlay-mode") {
-      overlayModeCallback = callback as (event: { payload: { mode: string; isMicUnavailable: boolean } }) => void;
+      overlayModeCallback = callback as (event: { payload: { mode: string } }) => void;
     }
     return Promise.resolve(mockUnlisten);
   },
 }));
 
 // Helper function to trigger overlay mode changes within act
-const setOverlayMode = (mode: string, isMicUnavailable: boolean) => {
+const setOverlayMode = (mode: string) => {
   act(() => {
-    overlayModeCallback!({ payload: { mode, isMicUnavailable } });
+    overlayModeCallback!({ payload: { mode } });
   });
 };
 
@@ -53,55 +53,23 @@ describe("CatOverlay", () => {
     expect(overlay?.className).toContain("cat-overlay--recording");
   });
 
-  // Event listener setup test removed per TESTING.md:
-  // - Testing listener setup is testing React framework internals, not user behavior
-
-  it("updates to listening mode class on overlay-mode event", async () => {
+  it("transitions between different recording modes", async () => {
     const { container } = render(<CatOverlay />);
 
     await waitFor(() => {
       expect(overlayModeCallback).not.toBeNull();
     });
 
-    setOverlayMode("listening", false);
-
+    // Recording mode is default
     const overlay = container.querySelector(".cat-overlay");
-    expect(overlay?.className).toContain("cat-overlay--listening");
-  });
-
-  it("applies unavailable class when mic is unavailable", async () => {
-    const { container } = render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(overlayModeCallback).not.toBeNull();
-    });
-
-    setOverlayMode("listening", true);
-
-    const overlay = container.querySelector(".cat-overlay");
-    expect(overlay?.className).toContain("cat-overlay--unavailable");
-  });
-
-  // Event listener cleanup test removed per TESTING.md:
-  // - Testing cleanup is testing React framework internals, not user behavior
-
-  it("transitions from listening to recording mode", async () => {
-    const { container } = render(<CatOverlay />);
-
-    await waitFor(() => {
-      expect(overlayModeCallback).not.toBeNull();
-    });
-
-    // Start in listening mode
-    setOverlayMode("listening", false);
-
-    const overlay = container.querySelector(".cat-overlay");
-    expect(overlay?.className).toContain("cat-overlay--listening");
-
-    // Transition to recording mode
-    setOverlayMode("recording", false);
-
     expect(overlay?.className).toContain("cat-overlay--recording");
-    expect(overlay?.className).not.toContain("cat-overlay--listening");
+
+    // Transition to hidden and back to recording
+    setOverlayMode("hidden");
+    expect(overlay?.className).toContain("cat-overlay--hidden");
+
+    setOverlayMode("recording");
+    expect(overlay?.className).toContain("cat-overlay--recording");
+    expect(overlay?.className).not.toContain("cat-overlay--hidden");
   });
 });

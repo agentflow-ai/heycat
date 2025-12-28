@@ -24,12 +24,6 @@ export const eventNames = {
   RECORDING_CANCELLED: "recording_cancelled",
   RECORDING_ERROR: "recording_error",
 
-  // Listening events
-  LISTENING_STARTED: "listening_started",
-  LISTENING_STOPPED: "listening_stopped",
-  LISTENING_UNAVAILABLE: "listening_unavailable",
-  WAKE_WORD_DETECTED: "wake_word_detected",
-
   // Transcription events
   TRANSCRIPTION_STARTED: "transcription_started",
   TRANSCRIPTION_COMPLETED: "transcription_completed",
@@ -90,7 +84,7 @@ export interface KeyBlockingUnavailablePayload {
  */
 export async function setupEventBridge(
   queryClient: QueryClient,
-  store: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError" | "wakeWordDetected" | "clearWakeWord">
+  store: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError">
 ): Promise<() => void> {
   const unlistenFns: UnlistenFn[] = [];
 
@@ -132,32 +126,6 @@ export async function setupEventBridge(
   );
 
   // Note: TRANSCRIPTION_COMPLETED is handled below with store update AND query invalidation
-
-  // Listening state events - invalidate listening status query
-  unlistenFns.push(
-    await listen(eventNames.LISTENING_STARTED, () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.getListeningStatus,
-      });
-    })
-  );
-
-  unlistenFns.push(
-    await listen(eventNames.LISTENING_STOPPED, () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.getListeningStatus,
-      });
-    })
-  );
-
-  // Listening unavailable - invalidate listening status query (mic not available)
-  unlistenFns.push(
-    await listen(eventNames.LISTENING_UNAVAILABLE, () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.getListeningStatus,
-      });
-    })
-  );
 
   // Model events - invalidate all model status queries
   // Using partial match since model status queries have a type parameter
@@ -229,17 +197,6 @@ export async function setupEventBridge(
   unlistenFns.push(
     await listen<TranscriptionErrorPayload>(eventNames.TRANSCRIPTION_ERROR, (event) => {
       store.transcriptionError(event.payload.error);
-    })
-  );
-
-  // Wake word detected - transient UI state with auto-clear after 500ms
-  unlistenFns.push(
-    await listen(eventNames.WAKE_WORD_DETECTED, () => {
-      store.wakeWordDetected();
-      // Auto-clear after 500ms for transient visual feedback
-      setTimeout(() => {
-        store.clearWakeWord();
-      }, 500);
     })
   );
 

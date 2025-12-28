@@ -1,10 +1,9 @@
 // Command implementation logic - testable functions separate from Tauri wrappers
 
 use crate::audio::{
-    encode_wav, parse_duration_from_file, AudioThreadHandle, QualityWarning, SharedDenoiser,
+    encode_wav, parse_duration_from_file, AudioThreadHandle, QualityWarning,
     SystemFileWriter, TARGET_SAMPLE_RATE,
 };
-use std::sync::Arc;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
 
 /// Extended result from stop_recording_impl that includes diagnostics
@@ -53,7 +52,6 @@ pub struct RecordingStateInfo {
 /// * `audio_thread` - Optional audio thread handle for starting capture
 /// * `model_available` - Whether the transcription model is available
 /// * `device_name` - Optional device name to use; falls back to default if not found
-/// * `shared_denoiser` - Optional shared denoiser for noise suppression (loaded at app startup)
 ///
 /// # Errors
 /// Returns an error string if:
@@ -67,7 +65,6 @@ pub fn start_recording_impl(
     audio_thread: Option<&AudioThreadHandle>,
     model_available: bool,
     device_name: Option<String>,
-    shared_denoiser: Option<Arc<SharedDenoiser>>,
 ) -> Result<(), String> {
     crate::debug!(
         "start_recording_impl called, model_available={}, device={:?}",
@@ -84,10 +81,10 @@ pub fn start_recording_impl(
         "Unable to access recording state. Please try again or restart the application."
     })?;
 
-    // Check current state - allow starting from Idle or Listening (for wake word activation)
+    // Check current state - only allow starting from Idle
     let current_state = manager.get_state();
     crate::debug!("Current recording state: {:?}", current_state);
-    if current_state != RecordingState::Idle && current_state != RecordingState::Listening {
+    if current_state != RecordingState::Idle {
         crate::debug!("Recording rejected: already in {:?} state", current_state);
         return Err(
             "Cannot start recording: already recording or processing.".to_string(),
@@ -105,7 +102,7 @@ pub fn start_recording_impl(
 
     // Start audio capture if audio thread is available
     if let Some(audio_thread) = audio_thread {
-        match audio_thread.start_with_device_and_denoiser(buffer, device_name, shared_denoiser) {
+        match audio_thread.start_with_device(buffer, device_name) {
             Ok(sample_rate) => {
                 // Update with actual sample rate from device
                 manager.set_sample_rate(sample_rate);
@@ -249,16 +246,12 @@ pub fn stop_recording_impl_extended(
     // Calculate duration using actual sample rate
     let duration_secs = sample_count as f64 / sample_rate as f64;
 
-    // Transition to Listening (if enabled) or Idle
-    let target_state = if return_to_listening {
-        RecordingState::Listening
-    } else {
-        RecordingState::Idle
-    };
+    // Transition to Idle (return_to_listening parameter is ignored, kept for API compatibility)
+    let _ = return_to_listening; // Suppress unused warning
     manager
-        .transition_to(target_state)
+        .transition_to(RecordingState::Idle)
         .map_err(|e| {
-            crate::error!("Failed to transition to {:?}: {:?}", target_state, e);
+            crate::error!("Failed to transition to Idle: {:?}", e);
             "Failed to complete recording."
         })?;
 
@@ -562,162 +555,4 @@ pub fn transcribe_file_impl(
 
     crate::info!("Transcription complete: {} characters", text.len());
     Ok(text)
-}
-
-// =============================================================================
-// Listening Commands
-// =============================================================================
-
-use crate::events::ListeningEventEmitter;
-use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus};
-
-/// Implementation of enable_listening
-///
-/// Enables listening mode, transitions to Listening state, and starts the pipeline.
-///
-/// # Arguments
-/// * `listening_manager` - The listening manager state
-/// * `recording_manager` - The recording manager state
-/// * `listening_pipeline` - The listening pipeline state
-/// * `audio_thread` - The audio thread handle for capturing audio
-/// * `emitter` - Event emitter for wake word detection events
-///
-/// # Errors
-/// Returns an error string if:
-/// - Currently recording
-/// - State transition fails
-/// - Pipeline fails to start
-/// - State lock is poisoned
-pub fn enable_listening_impl<E: ListeningEventEmitter + 'static>(
-    listening_manager: &Mutex<ListeningManager>,
-    recording_manager: &Mutex<RecordingManager>,
-    listening_pipeline: &Mutex<ListeningPipeline>,
-    audio_thread: &AudioThreadHandle,
-    emitter: std::sync::Arc<E>,
-    device_name: Option<String>,
-) -> Result<(), String> {
-    crate::debug!("enable_listening_impl called");
-
-    // First, enable listening mode and transition state
-    {
-        let mut lm = listening_manager.lock().map_err(|_| {
-            crate::error!("Failed to acquire listening manager lock");
-            "Unable to access listening state. Please try again."
-        })?;
-
-        lm.enable_listening(recording_manager).map_err(|e| {
-            crate::error!("Failed to enable listening: {}", e);
-            match e {
-                crate::listening::ListeningError::RecordingInProgress => {
-                    "Cannot enable listening while recording. Stop the recording first.".to_string()
-                }
-                crate::listening::ListeningError::LockError => {
-                    "Unable to access recording state. Please try again.".to_string()
-                }
-                _ => format!("Failed to enable listening: {}", e),
-            }
-        })?;
-    }
-
-    // Start the listening pipeline
-    {
-        let mut pipeline = listening_pipeline.lock().map_err(|_| {
-            crate::error!("Failed to acquire listening pipeline lock");
-            "Unable to access listening pipeline. Please try again."
-        })?;
-
-        // Only start if not already running
-        if !pipeline.is_running() {
-            pipeline
-                .start_with_device(audio_thread, emitter, device_name)
-                .map_err(|e| {
-                    crate::error!("Failed to start listening pipeline: {}", e);
-                    format!("Failed to start listening: {}", e)
-                })?;
-            crate::info!("Listening pipeline started");
-        }
-    }
-
-    crate::info!("Listening mode enabled");
-    Ok(())
-}
-
-/// Implementation of disable_listening
-///
-/// Disables listening mode, stops the pipeline, and transitions to Idle state.
-///
-/// # Arguments
-/// * `listening_manager` - The listening manager state
-/// * `recording_manager` - The recording manager state
-/// * `listening_pipeline` - The listening pipeline state
-/// * `audio_thread` - The audio thread handle for stopping capture
-///
-/// # Errors
-/// Returns an error string if:
-/// - State transition fails
-/// - State lock is poisoned
-pub fn disable_listening_impl(
-    listening_manager: &Mutex<ListeningManager>,
-    recording_manager: &Mutex<RecordingManager>,
-    listening_pipeline: &Mutex<ListeningPipeline>,
-    audio_thread: &AudioThreadHandle,
-) -> Result<(), String> {
-    crate::debug!("disable_listening_impl called");
-
-    // Stop the listening pipeline first
-    {
-        let mut pipeline = listening_pipeline.lock().map_err(|_| {
-            crate::error!("Failed to acquire listening pipeline lock");
-            "Unable to access listening pipeline. Please try again."
-        })?;
-
-        if pipeline.is_running() {
-            pipeline.stop(audio_thread).map_err(|e| {
-                crate::error!("Failed to stop listening pipeline: {}", e);
-                format!("Failed to stop listening: {}", e)
-            })?;
-            crate::info!("Listening pipeline stopped");
-        }
-    }
-
-    // Disable listening mode and transition state
-    {
-        let mut lm = listening_manager.lock().map_err(|_| {
-            crate::error!("Failed to acquire listening manager lock");
-            "Unable to access listening state. Please try again."
-        })?;
-
-        lm.disable_listening(recording_manager).map_err(|e| {
-            crate::error!("Failed to disable listening: {}", e);
-            format!("Failed to disable listening: {}", e)
-        })?;
-    }
-
-    crate::info!("Listening mode disabled");
-    Ok(())
-}
-
-/// Implementation of get_listening_status
-///
-/// Returns the current listening status including enabled flag and active state.
-///
-/// # Arguments
-/// * `listening_manager` - The listening manager state
-/// * `recording_manager` - The recording manager state
-///
-/// # Errors
-/// Returns an error string if the state lock is poisoned
-pub fn get_listening_status_impl(
-    listening_manager: &Mutex<ListeningManager>,
-    recording_manager: &Mutex<RecordingManager>,
-) -> Result<ListeningStatus, String> {
-    let lm = listening_manager.lock().map_err(|_| {
-        crate::error!("Failed to acquire listening manager lock");
-        "Unable to access listening state. Please try again."
-    })?;
-
-    lm.get_status(recording_manager).map_err(|e| {
-        crate::error!("Failed to get listening status: {}", e);
-        format!("Failed to get listening status: {}", e)
-    })
 }

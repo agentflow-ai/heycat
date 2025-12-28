@@ -1,9 +1,8 @@
-// Unified VAD (Voice Activity Detection) configuration
-// Shared between WakeWordDetector (listening) and SilenceDetector (recording)
+// Voice Activity Detection (VAD) configuration
+// Used by silence detection during recording
 
 use crate::audio_constants::{
-    chunk_size_for_sample_rate, DEFAULT_SAMPLE_RATE, VAD_THRESHOLD_BALANCED, VAD_THRESHOLD_SILENCE,
-    VAD_THRESHOLD_WAKE_WORD,
+    chunk_size_for_sample_rate, DEFAULT_SAMPLE_RATE, VAD_THRESHOLD_SILENCE,
 };
 use voice_activity_detector::VoiceActivityDetector;
 
@@ -18,23 +17,14 @@ pub enum VadError {
     ConfigurationInvalid(String),
 }
 
-/// VAD configuration shared across listening and recording components.
+/// VAD configuration for silence detection.
 ///
 /// # Threshold Rationale
 ///
-/// Different use cases benefit from different threshold settings:
-///
-/// - **Wake word detection (0.3)**: Lower threshold for better sensitivity.
-///   The wake word detector needs to catch varied pronunciations and volumes,
-///   including soft consonants. False positives here just trigger transcription
-///   (relatively cheap) rather than user-visible actions.
-///
-/// - **Silence detection (0.5)**: Higher threshold for precision.
-///   The silence detector must avoid cutting off speech prematurely.
-///   A higher threshold ensures we only stop recording when true silence
-///   is detected, not during brief pauses or soft speech.
-///
-/// - **Balanced (0.4)**: Good middle ground for general-purpose use.
+/// Silence detection uses a threshold of 0.5 for precision.
+/// The silence detector must avoid cutting off speech prematurely.
+/// A higher threshold ensures we only stop recording when true silence
+/// is detected, not during brief pauses or soft speech.
 ///
 /// The Silero VAD model outputs speech probability 0.0-1.0:
 /// - Values below 0.3 are typically background noise
@@ -71,9 +61,8 @@ pub struct VadConfig {
 impl Default for VadConfig {
     fn default() -> Self {
         Self {
-            // Balanced threshold for general use
-            // Override with wake_word_config() or silence_config() for specific uses
-            speech_threshold: VAD_THRESHOLD_BALANCED,
+            // Silence detection threshold for precision
+            speech_threshold: VAD_THRESHOLD_SILENCE,
             sample_rate: DEFAULT_SAMPLE_RATE,
             min_speech_frames: 2,
         }
@@ -81,22 +70,9 @@ impl Default for VadConfig {
 }
 
 impl VadConfig {
-    /// Configuration preset for wake word detection
-    ///
-    /// Uses a lower threshold (0.3) for better sensitivity to varied
-    /// pronunciations and volumes. The cost of false positives is only
-    /// an extra transcription attempt.
-    #[allow(dead_code)]
-    pub fn wake_word() -> Self {
-        Self {
-            speech_threshold: VAD_THRESHOLD_WAKE_WORD,
-            ..Default::default()
-        }
-    }
-
     /// Configuration preset for silence detection
     ///
-    /// Uses a higher threshold (0.5) to avoid cutting off speech
+    /// Uses a threshold of 0.5 to avoid cutting off speech
     /// during pauses. Precision is more important than sensitivity
     /// when deciding to stop recording.
     #[allow(dead_code)]
@@ -120,8 +96,6 @@ impl VadConfig {
 /// Factory function for creating VAD detector
 ///
 /// Initializes a Silero VAD model with the given configuration.
-/// The same factory is used by both WakeWordDetector and SilenceDetector
-/// to ensure consistent initialization.
 ///
 /// # Errors
 ///
@@ -154,34 +128,16 @@ mod tests {
     use super::*;
     use crate::audio_constants::{VAD_CHUNK_SIZE_16KHZ, VAD_CHUNK_SIZE_8KHZ};
 
-    // Tests removed per docs/TESTING.md:
-    // - test_default_config: Obvious default values
-    // - test_config_clone: Type system guarantee
-    // - test_config_debug: Debug trait test
-    // - test_vad_error_display: Display trait test
-    // - test_vad_error_eq: Type system guarantee (#[derive(PartialEq)])
-    // - test_configuration_invalid_error_display: Display trait test
-    // - test_configuration_invalid_error_eq: Type system guarantee
-
-    // ==================== Config Preset Tests ====================
-    // These test meaningful behavior: different presets have different thresholds
-
     #[test]
     fn test_config_presets_have_distinct_thresholds() {
-        let wake_word = VadConfig::wake_word();
         let silence = VadConfig::silence();
         let custom = VadConfig::with_threshold(0.6);
 
-        // Wake word is more sensitive (lower threshold)
-        assert_eq!(wake_word.speech_threshold, VAD_THRESHOLD_WAKE_WORD);
-        // Silence detection is more precise (higher threshold)
+        // Silence detection threshold
         assert_eq!(silence.speech_threshold, VAD_THRESHOLD_SILENCE);
         // Custom threshold works
         assert_eq!(custom.speech_threshold, 0.6);
     }
-
-    // ==================== VAD Creation Tests ====================
-    // These test actual behavior: VAD initialization succeeds/fails correctly
 
     #[test]
     fn test_create_vad_with_valid_sample_rates() {

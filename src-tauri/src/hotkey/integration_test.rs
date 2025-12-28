@@ -142,24 +142,6 @@ impl crate::events::CommandEventEmitter for MockEmitter {
     }
 }
 
-impl crate::events::ListeningEventEmitter for MockEmitter {
-    fn emit_wake_word_detected(&self, _payload: crate::events::listening_events::WakeWordDetectedPayload) {
-        // No-op for tests
-    }
-
-    fn emit_listening_started(&self, _payload: crate::events::listening_events::ListeningStartedPayload) {
-        // No-op for tests
-    }
-
-    fn emit_listening_stopped(&self, _payload: crate::events::listening_events::ListeningStoppedPayload) {
-        // No-op for tests
-    }
-
-    fn emit_listening_unavailable(&self, _payload: crate::events::listening_events::ListeningUnavailablePayload) {
-        // No-op for tests
-    }
-}
-
 impl crate::events::HotkeyEventEmitter for MockEmitter {
     fn emit_key_blocking_unavailable(&self, payload: crate::events::hotkey_events::KeyBlockingUnavailablePayload) {
         self.key_blocking_unavailable.lock().unwrap().push(payload);
@@ -398,7 +380,11 @@ fn test_toggle_without_audio_thread_still_works() {
     assert_eq!(emitter.stopped_count(), 1);
 }
 
+/// Test full recording cycle with audio thread
+/// Ignored by default as it requires microphone permissions
+/// Run manually with: cargo test test_full_cycle_with_audio_thread -- --ignored
 #[test]
+#[ignore]
 fn test_full_cycle_with_audio_thread() {
     ensure_test_model_files();
     use crate::audio::AudioThreadHandle;
@@ -459,7 +445,7 @@ fn test_audio_thread_disconnection_rolls_back_state() {
 
 #[test]
 fn test_with_recording_detectors_builder() {
-    use crate::listening::RecordingDetectors;
+    use crate::recording::RecordingDetectors;
 
     let emitter = MockEmitter::new();
     let detectors = Arc::new(Mutex::new(RecordingDetectors::new()));
@@ -473,7 +459,7 @@ fn test_with_recording_detectors_builder() {
 
 #[test]
 fn test_silence_detection_can_be_disabled() {
-    use crate::listening::RecordingDetectors;
+    use crate::recording::RecordingDetectors;
 
     let emitter = MockEmitter::new();
     let detectors = Arc::new(Mutex::new(RecordingDetectors::new()));
@@ -487,7 +473,7 @@ fn test_silence_detection_can_be_disabled() {
 
 #[test]
 fn test_custom_silence_config() {
-    use crate::listening::{RecordingDetectors, SilenceConfig};
+    use crate::recording::{RecordingDetectors, SilenceConfig};
 
     let emitter = MockEmitter::new();
     let detectors = Arc::new(Mutex::new(RecordingDetectors::new()));
@@ -506,13 +492,17 @@ fn test_custom_silence_config() {
     assert_eq!(integration.silence.config.as_ref().unwrap().silence_duration_ms, 3000);
 }
 
+/// Test that manual stop takes precedence over silence detection
+/// Ignored by default as it requires microphone permissions
+/// Run manually with: cargo test test_manual_stop_takes_precedence_over_silence_detection -- --ignored
 #[test]
+#[ignore]
 fn test_manual_stop_takes_precedence_over_silence_detection() {
     // When user manually stops via hotkey, silence detection should be stopped
     // and not interfere with the manual stop
     ensure_test_model_files();
     use crate::audio::AudioThreadHandle;
-    use crate::listening::RecordingDetectors;
+    use crate::recording::RecordingDetectors;
 
     let emitter = MockEmitter::new();
     let audio_thread = Arc::new(AudioThreadHandle::spawn());
@@ -574,7 +564,7 @@ fn test_silence_detection_respects_enabled_flag() {
     // When silence_detection_enabled is false, detectors should not be started
     ensure_test_model_files();
     use crate::audio::AudioThreadHandle;
-    use crate::listening::RecordingDetectors;
+    use crate::recording::RecordingDetectors;
 
     let emitter = MockEmitter::new();
     let audio_thread = Arc::new(AudioThreadHandle::spawn());
@@ -1067,7 +1057,11 @@ fn test_cancel_recording_ignored_when_processing() {
     assert_eq!(emitter.cancelled_count(), 0);
 }
 
+/// Test cancel recording with audio thread
+/// Ignored by default as it requires microphone permissions
+/// Run manually with: cargo test test_cancel_recording_with_audio_thread -- --ignored
 #[test]
+#[ignore]
 fn test_cancel_recording_with_audio_thread() {
     // Cancel should stop audio thread
     ensure_test_model_files();
@@ -1126,7 +1120,7 @@ fn test_cancel_recording_stops_silence_detection() {
     // Cancel should stop silence detection
     ensure_test_model_files();
     use crate::audio::AudioThreadHandle;
-    use crate::listening::RecordingDetectors;
+    use crate::recording::RecordingDetectors;
 
     let emitter = MockEmitter::new();
     let audio_thread = Arc::new(AudioThreadHandle::spawn());

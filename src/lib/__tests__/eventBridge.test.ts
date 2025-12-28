@@ -34,7 +34,7 @@ function emitMockEvent(eventName: string, payload: unknown = {}) {
 
 describe("eventBridge", () => {
   let queryClient: QueryClient;
-  let mockStore: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError" | "wakeWordDetected" | "clearWakeWord">;
+  let mockStore: Pick<AppState, "setOverlayMode" | "transcriptionStarted" | "transcriptionCompleted" | "transcriptionError">;
 
   beforeEach(() => {
     eventHandlers.clear();
@@ -49,8 +49,6 @@ describe("eventBridge", () => {
       transcriptionStarted: vi.fn() as AppState["transcriptionStarted"],
       transcriptionCompleted: vi.fn() as AppState["transcriptionCompleted"],
       transcriptionError: vi.fn() as AppState["transcriptionError"],
-      wakeWordDetected: vi.fn() as AppState["wakeWordDetected"],
-      clearWakeWord: vi.fn() as AppState["clearWakeWord"],
     };
   });
 
@@ -105,60 +103,6 @@ describe("eventBridge", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: queryKeys.tauri.getRecordingState,
       });
-    });
-  });
-
-  describe("listening events trigger query invalidation", () => {
-    it("listening_started invalidates getListeningStatus query", async () => {
-      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-      await setupEventBridge(queryClient, mockStore);
-
-      emitMockEvent(eventNames.LISTENING_STARTED);
-
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.tauri.getListeningStatus,
-      });
-    });
-
-    it("listening_stopped invalidates getListeningStatus query", async () => {
-      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-      await setupEventBridge(queryClient, mockStore);
-
-      emitMockEvent(eventNames.LISTENING_STOPPED);
-
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.tauri.getListeningStatus,
-      });
-    });
-
-    it("listening_unavailable invalidates getListeningStatus query", async () => {
-      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-      await setupEventBridge(queryClient, mockStore);
-
-      emitMockEvent(eventNames.LISTENING_UNAVAILABLE);
-
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.tauri.getListeningStatus,
-      });
-    });
-  });
-
-  describe("wake word events update store", () => {
-    it("wake_word_detected updates store and auto-clears after 500ms", async () => {
-      vi.useFakeTimers();
-      await setupEventBridge(queryClient, mockStore);
-
-      emitMockEvent(eventNames.WAKE_WORD_DETECTED);
-
-      expect(mockStore.wakeWordDetected).toHaveBeenCalled();
-      expect(mockStore.clearWakeWord).not.toHaveBeenCalled();
-
-      // Fast-forward 500ms
-      vi.advanceTimersByTime(500);
-
-      expect(mockStore.clearWakeWord).toHaveBeenCalled();
-
-      vi.useRealTimers();
     });
   });
 

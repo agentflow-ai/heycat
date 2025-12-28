@@ -2,11 +2,10 @@
 // Manages silence detection during recording phase
 
 use super::silence::{SilenceConfig, SilenceDetectionResult, SilenceDetector, SilenceStopReason};
-use super::ListeningPipeline;
+use super::{RecordingManager, RecordingMetadata, RecordingState};
 use crate::audio::{encode_wav, AudioBuffer, SystemFileWriter, TARGET_SAMPLE_RATE};
 use crate::audio_constants::{DETECTION_INTERVAL_MS, MIN_DETECTION_SAMPLES};
-use crate::events::{ListeningEventEmitter, RecordingEventEmitter, RecordingStoppedPayload};
-use crate::recording::{RecordingManager, RecordingMetadata, RecordingState};
+use crate::events::{RecordingEventEmitter, RecordingStoppedPayload};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,7 +14,7 @@ use std::time::Duration;
 
 /// Coordinator for silence detection during recording
 ///
-/// When recording starts (triggered by wake word or hotkey), this coordinator:
+/// When recording starts (triggered by hotkey), this coordinator:
 /// 1. Starts monitoring audio for silence to auto-stop recording
 /// 2. Feeds audio samples to the silence detector
 /// 3. Triggers appropriate actions based on detection results
@@ -79,25 +78,21 @@ impl RecordingDetectors {
         }
     }
 
-    /// Start monitoring for silence and cancel phrases
+    /// Start monitoring for silence
     ///
     /// # Arguments
     /// * `buffer` - Audio buffer being filled during recording
     /// * `recording_manager` - Manager for state transitions
     /// * `audio_thread` - Handle to stop audio capture
-    /// * `emitter` - Event emitter for cancel events
-    /// * `return_to_listening` - Whether to return to Listening state after stop
-    /// * `listening_pipeline` - Optional pipeline to restart if return_to_listening is true
+    /// * `emitter` - Event emitter for recording events
     /// * `transcription_callback` - Optional callback to spawn transcription after recording saves
     #[allow(clippy::too_many_arguments)]
-    pub fn start_monitoring<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
+    pub fn start_monitoring<E: RecordingEventEmitter + 'static>(
         &mut self,
         buffer: AudioBuffer,
         recording_manager: Arc<Mutex<RecordingManager>>,
         audio_thread: Arc<crate::audio::AudioThreadHandle>,
         emitter: Arc<E>,
-        return_to_listening: bool,
-        listening_pipeline: Option<Arc<Mutex<ListeningPipeline>>>,
         transcription_callback: Option<Box<dyn Fn(String) + Send + 'static>>,
     ) -> Result<(), String> {
         // Clean up any finished detection thread from previous session
@@ -117,10 +112,7 @@ impl RecordingDetectors {
             return Err("Detection already running".to_string());
         }
 
-        crate::info!(
-            "[coordinator] Starting recording detectors, return_to_listening={}",
-            return_to_listening
-        );
+        crate::info!("[coordinator] Starting recording detectors");
 
         // Reset stop flag
         self.should_stop.store(false, Ordering::SeqCst);
@@ -141,8 +133,6 @@ impl RecordingDetectors {
                 audio_thread,
                 emitter,
                 should_stop,
-                return_to_listening,
-                listening_pipeline,
                 transcription_callback,
                 recordings_dir,
             );
@@ -182,15 +172,13 @@ impl Drop for RecordingDetectors {
 /// Reads audio samples and feeds them to the silence detector.
 /// Takes action based on detection results.
 #[allow(clippy::too_many_arguments)]
-fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
+fn detection_loop<E: RecordingEventEmitter + 'static>(
     buffer: AudioBuffer,
     mut silence_detector: SilenceDetector,
     recording_manager: Arc<Mutex<RecordingManager>>,
     audio_thread: Arc<crate::audio::AudioThreadHandle>,
     emitter: Arc<E>,
     should_stop: Arc<AtomicBool>,
-    return_to_listening: bool,
-    listening_pipeline: Option<Arc<Mutex<ListeningPipeline>>>,
     transcription_callback: Option<Box<dyn Fn(String) + Send + 'static>>,
     recordings_dir: PathBuf,
 ) {
@@ -264,7 +252,7 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
                     if let Ok(mut manager) = recording_manager.lock() {
                         match reason {
                             SilenceStopReason::SilenceAfterSpeech => {
-                                // Normal completion - save recording and optionally restart listening
+                                // Normal completion - save recording
                                 crate::info!("[coordinator] Recording complete, saving...");
 
                                 // 1. Transition to Processing
@@ -325,73 +313,18 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
                                     }
                                 }
 
-                                // 5. Transition to final state and restart listening if needed
-                                let target_state = if return_to_listening {
-                                    RecordingState::Listening
-                                } else {
-                                    RecordingState::Idle
-                                };
-                                if let Err(e) = manager.transition_to(target_state) {
-                                    crate::error!("[coordinator] Failed to transition to {:?}: {:?}", target_state, e);
-                                }
-
-                                // Drop the manager lock before restarting pipeline
-                                drop(manager);
-
-                                // 6. Restart listening pipeline if return_to_listening
-                                if return_to_listening {
-                                    if let Some(ref pipeline_arc) = listening_pipeline {
-                                        if let Ok(mut pipeline) = pipeline_arc.lock() {
-                                            crate::info!("[coordinator] Restarting listening pipeline...");
-                                            match pipeline.start(&audio_thread, emitter.clone()) {
-                                                Ok(_) => {
-                                                    crate::info!("[coordinator] Listening pipeline restarted successfully");
-                                                }
-                                                Err(e) => {
-                                                    crate::error!("[coordinator] Failed to restart listening pipeline: {:?}", e);
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        crate::warn!("[coordinator] return_to_listening=true but no pipeline provided");
-                                    }
+                                // 5. Transition to Idle
+                                if let Err(e) = manager.transition_to(RecordingState::Idle) {
+                                    crate::error!("[coordinator] Failed to transition to Idle: {:?}", e);
                                 }
                             }
                             SilenceStopReason::NoSpeechTimeout => {
                                 // False activation - abort without saving
-                                // Transition to target state (Listening or Idle) before dropping lock
-                                let target_state = if return_to_listening {
-                                    RecordingState::Listening
-                                } else {
-                                    RecordingState::Idle
-                                };
                                 crate::info!(
-                                    "[coordinator] Aborting recording (no speech), transitioning to {:?}",
-                                    target_state
+                                    "[coordinator] Aborting recording (no speech), transitioning to Idle"
                                 );
-                                if let Err(e) = manager.abort_recording(target_state) {
+                                if let Err(e) = manager.abort_recording(RecordingState::Idle) {
                                     crate::error!("[coordinator] Failed to abort recording: {:?}", e);
-                                }
-
-                                // Drop the manager lock before restarting pipeline
-                                drop(manager);
-
-                                // Restart listening pipeline if return_to_listening (even on timeout)
-                                // NOTE: State is already Listening, no need to re-acquire manager lock
-                                if return_to_listening {
-                                    if let Some(ref pipeline_arc) = listening_pipeline {
-                                        if let Ok(mut pipeline) = pipeline_arc.lock() {
-                                            crate::info!("[coordinator] Restarting listening pipeline after false activation...");
-                                            match pipeline.start(&audio_thread, emitter.clone()) {
-                                                Ok(_) => {
-                                                    crate::info!("[coordinator] Listening pipeline restarted successfully");
-                                                }
-                                                Err(e) => {
-                                                    crate::error!("[coordinator] Failed to restart listening pipeline: {:?}", e);
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -418,12 +351,6 @@ fn detection_loop<E: ListeningEventEmitter + RecordingEventEmitter + 'static>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Tests removed per docs/TESTING.md:
-    // - test_recording_detectors_new: Obvious default
-    // - test_recording_detectors_default: Obvious default (duplicate)
-
-    // ==================== Behavior Tests ====================
 
     #[test]
     fn test_recording_detectors_with_config() {

@@ -28,72 +28,6 @@ pub mod command_events {
     pub const COMMAND_AMBIGUOUS: &str = "command_ambiguous";
 }
 
-/// Listening-related event names
-pub mod listening_events {
-    pub const WAKE_WORD_DETECTED: &str = "wake_word_detected";
-    pub const LISTENING_STARTED: &str = "listening_started";
-    pub const LISTENING_STOPPED: &str = "listening_stopped";
-    pub const LISTENING_UNAVAILABLE: &str = "listening_unavailable";
-
-    /// Payload for wake_word_detected event
-    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct WakeWordDetectedPayload {
-        /// Confidence score (0.0 - 1.0)
-        pub confidence: f32,
-        /// The transcribed text that triggered detection
-        pub transcription: String,
-        /// ISO 8601 timestamp when wake word was detected
-        pub timestamp: String,
-    }
-
-    /// Payload for listening_started event
-    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ListeningStartedPayload {
-        /// ISO 8601 timestamp when listening started
-        pub timestamp: String,
-    }
-
-    /// Payload for listening_stopped event
-    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ListeningStoppedPayload {
-        /// ISO 8601 timestamp when listening stopped
-        pub timestamp: String,
-    }
-
-    /// Payload for listening_unavailable event
-    #[derive(Debug, Clone, serde::Serialize, PartialEq)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ListeningUnavailablePayload {
-        /// Reason why listening is unavailable
-        pub reason: String,
-        /// ISO 8601 timestamp when listening became unavailable
-        pub timestamp: String,
-    }
-}
-
-/// Trait for emitting listening events
-/// Allows mocking in tests while using real Tauri AppHandle in production
-pub trait ListeningEventEmitter: Send + Sync {
-    /// Emit wake_word_detected event
-    fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload);
-
-    /// Emit listening_started event
-    /// Note: Currently emitted from commands layer via Tauri app handle, not via this trait
-    #[allow(dead_code)] // API consistency - commands emit via app handle
-    fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload);
-
-    /// Emit listening_stopped event
-    /// Note: Currently emitted from commands layer via Tauri app handle, not via this trait
-    #[allow(dead_code)] // API consistency - commands emit via app handle
-    fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload);
-
-    /// Emit listening_unavailable event
-    fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload);
-}
-
 /// Hotkey-related event names
 pub mod hotkey_events {
     pub const KEY_BLOCKING_UNAVAILABLE: &str = "key_blocking_unavailable";
@@ -379,11 +313,6 @@ pub(crate) mod tests {
         pub command_executed_events: Arc<Mutex<Vec<CommandExecutedPayload>>>,
         pub command_failed_events: Arc<Mutex<Vec<CommandFailedPayload>>>,
         pub command_ambiguous_events: Arc<Mutex<Vec<CommandAmbiguousPayload>>>,
-        pub wake_word_detected_events: Arc<Mutex<Vec<listening_events::WakeWordDetectedPayload>>>,
-        pub listening_started_events: Arc<Mutex<Vec<listening_events::ListeningStartedPayload>>>,
-        pub listening_stopped_events: Arc<Mutex<Vec<listening_events::ListeningStoppedPayload>>>,
-        pub listening_unavailable_events:
-            Arc<Mutex<Vec<listening_events::ListeningUnavailablePayload>>>,
         pub key_blocking_unavailable_events:
             Arc<Mutex<Vec<hotkey_events::KeyBlockingUnavailablePayload>>>,
     }
@@ -450,30 +379,6 @@ pub(crate) mod tests {
 
         fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
             self.command_ambiguous_events.lock().unwrap().push(payload);
-        }
-    }
-
-    impl ListeningEventEmitter for MockEventEmitter {
-        fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload) {
-            self.wake_word_detected_events.lock().unwrap().push(payload);
-        }
-
-        fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload) {
-            self.listening_started_events.lock().unwrap().push(payload);
-        }
-
-        fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload) {
-            self.listening_stopped_events.lock().unwrap().push(payload);
-        }
-
-        fn emit_listening_unavailable(
-            &self,
-            payload: listening_events::ListeningUnavailablePayload,
-        ) {
-            self.listening_unavailable_events
-                .lock()
-                .unwrap()
-                .push(payload);
         }
     }
 
@@ -607,35 +512,6 @@ pub(crate) mod tests {
         assert_eq!(emitter.command_executed_events.lock().unwrap().len(), 1);
         assert_eq!(emitter.command_failed_events.lock().unwrap().len(), 1);
         assert_eq!(emitter.command_ambiguous_events.lock().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_mock_emitter_records_listening_events() {
-        let emitter = MockEventEmitter::new();
-
-        emitter.emit_wake_word_detected(listening_events::WakeWordDetectedPayload {
-            confidence: 0.95,
-            transcription: "hey cat".to_string(),
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        });
-        emitter.emit_listening_started(listening_events::ListeningStartedPayload {
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        });
-        emitter.emit_listening_stopped(listening_events::ListeningStoppedPayload {
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        });
-        emitter.emit_listening_unavailable(listening_events::ListeningUnavailablePayload {
-            reason: "Microphone disconnected".to_string(),
-            timestamp: "2025-01-01T12:00:00Z".to_string(),
-        });
-
-        assert_eq!(emitter.wake_word_detected_events.lock().unwrap().len(), 1);
-        assert_eq!(emitter.listening_started_events.lock().unwrap().len(), 1);
-        assert_eq!(emitter.listening_stopped_events.lock().unwrap().len(), 1);
-        assert_eq!(
-            emitter.listening_unavailable_events.lock().unwrap().len(),
-            1
-        );
     }
 
     #[test]

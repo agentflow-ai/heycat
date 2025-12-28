@@ -12,7 +12,7 @@ export interface AppShellProps {
   /** Callback when navigation item is clicked */
   onNavigate?: (itemId: string) => void;
   /** Current status for the status pill */
-  status?: "idle" | "listening" | "recording" | "processing";
+  status?: "idle" | "recording" | "processing";
   /** Status label override */
   statusLabel?: string;
   /** Recording duration in seconds (shown when status is recording) */
@@ -29,18 +29,12 @@ export interface AppShellProps {
   onSettingsClick?: () => void;
   /** Callback when help is clicked */
   onHelpClick?: () => void;
-  /** Whether listening mode is currently active */
-  isListening?: boolean;
   /** Whether recording is currently active */
   isRecording?: boolean;
   /** Callback to start recording */
   onStartRecording?: () => void;
   /** Callback to stop recording */
   onStopRecording?: () => void;
-  /** Callback to enable listening */
-  onEnableListening?: () => void;
-  /** Callback to disable listening */
-  onDisableListening?: () => void;
 }
 
 const defaultNavItems: NavItem[] = [
@@ -65,12 +59,9 @@ export function AppShell({
   onCommandPaletteOpen,
   onSettingsClick,
   onHelpClick,
-  isListening = false,
   isRecording = false,
   onStartRecording,
   onStopRecording,
-  onEnableListening,
-  onDisableListening,
 }: AppShellProps) {
   const { isOpen, open, close } = useCommandPalette({
     onOpen: onCommandPaletteOpen,
@@ -103,14 +94,6 @@ export function AppShell({
             onStopRecording?.();
           }
           break;
-        // Listening commands
-        case "toggle-listening":
-          if (isListening) {
-            onDisableListening?.();
-          } else {
-            onEnableListening?.();
-          }
-          break;
         // Settings commands - navigate to settings page
         case "change-audio-device":
         case "download-model":
@@ -126,11 +109,8 @@ export function AppShell({
     [
       onNavigate,
       isRecording,
-      isListening,
       onStartRecording,
       onStopRecording,
-      onEnableListening,
-      onDisableListening,
       onHelpClick,
     ]
   );

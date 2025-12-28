@@ -1,7 +1,7 @@
 import { type HTMLAttributes, forwardRef, useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 
-export type StatusPillStatus = "idle" | "listening" | "recording" | "processing";
+export type StatusPillStatus = "idle" | "recording" | "processing";
 
 export interface StatusPillProps extends HTMLAttributes<HTMLDivElement> {
   /** Current status to display */
@@ -21,12 +21,6 @@ const statusConfig: Record<
     textClass: "text-white",
     label: "Ready",
     animation: "",
-  },
-  listening: {
-    bgClass: "bg-listening",
-    textClass: "text-white",
-    label: "Listening...",
-    animation: "status-pill-breathe",
   },
   recording: {
     bgClass: "bg-recording",

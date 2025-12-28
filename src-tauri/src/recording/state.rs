@@ -8,8 +8,6 @@ use serde::Serialize;
 pub enum RecordingState {
     /// Not recording, ready to start
     Idle,
-    /// Always-on listening mode, detecting wake word
-    Listening,
     /// Actively recording audio
     Recording,
     /// Recording stopped, processing audio (encoding, saving)
@@ -116,15 +114,15 @@ impl RecordingManager {
 
     /// Start recording with the given sample rate
     ///
-    /// Transitions from Idle or Listening to Recording state and creates the audio buffer.
+    /// Transitions from Idle to Recording state and creates the audio buffer.
     /// Returns the audio buffer for use with audio capture.
     /// The sample rate is stored for use when the recording completes.
     ///
     /// # Errors
-    /// Returns error if not in Idle or Listening state
+    /// Returns error if not in Idle state
     #[must_use = "this returns a Result that should be handled"]
     pub fn start_recording(&mut self, sample_rate: u32) -> Result<AudioBuffer, RecordingStateError> {
-        if self.state != RecordingState::Idle && self.state != RecordingState::Listening {
+        if self.state != RecordingState::Idle {
             return Err(RecordingStateError::InvalidTransition {
                 from: self.state,
                 to: RecordingState::Recording,
@@ -138,25 +136,23 @@ impl RecordingManager {
         Ok(buffer)
     }
 
-    /// Start recording using an existing audio buffer (for wake word handoff)
+    /// Start recording using an existing audio buffer
     ///
-    /// This allows the listening pipeline to hand off its buffer to recording,
-    /// preserving any audio captured before the wake word was detected.
-    /// The existing buffer may already contain audio samples from wake word detection.
+    /// This allows an external caller to provide a pre-created buffer.
     ///
     /// # Arguments
     /// * `sample_rate` - The audio sample rate in Hz
-    /// * `existing_buffer` - The buffer to use (from listening pipeline)
+    /// * `existing_buffer` - The buffer to use
     ///
     /// # Errors
-    /// Returns error if not in Idle or Listening state
+    /// Returns error if not in Idle state
     #[must_use = "this returns a Result that should be handled"]
     pub fn start_recording_with_buffer(
         &mut self,
         sample_rate: u32,
         existing_buffer: AudioBuffer,
     ) -> Result<AudioBuffer, RecordingStateError> {
-        if self.state != RecordingState::Idle && self.state != RecordingState::Listening {
+        if self.state != RecordingState::Idle {
             return Err(RecordingStateError::InvalidTransition {
                 from: self.state,
                 to: RecordingState::Recording,
@@ -182,24 +178,18 @@ impl RecordingManager {
     /// Transition to a new state with validation
     ///
     /// Valid transitions:
-    /// - Idle -> Listening (start listening mode)
-    /// - Listening -> Idle (stop listening mode)
     /// - Recording -> Processing (stops recording, keeps buffer)
     /// - Processing -> Idle (clears buffer, retains samples for transcription)
-    /// - Processing -> Listening (clears buffer, returns to listening mode)
     ///
-    /// Note: Use `start_recording(sample_rate)` for Idle/Listening -> Recording transition
+    /// Note: Use `start_recording(sample_rate)` for Idle -> Recording transition
     ///
     /// Returns error for invalid transitions
     #[must_use = "this returns a Result that should be handled"]
     pub fn transition_to(&mut self, new_state: RecordingState) -> Result<(), RecordingStateError> {
         let valid = matches!(
             (self.state, new_state),
-            (RecordingState::Idle, RecordingState::Listening)
-                | (RecordingState::Listening, RecordingState::Idle)
-                | (RecordingState::Recording, RecordingState::Processing)
+            (RecordingState::Recording, RecordingState::Processing)
                 | (RecordingState::Processing, RecordingState::Idle)
-                | (RecordingState::Processing, RecordingState::Listening)
         );
 
         if !valid {
@@ -210,9 +200,7 @@ impl RecordingManager {
         }
 
         // Handle buffer lifecycle during transitions
-        if self.state == RecordingState::Processing
-            && (new_state == RecordingState::Idle || new_state == RecordingState::Listening)
-        {
+        if self.state == RecordingState::Processing && new_state == RecordingState::Idle {
             self.retain_recording_buffer();
             self.audio_buffer = None;
             self.active_recording = None;
@@ -306,19 +294,19 @@ impl RecordingManager {
 
     /// Abort the current recording without saving
     ///
-    /// Transitions from Recording to the target state (Listening or Idle),
-    /// discarding the audio buffer without retaining it.
+    /// Transitions from Recording to Idle, discarding the audio buffer
+    /// without retaining it.
     ///
     /// This is used for cancellation scenarios where the user wants to abort
-    /// a false wake word activation. The partial recording is discarded.
+    /// the recording. The partial recording is discarded.
     ///
     /// # Arguments
-    /// * `target_state` - Either `RecordingState::Listening` or `RecordingState::Idle`
+    /// * `target_state` - Must be `RecordingState::Idle`
     ///
     /// # Returns
     /// * `Ok(())` if abort was successful
     /// * `Err(RecordingStateError::InvalidTransition)` if not in Recording state
-    ///   or if target state is not Listening or Idle
+    ///   or if target state is not Idle
     #[must_use = "this returns a Result that should be handled"]
     pub fn abort_recording(
         &mut self,
@@ -332,8 +320,8 @@ impl RecordingManager {
             });
         }
 
-        // Can only abort to Listening or Idle
-        if target_state != RecordingState::Listening && target_state != RecordingState::Idle {
+        // Can only abort to Idle
+        if target_state != RecordingState::Idle {
             return Err(RecordingStateError::InvalidTransition {
                 from: self.state,
                 to: target_state,

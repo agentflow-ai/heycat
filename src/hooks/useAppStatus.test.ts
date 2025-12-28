@@ -9,17 +9,12 @@ vi.mock("./useRecording", () => ({
 vi.mock("./useTranscription", () => ({
   useTranscription: vi.fn(),
 }));
-vi.mock("./useListening", () => ({
-  useListening: vi.fn(),
-}));
 
 import { useRecording } from "./useRecording";
 import { useTranscription } from "./useTranscription";
-import { useListening } from "./useListening";
 
 const mockUseRecording = vi.mocked(useRecording);
 const mockUseTranscription = vi.mocked(useTranscription);
-const mockUseListening = vi.mocked(useListening);
 
 describe("useAppStatus", () => {
   beforeEach(() => {
@@ -39,14 +34,6 @@ describe("useAppStatus", () => {
       error: null,
       durationMs: null,
     });
-    mockUseListening.mockReturnValue({
-      isListening: false,
-      isWakeWordDetected: false,
-      isMicAvailable: true,
-      error: null,
-      enableListening: vi.fn(),
-      disableListening: vi.fn(),
-    });
   });
 
   it("returns idle when nothing is active", () => {
@@ -54,29 +41,7 @@ describe("useAppStatus", () => {
     expect(result.current.status).toBe("idle");
   });
 
-  it("returns listening when listening is active", () => {
-    mockUseListening.mockReturnValue({
-      isListening: true,
-      isWakeWordDetected: false,
-      isMicAvailable: true,
-      error: null,
-      enableListening: vi.fn(),
-      disableListening: vi.fn(),
-    });
-
-    const { result } = renderHook(() => useAppStatus());
-    expect(result.current.status).toBe("listening");
-  });
-
-  it("returns recording when recording (priority over listening)", () => {
-    mockUseListening.mockReturnValue({
-      isListening: true,
-      isWakeWordDetected: false,
-      isMicAvailable: true,
-      error: null,
-      enableListening: vi.fn(),
-      disableListening: vi.fn(),
-    });
+  it("returns recording when recording", () => {
     mockUseRecording.mockReturnValue({
       isRecording: true,
       isProcessing: false,
@@ -91,15 +56,7 @@ describe("useAppStatus", () => {
     expect(result.current.status).toBe("recording");
   });
 
-  it("returns processing when transcribing (priority over listening)", () => {
-    mockUseListening.mockReturnValue({
-      isListening: true,
-      isWakeWordDetected: false,
-      isMicAvailable: true,
-      error: null,
-      enableListening: vi.fn(),
-      disableListening: vi.fn(),
-    });
+  it("returns processing when transcribing", () => {
     mockUseTranscription.mockReturnValue({
       isTranscribing: true,
       transcribedText: null,
@@ -163,18 +120,9 @@ describe("useAppStatus", () => {
       error: null,
       durationMs: null,
     });
-    mockUseListening.mockReturnValue({
-      isListening: true,
-      isWakeWordDetected: false,
-      isMicAvailable: true,
-      error: null,
-      enableListening: vi.fn(),
-      disableListening: vi.fn(),
-    });
 
     const { result } = renderHook(() => useAppStatus());
     expect(result.current.isRecording).toBe(true);
     expect(result.current.isTranscribing).toBe(true);
-    expect(result.current.isListening).toBe(true);
   });
 });

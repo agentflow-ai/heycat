@@ -15,18 +15,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 // Mock hooks
-const mockEnableListening = vi.fn();
-const mockDisableListening = vi.fn();
 const mockStartRecording = vi.fn();
 const mockDownloadModel = vi.fn();
-
-vi.mock("../hooks/useListening", () => ({
-  useListening: () => ({
-    isListening: false,
-    enableListening: mockEnableListening,
-    disableListening: mockDisableListening,
-  }),
-}));
 
 vi.mock("../hooks/useRecording", () => ({
   useRecording: () => ({
@@ -74,7 +64,6 @@ describe("Dashboard", () => {
     ).toBeDefined();
 
     // Status cards
-    expect(screen.getByText("Listening")).toBeDefined();
     expect(screen.getByText("Recordings")).toBeDefined();
     expect(screen.getByText("Commands")).toBeDefined();
 
@@ -156,19 +145,6 @@ describe("Dashboard", () => {
         screen.getByRole("button", { name: /play test-recording.wav/i })
       ).toBeDefined();
     });
-  });
-
-  it("listening toggle triggers enable/disable", async () => {
-    const user = userEvent.setup();
-    render(<Dashboard />);
-
-    const toggle = screen.getByRole("switch", {
-      name: /toggle listening mode/i,
-    });
-
-    // Toggle on
-    await user.click(toggle);
-    expect(mockEnableListening).toHaveBeenCalled();
   });
 
   it("start recording button triggers recording", async () => {

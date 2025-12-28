@@ -13,16 +13,6 @@ describe("StatusPill", () => {
       expect(pill.className).toContain("bg-neutral-400");
     });
 
-    it("displays listening state with 'Listening...' text and teal styling with animation", () => {
-      render(<StatusPill status="listening" />);
-
-      const pill = screen.getByRole("status");
-      expect(pill.getAttribute("aria-label")).toBe("Status: Listening...");
-      expect(screen.getByText("Listening...")).toBeDefined();
-      expect(pill.className).toContain("bg-listening");
-      expect(pill.className).toContain("status-pill-breathe");
-    });
-
     it("displays recording state with 'Recording' text, red styling, and pulse animation", () => {
       render(<StatusPill status="recording" />);
 

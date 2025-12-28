@@ -42,12 +42,11 @@ export { Toggle, LabeledToggle } from "./Toggle";
 export type { ToggleProps, LabeledToggleProps } from "./Toggle";
 
 // Status Indicators (ui.md 3.4)
-export { StatusIndicator, RecordingDot, ListeningGlow } from "./StatusIndicator";
+export { StatusIndicator, RecordingDot } from "./StatusIndicator";
 export type {
   StatusIndicatorProps,
   StatusIndicatorVariant,
   RecordingDotProps,
-  ListeningGlowProps,
 } from "./StatusIndicator";
 
 // Status Pill (ui.md 2.2, 3.4, 5.3)

@@ -9,24 +9,21 @@ pub mod window_context;
 
 pub use logic::{RecordingInfo, RecordingStateInfo};
 use logic::{
-    clear_last_recording_buffer_impl, delete_recording_impl, disable_listening_impl,
-    enable_listening_impl, get_last_recording_buffer_impl, get_listening_status_impl,
+    clear_last_recording_buffer_impl, delete_recording_impl,
+    get_last_recording_buffer_impl,
     get_recording_state_impl, list_recordings_impl, start_recording_impl,
     stop_recording_impl_extended, transcribe_file_impl,
 };
 
-// ShortcutBackend trait is used via HotkeyServiceDyn.backend field
-use crate::listening::{ListeningManager, ListeningPipeline, ListeningStatus, WakeWordEvent};
-
 use crate::events::{
-    command_events, event_names, hotkey_events, listening_events, CommandAmbiguousPayload,
+    command_events, event_names, hotkey_events, CommandAmbiguousPayload,
     CommandEventEmitter, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
-    HotkeyEventEmitter, ListeningEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
+    HotkeyEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
     RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
     TranscriptionStartedPayload,
 };
-use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, SharedDenoiser, StopReason, encode_wav, SystemFileWriter};
+use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, StopReason, encode_wav, SystemFileWriter};
 use crate::parakeet::SharedTranscriptionModel;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
 use std::sync::{Arc, Mutex};
@@ -57,20 +54,8 @@ pub type AudioThreadState = Arc<AudioThreadHandle>;
 /// Type alias for production state (RecordingManager is Send+Sync)
 pub type ProductionState = Arc<Mutex<RecordingManager>>;
 
-/// Type alias for listening manager state
-pub type ListeningState = Arc<Mutex<ListeningManager>>;
-
-/// Type alias for listening pipeline state
-pub type ListeningPipelineState = Arc<Mutex<ListeningPipeline>>;
-
 /// Type alias for hotkey integration state
 pub type HotkeyIntegrationState = Arc<Mutex<crate::hotkey::HotkeyIntegration<TauriEventEmitter, TauriEventEmitter, TauriEventEmitter>>>;
-
-/// Type alias for recording detectors state
-pub type RecordingDetectorsState = Arc<Mutex<crate::listening::RecordingDetectors>>;
-
-/// Type alias for shared denoiser state
-pub type SharedDenoiserState = Option<Arc<SharedDenoiser>>;
 
 /// Type alias for transcription service state
 pub type TranscriptionServiceState = Arc<crate::transcription::RecordingTranscriptionService<TauriEventEmitter, TauriEventEmitter>>;
@@ -136,40 +121,6 @@ impl CommandEventEmitter for TauriEventEmitter {
     }
 }
 
-impl ListeningEventEmitter for TauriEventEmitter {
-    fn emit_wake_word_detected(&self, payload: listening_events::WakeWordDetectedPayload) {
-        emit_or_warn!(
-            self.app_handle,
-            listening_events::WAKE_WORD_DETECTED,
-            payload
-        );
-    }
-
-    fn emit_listening_started(&self, payload: listening_events::ListeningStartedPayload) {
-        emit_or_warn!(
-            self.app_handle,
-            listening_events::LISTENING_STARTED,
-            payload
-        );
-    }
-
-    fn emit_listening_stopped(&self, payload: listening_events::ListeningStoppedPayload) {
-        emit_or_warn!(
-            self.app_handle,
-            listening_events::LISTENING_STOPPED,
-            payload
-        );
-    }
-
-    fn emit_listening_unavailable(&self, payload: listening_events::ListeningUnavailablePayload) {
-        emit_or_warn!(
-            self.app_handle,
-            listening_events::LISTENING_UNAVAILABLE,
-            payload
-        );
-    }
-}
-
 impl HotkeyEventEmitter for TauriEventEmitter {
     fn emit_key_blocking_unavailable(
         &self,
@@ -192,11 +143,9 @@ pub fn start_recording(
     app_handle: AppHandle,
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
-    shared_denoiser: State<'_, SharedDenoiserState>,
+    _monitor_state: State<'_, AudioMonitorState>,
     device_name: Option<String>,
 ) -> Result<(), String> {
-    use tauri_plugin_store::StoreExt;
-
     // Check for audio devices first
     let devices = crate::audio::list_input_devices();
     if devices.is_empty() {
@@ -218,22 +167,8 @@ pub fn start_recording(
         }
     }
 
-    // Read noise suppression setting from persistent store (defaults to true)
-    let settings_file = get_settings_file(&app_handle);
-    let noise_suppression_enabled = app_handle
-        .store(&settings_file)
-        .ok()
-        .and_then(|store| store.get("audio.noiseSuppression"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true); // Default to enabled for new installations
-
-    // Only use shared denoiser if noise suppression is enabled
-    let denoiser_for_recording = if noise_suppression_enabled {
-        (*shared_denoiser).clone()
-    } else {
-        crate::info!("Noise suppression disabled by user setting");
-        None
-    };
+    // Note: Audio monitor uses unified SharedAudioEngine with capture, so no need to stop it.
+    // Level monitoring continues during recording via the shared engine.
 
     // Check model availability before starting recording (check TDT model for batch transcription)
     let model_available =
@@ -249,7 +184,6 @@ pub fn start_recording(
         Some(audio_thread.as_ref()),
         model_available,
         device_name,
-        denoiser_for_recording,
     );
 
     match &result {
@@ -286,15 +220,8 @@ pub fn stop_recording(
     app_handle: AppHandle,
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
-    listening_state: State<'_, ListeningState>,
     transcription_service: State<'_, TranscriptionServiceState>,
 ) -> Result<RecordingMetadata, String> {
-    // Check if listening mode is enabled to determine return state
-    let return_to_listening = listening_state
-        .lock()
-        .map(|lm| lm.is_enabled())
-        .unwrap_or(false);
-
     // Get worktree-aware recordings directory
     let worktree_context = app_handle
         .try_state::<crate::worktree::WorktreeState>()
@@ -302,7 +229,7 @@ pub fn stop_recording(
     let recordings_dir = crate::paths::get_recordings_dir(worktree_context.as_ref())
         .unwrap_or_else(|_| std::path::PathBuf::from(".").join("heycat").join("recordings"));
 
-    let result = stop_recording_impl_extended(state.as_ref(), Some(audio_thread.as_ref()), return_to_listening, recordings_dir.clone());
+    let result = stop_recording_impl_extended(state.as_ref(), Some(audio_thread.as_ref()), false, recordings_dir.clone());
 
     // Handle success case
     if let Ok(ref stop_result) = result {
@@ -463,311 +390,6 @@ pub async fn transcribe_file(
 }
 
 // =============================================================================
-// Listening Commands
-// =============================================================================
-
-/// Enable listening mode (always-on wake word detection)
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub fn enable_listening(
-    app_handle: AppHandle,
-    listening_state: State<'_, ListeningState>,
-    recording_state: State<'_, ProductionState>,
-    listening_pipeline: State<'_, ListeningPipelineState>,
-    audio_thread: State<'_, AudioThreadState>,
-    hotkey_integration: State<'_, HotkeyIntegrationState>,
-    recording_detectors: State<'_, RecordingDetectorsState>,
-    device_name: Option<String>,
-) -> Result<(), String> {
-    // If device_name not provided, read from persistent settings store as fallback
-    use tauri_plugin_store::StoreExt;
-    let settings_file = get_settings_file(&app_handle);
-    let device_name = device_name.or_else(|| {
-        app_handle
-            .store(&settings_file)
-            .ok()
-            .and_then(|store| store.get("audio.selectedDevice"))
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-    });
-
-    let emitter = Arc::new(TauriEventEmitter::new(app_handle.clone()));
-
-    // Subscribe to wake word events before starting the pipeline
-    // This replaces the callback mechanism with a safer async event channel
-    let event_rx = {
-        let mut pipeline = listening_pipeline.lock().map_err(|_| {
-            crate::error!("Failed to lock listening pipeline for event subscription");
-            "Unable to access listening pipeline."
-        })?;
-        pipeline.subscribe_events()
-    };
-
-    // Spawn an async task to handle wake word events
-    // This runs separately from the analysis thread, eliminating deadlock risk
-    let listening_pipeline_for_handler = listening_pipeline.inner().clone();
-    let recording_for_handler = recording_state.inner().clone();
-    let detectors_for_handler = recording_detectors.inner().clone();
-    let audio_thread_for_handler = audio_thread.inner().clone();
-    let app_handle_for_handler = app_handle.clone();
-    let emitter_for_handler = Arc::new(TauriEventEmitter::new(app_handle.clone()));
-    let hotkey_for_handler = hotkey_integration.inner().clone();
-
-    tauri::async_runtime::spawn(async move {
-        handle_wake_word_events(
-            event_rx,
-            listening_pipeline_for_handler,
-            recording_for_handler,
-            detectors_for_handler,
-            audio_thread_for_handler,
-            app_handle_for_handler,
-            emitter_for_handler,
-            hotkey_for_handler,
-        ).await;
-    });
-
-    let result = enable_listening_impl(
-        listening_state.as_ref(),
-        recording_state.as_ref(),
-        listening_pipeline.as_ref(),
-        audio_thread.as_ref(),
-        emitter,
-        device_name,
-    );
-
-    // Emit event on success
-    if result.is_ok() {
-        emit_or_warn!(
-            app_handle,
-            listening_events::LISTENING_STARTED,
-            listening_events::ListeningStartedPayload {
-                timestamp: crate::events::current_timestamp(),
-            }
-        );
-    }
-
-    result
-}
-
-/// Handle wake word events from the listening pipeline
-///
-/// This async function processes events from the wake word event channel,
-/// running separately from the analysis thread to eliminate deadlock risk.
-/// It replaces the direct callback invocation with a safe async pattern.
-#[allow(clippy::too_many_arguments)]
-async fn handle_wake_word_events(
-    mut event_rx: tokio::sync::mpsc::Receiver<WakeWordEvent>,
-    listening_pipeline: ListeningPipelineState,
-    recording_state: ProductionState,
-    recording_detectors: RecordingDetectorsState,
-    audio_thread: AudioThreadState,
-    app_handle: AppHandle,
-    emitter: Arc<TauriEventEmitter>,
-    hotkey_integration: HotkeyIntegrationState,
-) {
-    crate::info!("[event_handler] Wake word event handler started");
-
-    while let Some(event) = event_rx.recv().await {
-        match event {
-            WakeWordEvent::Detected { text, confidence } => {
-                crate::info!(
-                    "[event_handler] Wake word detected: '{}' (confidence: {:.2})",
-                    text, confidence
-                );
-                // Read selected device from persistent settings store
-                use tauri_plugin_store::StoreExt;
-                let settings_file = get_settings_file(&app_handle);
-                let device_name = app_handle
-                    .store(&settings_file)
-                    .ok()
-                    .and_then(|store| store.get("audio.selectedDevice"))
-                    .and_then(|v| v.as_str().map(|s| s.to_string()));
-                handle_wake_word_detected(
-                    &listening_pipeline,
-                    &recording_state,
-                    &recording_detectors,
-                    &audio_thread,
-                    &app_handle,
-                    &emitter,
-                    &hotkey_integration,
-                    device_name,
-                );
-            }
-            WakeWordEvent::Unavailable { reason } => {
-                crate::warn!("[event_handler] Listening became unavailable: {}", reason);
-                // The pipeline already emits the frontend event, we just log here
-            }
-            WakeWordEvent::Error { message } => {
-                crate::warn!("[event_handler] Wake word detection error: {}", message);
-                // Errors are transient, the pipeline continues
-            }
-        }
-    }
-
-    crate::info!("[event_handler] Wake word event handler exiting (channel closed)");
-}
-
-/// Handle a wake word detected event - start recording
-///
-/// This function contains the logic previously in the wake word callback,
-/// now safely executing in an async context outside the analysis thread.
-#[allow(clippy::too_many_arguments)]
-fn handle_wake_word_detected(
-    listening_pipeline: &ListeningPipelineState,
-    recording_state: &ProductionState,
-    recording_detectors: &RecordingDetectorsState,
-    audio_thread: &AudioThreadState,
-    app_handle: &AppHandle,
-    emitter: &Arc<TauriEventEmitter>,
-    hotkey_integration: &HotkeyIntegrationState,
-    device_name: Option<String>,
-) {
-    crate::info!("Wake word detected! Stopping pipeline and starting recording...");
-
-    // 1. Stop the listening pipeline and get the buffer for handoff
-    let shared_buffer = {
-        // Use try_lock to avoid deadlock with hotkey recording flow:
-        // If hotkey is stopping the pipeline, it holds the lock and waits for us.
-        // If we block on lock(), we'd deadlock. try_lock fails gracefully instead.
-        let mut pipeline = match listening_pipeline.try_lock() {
-            Ok(p) => p,
-            Err(_) => {
-                crate::warn!("Pipeline busy (likely hotkey recording), skipping wake word event");
-                return;
-            }
-        };
-
-        match pipeline.stop_and_get_buffer(audio_thread.as_ref()) {
-            Ok(Some(buffer)) => buffer,
-            Ok(None) => {
-                crate::error!("Pipeline had no buffer to hand off");
-                return;
-            }
-            Err(e) => {
-                crate::error!("Failed to stop pipeline: {:?}", e);
-                return;
-            }
-        }
-    };
-
-    // 2. Clear the buffer to prevent old audio bleeding into new recording
-    if let Ok(mut guard) = shared_buffer.lock() {
-        crate::debug!("[event_handler] Clearing buffer before recording ({} samples)", guard.len());
-        guard.clear();
-    }
-
-    // 3. Start recording with the cleared buffer
-    let recording_started = {
-        let mut manager = match recording_state.lock() {
-            Ok(m) => m,
-            Err(_) => {
-                crate::error!("Failed to lock recording manager");
-                return;
-            }
-        };
-
-        match manager.start_recording_with_buffer(16000, shared_buffer.clone()) {
-            Ok(_) => {
-                // Restart audio capture with the shared buffer
-                match audio_thread.start_with_device(shared_buffer.clone(), device_name.clone()) {
-                    Ok(_) => {
-                        crate::info!("Recording started with shared buffer");
-                        true
-                    }
-                    Err(e) => {
-                        crate::error!("Failed to restart audio capture: {:?}", e);
-                        let _ = manager.abort_recording(RecordingState::Idle);
-                        false
-                    }
-                }
-            }
-            Err(e) => {
-                crate::error!("Failed to start recording: {:?}", e);
-                false
-            }
-        }
-    };
-
-    // 4. If recording started, emit event and start detection
-    if recording_started {
-        // Emit recording_started event
-        emit_or_warn!(
-            app_handle,
-            event_names::RECORDING_STARTED,
-            RecordingStartedPayload {
-                timestamp: crate::events::current_timestamp(),
-            }
-        );
-
-        // Start silence/cancel detection (return_to_listening=true)
-        // Create transcription callback that calls HotkeyIntegration.spawn_transcription()
-        let hotkey_for_transcription = hotkey_integration.clone();
-        let transcription_callback: Box<dyn Fn(String) + Send + 'static> = Box::new(move |file_path: String| {
-            if let Ok(integration) = hotkey_for_transcription.lock() {
-                crate::info!("[event_handler] Spawning transcription via HotkeyIntegration");
-                integration.spawn_transcription(file_path);
-            } else {
-                crate::error!("[event_handler] Failed to lock HotkeyIntegration for transcription");
-            }
-        });
-
-        if let Ok(mut det) = recording_detectors.lock() {
-            if let Err(e) = det.start_monitoring(
-                shared_buffer,
-                recording_state.clone(),
-                audio_thread.clone(),
-                emitter.clone(),
-                true, // Auto-restart listening after wake word recording
-                Some(listening_pipeline.clone()), // Pass pipeline for restart
-                Some(transcription_callback), // Transcription callback
-            ) {
-                crate::warn!("Failed to start recording detectors: {}", e);
-            } else {
-                crate::info!("Recording detectors started");
-            }
-        }
-    }
-}
-
-/// Disable listening mode
-#[tauri::command]
-pub fn disable_listening(
-    app_handle: AppHandle,
-    listening_state: State<'_, ListeningState>,
-    recording_state: State<'_, ProductionState>,
-    listening_pipeline: State<'_, ListeningPipelineState>,
-    audio_thread: State<'_, AudioThreadState>,
-) -> Result<(), String> {
-    let result = disable_listening_impl(
-        listening_state.as_ref(),
-        recording_state.as_ref(),
-        listening_pipeline.as_ref(),
-        audio_thread.as_ref(),
-    );
-
-    // Emit event on success
-    if result.is_ok() {
-        emit_or_warn!(
-            app_handle,
-            listening_events::LISTENING_STOPPED,
-            listening_events::ListeningStoppedPayload {
-                timestamp: crate::events::current_timestamp(),
-            }
-        );
-    }
-
-    result
-}
-
-/// Get the current listening status
-#[tauri::command]
-pub fn get_listening_status(
-    listening_state: State<'_, ListeningState>,
-    recording_state: State<'_, ProductionState>,
-) -> Result<ListeningStatus, String> {
-    get_listening_status_impl(listening_state.as_ref(), recording_state.as_ref())
-}
-
-// =============================================================================
 // Audio Device Commands
 // =============================================================================
 
@@ -814,6 +436,37 @@ pub fn start_audio_monitor(
 #[tauri::command]
 pub fn stop_audio_monitor(monitor_state: State<'_, AudioMonitorState>) -> Result<(), String> {
     monitor_state.stop()
+}
+
+/// Initialize audio monitor at app startup
+///
+/// Pre-warms the AVAudioEngine so that audio settings UI is instant when opened.
+/// This is called during app initialization to eliminate UI jank.
+/// Gracefully returns Ok if no audio devices are available.
+#[tauri::command]
+pub fn init_audio_monitor(
+    app_handle: AppHandle,
+    monitor_state: State<'_, AudioMonitorState>,
+) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+
+    // Check if any audio devices are available
+    let devices = crate::audio::list_input_devices();
+    if devices.is_empty() {
+        crate::info!("No audio devices available, skipping audio monitor pre-initialization");
+        return Ok(());
+    }
+
+    // Read saved device from settings store
+    let settings_file = get_settings_file(&app_handle);
+    let device_name = app_handle
+        .store(&settings_file)
+        .ok()
+        .and_then(|store| store.get("audio.selectedDevice"))
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+    // Pre-initialize the audio engine
+    monitor_state.init(device_name)
 }
 
 // =============================================================================

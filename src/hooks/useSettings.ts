@@ -7,12 +7,6 @@ import {
 } from "../stores/appStore";
 import { getSettingsFile } from "../lib/settingsFile";
 
-/** Settings related to listening mode */
-export interface ListeningSettings {
-  enabled: boolean;
-  autoStartOnLaunch: boolean;
-}
-
 /** Settings related to keyboard shortcuts */
 export interface ShortcutSettings {
   distinguishLeftRight: boolean;
@@ -20,17 +14,12 @@ export interface ShortcutSettings {
 
 /** All application settings */
 export interface AppSettings {
-  listening: ListeningSettings;
   audio: AudioSettings;
   shortcuts: ShortcutSettings;
 }
 
 /** Default settings for fresh installations */
 export const DEFAULT_SETTINGS: AppSettings = {
-  listening: {
-    enabled: false,
-    autoStartOnLaunch: false,
-  },
   audio: DEFAULT_AUDIO_SETTINGS,
   shortcuts: {
     distinguishLeftRight: false,
@@ -41,11 +30,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export interface UseSettingsReturn {
   settings: AppSettings;
   isLoading: boolean;
-  updateListeningEnabled: (enabled: boolean) => Promise<void>;
-  updateAutoStartListening: (enabled: boolean) => Promise<void>;
   updateAudioDevice: (deviceName: string | null) => Promise<void>;
   updateDistinguishLeftRight: (enabled: boolean) => Promise<void>;
-  updateNoiseSuppression: (enabled: boolean) => Promise<void>;
 }
 
 /**
@@ -62,31 +48,17 @@ export async function initializeSettings(): Promise<void> {
   const setSettings = useAppStore.getState().setSettings;
 
   // Load existing settings or use defaults
-  const listeningEnabled = await store.get<boolean>("listening.enabled");
-  const autoStartOnLaunch = await store.get<boolean>(
-    "listening.autoStartOnLaunch"
-  );
   const audioSelectedDevice = await store.get<string | null>(
     "audio.selectedDevice"
-  );
-  const audioNoiseSuppression = await store.get<boolean>(
-    "audio.noiseSuppression"
   );
   const distinguishLeftRight = await store.get<boolean>(
     "shortcuts.distinguishLeftRight"
   );
 
   const settings: AppSettings = {
-    listening: {
-      enabled: listeningEnabled ?? DEFAULT_SETTINGS.listening.enabled,
-      autoStartOnLaunch:
-        autoStartOnLaunch ?? DEFAULT_SETTINGS.listening.autoStartOnLaunch,
-    },
     audio: {
       selectedDevice:
         audioSelectedDevice ?? DEFAULT_SETTINGS.audio.selectedDevice,
-      noiseSuppression:
-        audioNoiseSuppression ?? DEFAULT_SETTINGS.audio.noiseSuppression,
     },
     shortcuts: {
       distinguishLeftRight:
@@ -147,18 +119,6 @@ export function useSettings(): UseSettingsReturn {
   const settings = settingsCache ?? DEFAULT_SETTINGS;
   const isLoading = !isSettingsLoaded;
 
-  const updateListeningEnabled = async (enabled: boolean): Promise<void> => {
-    await updateSettingInBothStores("listening", "enabled", enabled);
-  };
-
-  const updateAutoStartListening = async (enabled: boolean): Promise<void> => {
-    await updateSettingInBothStores(
-      "listening",
-      "autoStartOnLaunch",
-      enabled
-    );
-  };
-
   const updateAudioDevice = async (
     deviceName: string | null
   ): Promise<void> => {
@@ -175,17 +135,10 @@ export function useSettings(): UseSettingsReturn {
     );
   };
 
-  const updateNoiseSuppression = async (enabled: boolean): Promise<void> => {
-    await updateSettingInBothStores("audio", "noiseSuppression", enabled);
-  };
-
   return {
     settings,
     isLoading,
-    updateListeningEnabled,
-    updateAutoStartListening,
     updateAudioDevice,
     updateDistinguishLeftRight,
-    updateNoiseSuppression,
   };
 }

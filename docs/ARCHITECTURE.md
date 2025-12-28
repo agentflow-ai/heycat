@@ -151,7 +151,7 @@ export async function setupEventBridge(queryClient: QueryClient, store: AppStore
 │  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                           #[tauri::command] Handlers                              │ │
 │  │                                                                                   │ │
-│  │  start_recording()  stop_recording()  list_recordings()  enable_listening()      │ │
+│  │  start_recording()  stop_recording()  list_recordings()  transcribe()           │ │
 │  │         │                  │                 │                   │                │ │
 │  └─────────┼──────────────────┼─────────────────┼───────────────────┼────────────────┘ │
 │            │                  │                 │                   │                  │
@@ -159,25 +159,25 @@ export async function setupEventBridge(queryClient: QueryClient, store: AppStore
 │  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                              Core Business Logic                                  │ │
 │  │                                                                                   │ │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                   │ │
-│  │  │ RecordingManager│  │ ListeningManager│  │ TranscriptionSvc│                   │ │
-│  │  │                 │  │                 │  │                 │                   │ │
-│  │  │ Arc<Mutex<T>>   │  │ Arc<Mutex<T>>   │  │                 │                   │ │
-│  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘                   │ │
-│  │           │                    │                    │                            │ │
-│  └───────────┼────────────────────┼────────────────────┼────────────────────────────┘ │
-│              │                    │                    │                              │
-│              ▼                    ▼                    ▼                              │
+│  │  ┌─────────────────┐                         ┌─────────────────┐                  │ │
+│  │  │ RecordingManager│                         │ TranscriptionSvc│                  │ │
+│  │  │                 │                         │                 │                  │ │
+│  │  │ Arc<Mutex<T>>   │                         │                 │                  │ │
+│  │  └────────┬────────┘                         └────────┬────────┘                  │ │
+│  │           │                                           │                           │ │
+│  └───────────┼───────────────────────────────────────────┼───────────────────────────┘ │
+│              │                                           │                             │
+│              ▼                                           ▼                             │
 │  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                            app_handle.emit()                                      │ │
 │  │                                                                                   │ │
-│  │   emit("recording_started")  emit("listening_started")  emit("transcription_done")│ │
-│  │              │                        │                          │                │ │
-│  └──────────────┼────────────────────────┼──────────────────────────┼────────────────┘ │
-│                 │                        │                          │                  │
-└─────────────────┼────────────────────────┼──────────────────────────┼──────────────────┘
-                  │                        │                          │
-                  └────────────────────────┴──────────────────────────┘
+│  │   emit("recording_started")          emit("transcription_done")                   │ │
+│  │              │                                     │                              │ │
+│  └──────────────┼─────────────────────────────────────┼──────────────────────────────┘ │
+│                 │                                     │                                │
+└─────────────────┼─────────────────────────────────────┼──────────────────────────────────┘
+                  │                                     │
+                  └─────────────────────────────────────┘
                                            │
                               Tauri IPC (events to frontend)
                                            │
@@ -195,8 +195,8 @@ export async function setupEventBridge(queryClient: QueryClient, store: AppStore
 | **URL State** | React Router (`src/routes.tsx`) | Navigation, page routing | Current page, route params |
 | **Client State** | Zustand (`src/stores/appStore.ts`) | UI state, settings cache | Overlay mode, transcription status |
 | **Server State** | Tanstack Query (`src/lib/queryClient.ts`) | Cached backend data | Recording state, recordings list |
-| **Persistent** | Tauri Store (`settings.json`) | App settings | `listening.enabled`, `audio.selectedDevice`, `audio.noiseSuppression` |
-| **Backend Session** | `Arc<Mutex<T>>` | Runtime state | RecordingManager, ListeningManager |
+| **Persistent** | Tauri Store (`settings.json`) | App settings | `audio.selectedDevice` |
+| **Backend Session** | `Arc<Mutex<T>>` | Runtime state | RecordingManager |
 
 ### Key Principles
 
@@ -215,7 +215,7 @@ const { isRecording, isLoading, error } = useRecordingState();
 const overlayMode = useOverlayMode();
 
 // Settings via useSettings (Zustand cache + Tauri Store)
-const { settings, updateListeningEnabled } = useSettings();
+const { settings, updateAudioDevice } = useSettings();
 
 // High-frequency transient state
 const [audioLevel, setAudioLevel] = useState(0);
@@ -245,7 +245,6 @@ fn start_recording(state: State<'_, ProductionState>) {
 |-------------|---------|--------------|
 | UI Button | Frontend (has context) | `invoke()` → command → `start_recording_impl` |
 | Hotkey | Backend (no frontend context) | handler → `start_recording_impl` (store fallback) |
-| Wake Word | Backend (no frontend context) | detector → `start_recording_impl` (store fallback) |
 
 **Rule:** All paths must access same settings → Backend paths use store fallback pattern
 
@@ -267,31 +266,133 @@ let device_name = device_name.or_else(|| {
 ## 4. Application State Machine
 
 ```
-IDLE --enable_listening--> LISTENING --wake/hotkey--> RECORDING --stop--> PROCESSING
-                               ↑                                              |
-                               └──────────── recording_done ──────────────────┘
-                               (returns to listening if was listening)
+IDLE --hotkey/button--> RECORDING --stop--> PROCESSING --done--> IDLE
 ```
 
-Events emitted at each transition for UI sync.
+The application uses push-to-talk recording. Events are emitted at each transition for UI sync.
 
 ---
 
 ## 5. Audio System Architecture
 
+### Overview
+
+heycat uses **native macOS AVFoundation** for audio capture via a Swift bridge. This provides:
+- Native 16kHz mono capture (no resampling needed)
+- Reliable device enumeration and selection
+- Minimal latency and efficient resource usage
+- macOS-specific optimizations (AVAudioEngine)
+
+### Architecture
+
 ```
-Audio Subsystem
-├── SharedDenoiser (loaded at startup, Arc<SharedDenoiser>)
-│   └── DTLN noise suppression, reused across recordings, reset() between uses
-│   └── Controlled by audio.noiseSuppression setting (default: enabled)
-├── Listening Pipeline (background)
-│   └── wake word detection, VAD, continuous analysis → triggers recording
+Audio Subsystem (macOS-only via AVFoundation)
+├── Swift Bridge (src-tauri/swift-lib/Sources/swift-lib/)
+│   ├── lib.swift              # FFI entry points (swift-rs integration)
+│   ├── SharedAudioEngine.swift # Unified AVAudioEngine for capture + monitoring
+│   └── AudioDevices.swift      # Device enumeration via Core Audio
+├── Rust FFI Layer (src-tauri/src/swift.rs)
+│   └── Safe wrappers around Swift functions
 ├── Recording Manager (on-demand)
-│   └── audio capture, WAV encoding, file saving, transcription
-└── AudioThreadHandle (shared resource, one active at a time)
-    ├── start_with_device_and_denoiser(), stop()
-    └── CPAL Backend (cross-platform, integrates denoiser in audio callback)
+│   └── Audio capture, WAV encoding, file saving, transcription
+└── AudioThreadHandle (shared resource)
+    └── SwiftBackend (calls Swift FFI for AVFoundation operations)
 ```
+
+### Swift-Rust FFI Bridge
+
+The audio system uses [swift-rs](https://github.com/nicklockwood/swift-rs) for Swift-Rust interop:
+
+```rust
+// src-tauri/src/swift.rs - FFI function declarations
+swift_rs::swift!(fn swift_start_audio_capture(device_name: &SRString) -> bool);
+swift_rs::swift!(fn swift_stop_audio_capture() -> i64);
+swift_rs::swift!(fn swift_get_captured_samples() -> i64);
+```
+
+```swift
+// src-tauri/swift-lib/Sources/swift-lib/SharedAudioEngine.swift - Native implementation
+@_cdecl("swift_start_audio_capture")
+public func startAudioCapture(deviceName: SRString?) -> Bool {
+    let device = deviceName?.toString()
+    return SharedAudioEngine.shared.startCapture(deviceName: device)
+}
+```
+
+**Build Integration:** The `src-tauri/build.rs` uses `SwiftLinker` to compile Swift sources and link them into the Tauri binary.
+
+### Audio Capture Flow
+
+```
+User Action (UI Button / Hotkey)
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  RecordingManager.start_recording()                              │
+│    └── AudioThreadHandle.start_with_device()                     │
+│          └── SwiftBackend.start()                                │
+│                └── swift_start_audio_capture()  ──────────────┐  │
+└──────────────────────────────────────────────────────────────┼──┘
+                                                               │
+                              ┌────────────────────────────────┼──┐
+                              │  Swift Layer (AVFoundation)    │  │
+                              │                                ▼  │
+                              │  ┌──────────────────────────────┐ │
+                              │  │ SharedAudioEngine            │ │
+                              │  │   └── AVAudioEngine          │ │
+                              │  │        └── Input Tap (16kHz) │ │
+                              │  │             └── Buffer       │ │
+                              │  └──────────────────────────────┘ │
+                              └───────────────────────────────────┘
+                                                               │
+         ┌─────────────────────────────────────────────────────┘
+         ▼
+RecordingManager.stop_recording()
+    └── swift_stop_audio_capture()
+          └── Returns captured samples
+                └── WAV encoding → Transcription
+```
+
+### Device Enumeration
+
+Audio devices are enumerated via AVFoundation's AVCaptureDevice API:
+
+```rust
+// List available audio input devices
+let devices = swift::list_audio_devices();
+// Returns Vec<SwiftAudioDevice> with name and is_default flag
+```
+
+### Audio Level Monitoring
+
+Real-time audio levels (0-100) for UI visualization are provided independently of recording:
+
+```rust
+use crate::swift::{start_audio_monitor, get_audio_level, stop_audio_monitor, AudioMonitorResult};
+
+// Start monitoring (returns Result-like enum)
+match start_audio_monitor(device_name) {
+    AudioMonitorResult::Started => {
+        // Poll for levels during monitoring
+        let level: u8 = get_audio_level();  // 0-100
+    }
+    AudioMonitorResult::Failed(error) => {
+        // Handle error
+    }
+}
+
+// Stop monitoring
+stop_audio_monitor();
+```
+
+### Build Requirements
+
+**macOS-only:** The AVFoundation audio backend requires macOS. Build with:
+```bash
+cargo build --release  # macOS only
+```
+
+The Swift sources are compiled automatically by `build.rs` using `SwiftLinker`.
 
 ---
 
@@ -322,11 +423,20 @@ QueryClientProvider → ToastProvider → AppInitializer → RouterProvider
 ### Backend
 
 ```
-src-tauri/src/
-├── lib.rs        # App setup, command registration
-├── commands/     # Tauri IPC handlers (mod.rs + logic.rs pattern)
-├── events.rs     # Event types + emitter traits
-└── [feature]/    # Feature modules (recording/, listening/, audio/, etc.)
+src-tauri/
+├── swift-lib/                # Swift package (AVFoundation audio)
+│   ├── Package.swift         # Swift package manifest
+│   └── Sources/swift-lib/
+│       ├── lib.swift              # FFI entry points
+│       ├── SharedAudioEngine.swift # Unified capture + monitoring via AVAudioEngine
+│       └── AudioDevices.swift     # Device enumeration via Core Audio
+├── src/
+│   ├── lib.rs        # App setup, command registration
+│   ├── swift.rs      # Safe Rust wrappers for Swift FFI
+│   ├── commands/     # Tauri IPC handlers (mod.rs + logic.rs pattern)
+│   ├── events.rs     # Event types + emitter traits
+│   └── [feature]/    # Feature modules (recording/, audio/, transcription/, etc.)
+└── build.rs          # SwiftLinker integration for Swift compilation
 ```
 
 > **Pattern:** The `commands/` module uses `mod.rs` + `logic.rs` to separate Tauri-specific wrappers from testable implementation logic.

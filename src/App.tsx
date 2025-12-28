@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { RouterProvider } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { queryClient } from "./lib/queryClient";
 import { router } from "./routes";
 import { setupEventBridge } from "./lib/eventBridge";
@@ -23,7 +24,16 @@ function AppInitializer({ children }: { children: ReactNode }) {
 
     // Initialize settings from Tauri Store into Zustand
     // This happens before event bridge setup to ensure settings are available
-    initializeSettings().then(() => {
+    initializeSettings().then(async () => {
+      // Pre-initialize audio monitor for instant audio settings UI
+      // This starts the AVAudioEngine so it's ready when user opens settings
+      try {
+        await invoke("init_audio_monitor");
+      } catch (e) {
+        console.warn("Failed to pre-initialize audio monitor:", e);
+        // Non-fatal - monitor will start on-demand when settings opened
+      }
+
       // Initialize event bridge with query client and store
       const store = useAppStore.getState();
       setupEventBridge(queryClient, store).then((cleanupFn) => {

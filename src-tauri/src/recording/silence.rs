@@ -14,7 +14,7 @@ use voice_activity_detector::VoiceActivityDetector;
 pub enum SilenceStopReason {
     /// Recording stopped because user finished speaking (silence after speech)
     SilenceAfterSpeech,
-    /// Recording stopped because no speech was detected after wake word (false activation)
+    /// Recording stopped because no speech was detected (false activation)
     NoSpeechTimeout,
 }
 
@@ -25,7 +25,7 @@ pub struct SilenceConfig {
     pub vad_speech_threshold: f32,
     /// Duration of silence before stopping recording in milliseconds (default: 2000)
     pub silence_duration_ms: u32,
-    /// Duration before canceling if no speech detected after wake word in milliseconds (default: 5000)
+    /// Duration before canceling if no speech detected in milliseconds (default: 5000)
     pub no_speech_timeout_ms: u32,
     /// Duration of pause that doesn't trigger stop in milliseconds (default: 1000)
     #[allow(dead_code)] // Reserved for future pause detection refinement
@@ -59,7 +59,7 @@ pub enum SilenceDetectionResult {
 ///
 /// Processes audio samples and determines when to stop recording based on:
 /// - Silence after speech (user finished talking)
-/// - No speech timeout (false activation after wake word)
+/// - No speech timeout (false activation)
 pub struct SilenceDetector {
     config: SilenceConfig,
     /// Whether we've detected any speech since recording started
@@ -243,17 +243,6 @@ mod tests {
     use super::*;
     use std::thread;
     use std::time::Duration;
-
-    // Tests removed per docs/TESTING.md:
-    // - test_silence_config_default: Obvious default values
-    // - test_silence_detector_new: Obvious default
-    // - test_silence_detector_default: Obvious default (duplicate)
-    // - test_silence_stop_reason_debug: Debug trait test
-    // - test_silence_detection_result_eq: Type system guarantee (#[derive(PartialEq)])
-    // - test_vad_initialized: Implementation detail
-
-    // ==================== Behavior Tests ====================
-    // These test actual user-visible behavior
 
     #[test]
     fn test_reset_clears_state() {

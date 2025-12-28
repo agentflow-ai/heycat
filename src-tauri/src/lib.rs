@@ -11,12 +11,12 @@ mod events;
 mod hotkey;
 mod keyboard;
 mod keyboard_capture;
-mod listening;
 mod model;
 mod parakeet;
 mod paths;
 mod recording;
 mod shutdown;
+mod swift;
 mod transcription;
 mod voice_commands;
 mod window_context;
@@ -177,39 +177,20 @@ pub fn run() {
             // Manage the state for Tauri commands
             app.manage(recording_state.clone());
 
-            // Create and manage listening state, restoring persisted auto-start setting
-            let listening_enabled = app
-                .store(&settings_file)
-                .ok()
-                .and_then(|store| store.get("listening.autoStartOnLaunch"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            debug!("Restored listening.autoStartOnLaunch from store: {}", listening_enabled);
-            let listening_state = Arc::new(Mutex::new(
-                listening::ListeningManager::with_enabled(listening_enabled),
-            ));
-            app.manage(listening_state.clone());
-
             // Create and manage audio monitor state for device testing
             let audio_monitor = Arc::new(audio::AudioMonitorHandle::spawn());
-            app.manage(audio_monitor);
+            app.manage(audio_monitor.clone());
 
             // Create shared transcription model (single ~3GB Parakeet model)
-            // This model is shared between all transcription consumers and WakeWordDetector
+            // This model is shared between all transcription consumers
             debug!("Creating SharedTranscriptionModel...");
             let shared_transcription_model = Arc::new(parakeet::SharedTranscriptionModel::new());
 
-            // Create listening pipeline with shared model
-            let mut pipeline = listening::ListeningPipeline::new();
-            pipeline.set_shared_model((*shared_transcription_model).clone());
-            let listening_pipeline = Arc::new(Mutex::new(pipeline));
-            app.manage(listening_pipeline.clone());
-
-            // Create and manage recording detectors (for silence/cancel detection during recording)
+            // Create and manage recording detectors (for silence detection during recording)
             // Use worktree-aware recordings directory for data isolation
             let recordings_dir = paths::get_recordings_dir(worktree_context.as_ref())
                 .unwrap_or_else(|_| std::path::PathBuf::from(".").join("heycat").join("recordings"));
-            let recording_detectors = Arc::new(Mutex::new(listening::RecordingDetectors::with_recordings_dir(recordings_dir.clone())));
+            let recording_detectors = Arc::new(Mutex::new(recording::RecordingDetectors::with_recordings_dir(recordings_dir.clone())));
             app.manage(recording_detectors.clone());
 
             // Create event emitter, audio thread, and hotkey integration
@@ -218,25 +199,8 @@ pub fn run() {
             let audio_thread = Arc::new(audio::AudioThreadHandle::spawn());
             debug!("Audio thread spawned");
 
-            // Initialize shared denoiser at startup (eliminates 2s delay on each recording)
-            // Graceful degradation: if loading fails, recordings work without noise suppression
-            debug!("Loading shared DTLN denoiser...");
-            let shared_denoiser = match audio::SharedDenoiser::try_load() {
-                Ok(denoiser) => {
-                    info!("Shared DTLN denoiser loaded successfully (eliminates 2s recording delay)");
-                    Some(Arc::new(denoiser))
-                }
-                Err(e) => {
-                    warn!("Failed to load shared denoiser, recordings will work without noise suppression: {}", e);
-                    None
-                }
-            };
-
             // Manage audio thread state for Tauri commands
             app.manage(audio_thread.clone());
-
-            // Manage shared denoiser for Tauri commands
-            app.manage(shared_denoiser.clone());
 
             // Manage shared transcription model for Tauri commands
             app.manage(shared_transcription_model.clone());
@@ -401,12 +365,10 @@ pub fn run() {
             >::new(recording_emitter)
                 .with_app_handle(app.handle().clone())
                 .with_audio_thread(audio_thread)
-                .with_shared_denoiser(shared_denoiser)
+                .with_audio_monitor(audio_monitor)
                 .with_shared_transcription_model(shared_transcription_model)
                 .with_transcription_emitter(emitter)
                 .with_recording_state(recording_state.clone())
-                .with_listening_state(listening_state)
-                .with_listening_pipeline(listening_pipeline.clone())
                 .with_recording_detectors(recording_detectors.clone())
                 .with_recordings_dir(recordings_dir)
                 .with_shortcut_backend(escape_backend)
@@ -577,12 +539,10 @@ pub fn run() {
             commands::list_recordings,
             commands::delete_recording,
             commands::transcribe_file,
-            commands::enable_listening,
-            commands::disable_listening,
-            commands::get_listening_status,
             commands::list_audio_devices,
             commands::start_audio_monitor,
             commands::stop_audio_monitor,
+            commands::init_audio_monitor,
             model::check_parakeet_model_status,
             model::download_model,
             voice_commands::get_commands,
