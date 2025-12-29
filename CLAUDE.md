@@ -37,7 +37,7 @@ You may never use npm or npx, always use bun or bunx.
 
 
 ### TCR (Test-Commit-Refactor) - Writing and Running tests
-**When:** Writing tests, Running tests, checking coverage, test-driven development. You will always run and write tests when working with feature specs or bugs, ensure to read this before you begin work on any such tasks. You must load this file whenever anything related to testing is being done.
+**When:** Writing tests, Running tests, checking coverage, test-driven development. You will always use tcr to run and write tests when working with feature specs or bugs, ensure to read this before you begin work on any such tasks. You must load this file whenever anything related to testing is being done.
 **File:** docs/TESTING.md
 
 ### Review Independence

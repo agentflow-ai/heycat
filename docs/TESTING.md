@@ -49,35 +49,8 @@ it("returns stable function references", async () => {
 **Why these are bad:**
 - Listener setup/cleanup is a React/framework implementation detail
 - "Stable function references" tests React's `useCallback` internals
-- If we refactor to use a different event system, these tests break even though behavior is unchanged
-- Users don't care about listener counts; they care whether recording works
-
-### Bad: Testing Obvious Defaults
-
-```rust
-// state_test.rs - redundant default tests
-#[test]
-fn test_new_manager_starts_idle() {
-    let manager = RecordingManager::new();
-    assert_eq!(manager.get_state(), RecordingState::Idle);
-}
-
-#[test]
-fn test_default_manager_starts_idle() {
-    let manager = RecordingManager::default();
-    assert_eq!(manager.get_state(), RecordingState::Idle);
-}
-
-#[test]
-fn test_default_state_is_idle() {
-    assert_eq!(RecordingState::default(), RecordingState::Idle);
-}
-```
-
-**Why these are bad:**
-- Three tests verifying the same obvious fact
-- The default state being Idle is implicitly verified by every other test
-- If the default changed, many other tests would fail anyway
+- Tests break on refactoring even when behavior is unchanged
+- Multiple tests for obvious defaults (like initial state) are redundant—other tests verify them implicitly
 
 ### Good: Testing User-Visible Behavior
 
@@ -123,39 +96,15 @@ it("sets error state when startRecording fails", async () => {
 - Tests complete user flows: start recording, see result
 - Error test verifies user-visible error state, not internal error handling
 - Implementation could change (different event names, different invoke signature) but behavior test stays valid
-
-### Good: Testing Complete Workflows
-
-```rust
-// state_test.rs - workflow test
-#[test]
-fn test_full_cycle_idle_recording_processing_idle() {
-    let mut manager = RecordingManager::new();
-
-    // Idle -> Recording
-    assert!(manager.start_recording(TARGET_SAMPLE_RATE).is_ok());
-    assert_eq!(manager.get_state(), RecordingState::Recording);
-
-    // Recording -> Processing
-    assert!(manager.transition_to(RecordingState::Processing).is_ok());
-    assert_eq!(manager.get_state(), RecordingState::Processing);
-
-    // Processing -> Idle
-    assert!(manager.transition_to(RecordingState::Idle).is_ok());
-    assert_eq!(manager.get_state(), RecordingState::Idle);
-}
-```
-
-**Why this is good:**
-- Tests the complete recording lifecycle that users experience
-- One test replaces several small state transition tests
-- Implicitly verifies defaults, transitions, and state machine correctness
+- Same principle in Rust: one `test_complete_recording_flow()` replaces multiple granular state tests
 
 ---
 
 ## Testing Patterns for Dataflow Architecture
 
-The frontend uses Tanstack Query for server state, Zustand for client state, and an Event Bridge for routing backend events. Here are the patterns for testing each layer.
+The frontend uses Tanstack Query for server state, Zustand for client state, and an Event Bridge for routing backend events.
+
+> **Complete examples:** `src/hooks/useRecording.test.tsx`, `src/stores/__tests__/appStore.test.ts`, `src/lib/__tests__/eventBridge.test.ts`, `src/hooks/useSettings.test.ts`
 
 ### Testing Tanstack Query Hooks
 
@@ -189,8 +138,6 @@ await act(async () => {
 expect(mockInvoke).toHaveBeenCalledWith("start_recording", { deviceName: undefined });
 ```
 
-> See `src/hooks/useRecording.test.tsx` for complete examples.
-
 ### Testing Zustand Stores
 
 Reset store state in `beforeEach` to ensure test isolation:
@@ -210,8 +157,6 @@ act(() => {
 });
 expect(useAppStore.getState().listening.isWakeWordDetected).toBe(true);
 ```
-
-> See `src/stores/__tests__/appStore.test.ts` for complete examples.
 
 ### Testing Event Bridge Integration
 
@@ -240,8 +185,6 @@ expect(invalidateSpy).toHaveBeenCalledWith({
   queryKey: queryKeys.tauri.getRecordingState,
 });
 ```
-
-> See `src/lib/__tests__/eventBridge.test.ts` for complete examples.
 
 ### Testing Dual-Write Settings
 
@@ -274,22 +217,11 @@ expect(mockStore.save).toHaveBeenCalled();
 expect(result.current.settings.listening.enabled).toBe(true);
 ```
 
-> See `src/hooks/useSettings.test.ts` for complete examples.
-
 ---
 
 ## Coverage Targets
 
-**Target: 60% line and function coverage**
-
-This threshold reflects our smoke-testing philosophy: cover the most valuable paths without pursuing exhaustive coverage.
-
-### What 60% Coverage Means
-
-- Cover main success paths (happy paths)
-- Cover primary error handling paths
-- Cover critical edge cases
-- Don't aim for 100%; diminishing returns set in quickly
+**Target: 60% line and function coverage** — cover happy paths and primary error handling without pursuing exhaustive coverage.
 
 ### Running Coverage
 
@@ -319,21 +251,9 @@ cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-funct
 ReferenceError: document is not defined
 ```
 
-**All TCR commands should use `bun run test`:**
-```bash
-# Correct
-bun tcr.ts check "bun run test"
-bun tcr.ts check "bun run test:coverage"
-
-# WRONG - will fail
-bun tcr.ts check "bun test"
-```
-
 ---
 
 ## TCR Commands
-
-TCR (Test-Commit-Refactor) enforces test discipline. Invoke the `devloop:tcr` skill for details.
 
 ### Quick Tests (specs and spec reviews)
 Fast feedback during development - no coverage overhead:
@@ -405,21 +325,12 @@ Should I write a test for this?
 
 ## What NOT to Test
 
-### Skip These Categories
-
 1. **Framework internals**: React's useCallback memoization, listener setup/cleanup counts
 2. **Obvious defaults**: Initial state values that are implicitly tested elsewhere
 3. **Display/Debug traits**: `format!("{}", error)` - if it compiles, it works
 4. **Serialization round-trips**: Derive macros handle this correctly
 5. **Getter/setter methods**: Unless they have complex logic
-
-### Signs of a Low-Value Test
-
-- Test name includes "should exist" or "should be defined"
-- Test only checks a value equals itself
-- Test duplicates what the type system guarantees
-- Test breaks when you refactor but behavior is unchanged
-- Test requires extensive mocking of internal components
+6. **Low-value tests**: name says "should exist", checks value equals itself, duplicates type system guarantees, breaks on refactor, or requires extensive internal mocking
 
 ## Refactoring Existing Tests
 
@@ -430,18 +341,4 @@ When touching existing test files, apply these principles:
 3. **Keep**: Tests for user-visible behavior, error handling, edge cases
 4. **Rewrite**: Tests that are behavior-focused but overly fragile
 
-### Example Consolidation
-
-Before (5 tests):
-```rust
-test_new_manager_starts_idle()
-test_default_manager_starts_idle()
-test_default_state_is_idle()
-test_start_recording_from_idle()
-test_valid_transition_recording_to_processing()
-```
-
-After (1 test):
-```rust
-test_complete_recording_flow()  // Covers the full cycle
-```
+**Example:** 5 tests (`test_new_manager_starts_idle`, `test_default_manager_starts_idle`, `test_default_state_is_idle`, `test_start_recording_from_idle`, `test_valid_transition_recording_to_processing`) → 1 test: `test_complete_recording_flow()` covering the full cycle.
