@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:static": "vite build && tauri dev --no-watch",
+    "build:wasm": "cd spacetimedb && cargo build --release --target wasm32-unknown-unknown",
+    "dev:static": "bun run build:wasm && vite build && tauri dev --no-watch",
     "build": "tsgo && vite build",
     "preview": "vite preview",
     "tauri": "bun scripts/tauri-wrapper.ts",
