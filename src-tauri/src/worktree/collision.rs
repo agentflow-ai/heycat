@@ -24,10 +24,12 @@ const LOCK_FILE_NAME: &str = "heycat.lock";
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct LockInfo {
-    /// Process ID of the lock holder
+    /// Process ID of the lock holder (main heycat process)
     pub pid: u32,
     /// Timestamp when the lock was created (Unix epoch seconds)
     pub timestamp: u64,
+    /// Process ID of the SpacetimeDB sidecar (if running)
+    pub sidecar_pid: Option<u32>,
 }
 
 impl LockInfo {
@@ -39,6 +41,7 @@ impl LockInfo {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
+            sidecar_pid: None,
         }
     }
 
@@ -46,24 +49,32 @@ impl LockInfo {
     pub fn parse(content: &str) -> Option<Self> {
         let mut pid = None;
         let mut timestamp = None;
+        let mut sidecar_pid = None;
 
         for line in content.lines() {
             if let Some(value) = line.strip_prefix("pid: ") {
                 pid = value.trim().parse().ok();
             } else if let Some(value) = line.strip_prefix("timestamp: ") {
                 timestamp = value.trim().parse().ok();
+            } else if let Some(value) = line.strip_prefix("sidecar_pid: ") {
+                sidecar_pid = value.trim().parse().ok();
             }
         }
 
         Some(Self {
             pid: pid?,
             timestamp: timestamp?,
+            sidecar_pid,
         })
     }
 
     /// Serialize lock info to file content
     pub fn serialize(&self) -> String {
-        format!("pid: {}\ntimestamp: {}\n", self.pid, self.timestamp)
+        let mut content = format!("pid: {}\ntimestamp: {}\n", self.pid, self.timestamp);
+        if let Some(sidecar_pid) = self.sidecar_pid {
+            content.push_str(&format!("sidecar_pid: {}\n", sidecar_pid));
+        }
+        content
     }
 }
 
@@ -230,12 +241,96 @@ pub fn remove_lock_at(lock_file: &PathBuf) -> Result<(), CollisionError> {
     Ok(())
 }
 
-/// Clean up a stale lock file.
+/// Clean up a stale lock file and kill any associated sidecar process.
+///
+/// This function reads the lock file to get the sidecar PID (if any),
+/// kills the sidecar process, and then removes the lock file.
 ///
 /// # Arguments
 /// * `lock_file` - Path to the stale lock file to remove
 pub fn cleanup_stale_lock(lock_file: &PathBuf) -> Result<(), CollisionError> {
+    // Try to read and parse the lock file to get the sidecar PID
+    if let Ok(content) = fs::read_to_string(lock_file) {
+        if let Some(lock_info) = LockInfo::parse(&content) {
+            // Kill the sidecar process if it exists and is still running
+            if let Some(sidecar_pid) = lock_info.sidecar_pid {
+                if is_process_running(sidecar_pid) {
+                    crate::info!("Killing stale SpacetimeDB sidecar process (PID: {})", sidecar_pid);
+                    kill_process(sidecar_pid);
+                }
+            }
+        }
+    }
+
     remove_lock_at(lock_file)
+}
+
+/// Update the lock file with the sidecar PID.
+///
+/// This should be called after the SpacetimeDB sidecar starts successfully.
+///
+/// # Arguments
+/// * `worktree_context` - Optional worktree context for path resolution
+/// * `sidecar_pid` - The PID of the SpacetimeDB sidecar process
+pub fn update_lock_with_sidecar_pid(
+    worktree_context: Option<&WorktreeContext>,
+    sidecar_pid: u32,
+) -> Result<(), CollisionError> {
+    let data_dir =
+        paths::get_data_dir(worktree_context).map_err(|_| CollisionError::DataDirNotFound)?;
+    let lock_file = data_dir.join(LOCK_FILE_NAME);
+
+    // Read existing lock info
+    let content = fs::read_to_string(&lock_file)
+        .map_err(|e| CollisionError::LockFileError(format!("Failed to read lock file: {}", e)))?;
+
+    let mut lock_info = LockInfo::parse(&content)
+        .ok_or_else(|| CollisionError::LockFileError("Failed to parse lock file".to_string()))?;
+
+    // Update with sidecar PID
+    lock_info.sidecar_pid = Some(sidecar_pid);
+
+    // Write back
+    let mut file = fs::File::create(&lock_file)
+        .map_err(|e| CollisionError::LockFileError(format!("Failed to open lock file: {}", e)))?;
+
+    file.write_all(lock_info.serialize().as_bytes())
+        .map_err(|e| CollisionError::LockFileError(format!("Failed to write lock file: {}", e)))?;
+
+    crate::debug!("Updated lock file with sidecar PID: {}", sidecar_pid);
+    Ok(())
+}
+
+/// Kill a process by PID.
+///
+/// This is a best-effort operation - if it fails, we continue anyway.
+fn kill_process(pid: u32) {
+    #[cfg(unix)]
+    {
+        // First try SIGTERM for graceful shutdown
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        }
+
+        // Give it a moment to exit
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // If still running, use SIGKILL
+        if is_process_running(pid) {
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        // On Windows, use taskkill
+        let _ = Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+    }
 }
 
 /// Check if a process with the given PID is still running.

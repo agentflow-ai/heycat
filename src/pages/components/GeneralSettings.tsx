@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "../../lib/queryKeys";
 import { Card, CardContent, LabeledToggle, Button } from "../../components/ui";
 import { useSettings } from "../../hooks/useSettings";
 import { useToast } from "../../components/overlays";
@@ -23,27 +25,22 @@ function backendToDisplay(shortcut: string): string {
 export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
   const { settings, updateDistinguishLeftRight } = useSettings();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Local state for settings that don't have hooks yet
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [notifications, setNotifications] = useState(true);
 
-  // Shortcut state
-  const [currentShortcut, setCurrentShortcut] = useState("⌘⇧R");
+  // Fetch recording shortcut via React Query
+  const { data: backendShortcut } = useQuery({
+    queryKey: queryKeys.tauri.recordingShortcut,
+    queryFn: () => invoke<string>("get_recording_shortcut"),
+  });
+
+  const currentShortcut = backendShortcut ? backendToDisplay(backendShortcut) : "⌘⇧R";
 
   // Shortcut editor modal state
   const [isShortcutEditorOpen, setIsShortcutEditorOpen] = useState(false);
-
-  // Load current shortcut from backend on mount
-  useEffect(() => {
-    invoke<string>("get_recording_shortcut")
-      .then((backendShortcut) => {
-        setCurrentShortcut(backendToDisplay(backendShortcut));
-      })
-      .catch((error) => {
-        console.error("Failed to get recording shortcut:", error);
-      });
-  }, []);
 
   const handleLaunchAtLoginChange = async (checked: boolean) => {
     setLaunchAtLogin(checked);
@@ -172,10 +169,11 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
         onOpenChange={setIsShortcutEditorOpen}
         shortcutName="Toggle Recording"
         currentShortcut={currentShortcut}
-        onSave={async (displayShortcut, backendShortcut) => {
+        onSave={async (displayShortcut, newBackendShortcut) => {
           try {
-            await invoke("update_recording_shortcut", { newShortcut: backendShortcut });
-            setCurrentShortcut(displayShortcut);
+            await invoke("update_recording_shortcut", { newShortcut: newBackendShortcut });
+            // Invalidate to refetch the updated shortcut
+            await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.recordingShortcut });
             toast({
               type: "success",
               title: "Shortcut updated",

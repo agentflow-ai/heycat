@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "../lib/queryKeys";
 import { Play, ArrowRight } from "lucide-react";
 import {
   Card,
@@ -28,28 +30,14 @@ export function Dashboard({ onNavigate: onNavigateProp }: DashboardProps) {
   });
   const { models, downloadModel } = useMultiModelStatus();
 
-  // Recordings data
-  const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
-  const [recordingsLoading, setRecordingsLoading] = useState(true);
+  // Recordings data via React Query - auto-updates via event bridge
+  const { data: recordings = [], isLoading: recordingsLoading } = useQuery({
+    queryKey: queryKeys.tauri.listRecordings,
+    queryFn: () => invoke<RecordingInfo[]>("list_recordings"),
+  });
 
   // Commands count (placeholder until commands system exists)
   const [commandsCount] = useState(0);
-
-  // Fetch recordings on mount
-  useEffect(() => {
-    async function fetchRecordings() {
-      try {
-        setRecordingsLoading(true);
-        const result = await invoke<RecordingInfo[]>("list_recordings");
-        setRecordings(result);
-      } catch {
-        // Silently handle error - recordings list will be empty
-      } finally {
-        setRecordingsLoading(false);
-      }
-    }
-    fetchRecordings();
-  }, []);
 
   const handleRecordingToggle = async () => {
     if (isRecording) {

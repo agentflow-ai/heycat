@@ -10,7 +10,7 @@ pub use detector::{detect_worktree, WorktreeContext, WorktreeState, DEFAULT_SETT
 #[allow(unused_imports)]
 pub use collision::{
     check_collision, cleanup_stale_lock, create_lock, format_collision_error, remove_lock,
-    CollisionError, CollisionResult,
+    update_lock_with_sidecar_pid, CollisionError, CollisionResult,
 };
 
 #[cfg(test)]

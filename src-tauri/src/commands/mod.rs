@@ -26,9 +26,13 @@ use crate::events::{
 use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, StopReason, encode_wav, SystemFileWriter};
 use crate::parakeet::SharedTranscriptionModel;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
+use crate::spacetimedb::SpacetimeClient;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
+
+/// Type alias for SpacetimeDB client state
+pub type SpacetimeClientState = Arc<Mutex<Option<SpacetimeClient>>>;
 
 /// Helper macro to emit events with error logging
 macro_rules! emit_or_warn {
@@ -215,9 +219,11 @@ pub fn start_recording(
 /// After successfully stopping the recording, this command triggers transcription
 /// via the TranscriptionService. This enables button-initiated recordings to get
 /// the same transcription flow as hotkey-initiated recordings.
+/// Also stores recording metadata in SpacetimeDB if connected.
 #[tauri::command]
 pub fn stop_recording(
     app_handle: AppHandle,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     state: State<'_, ProductionState>,
     audio_thread: State<'_, AudioThreadState>,
     transcription_service: State<'_, TranscriptionServiceState>,
@@ -274,6 +280,28 @@ pub fn stop_recording(
             }
         }
 
+        // Store recording metadata in SpacetimeDB if connected
+        if !metadata.file_path.is_empty() {
+            if let Ok(client_guard) = spacetimedb_client.lock() {
+                if let Some(ref client) = *client_guard {
+                    if client.is_connected() {
+                        let recording_id = uuid::Uuid::new_v4().to_string();
+                        if let Err(e) = client.add_recording(
+                            recording_id,
+                            metadata.file_path.clone(),
+                            metadata.duration_secs,
+                            metadata.sample_count as u64,
+                            metadata.stop_reason.clone(),
+                        ) {
+                            crate::warn!("Failed to store recording in SpacetimeDB: {}", e);
+                        } else {
+                            crate::debug!("Recording metadata stored in SpacetimeDB");
+                        }
+                    }
+                }
+            }
+        }
+
         emit_or_warn!(
             app_handle,
             event_names::RECORDING_STOPPED,
@@ -323,8 +351,25 @@ pub fn list_recordings(app_handle: AppHandle) -> Result<Vec<RecordingInfo>, Stri
 }
 
 /// Delete a recording file
+///
+/// Also removes recording metadata from SpacetimeDB if connected.
 #[tauri::command]
-pub fn delete_recording(file_path: String) -> Result<(), String> {
+pub fn delete_recording(
+    spacetimedb_client: State<'_, SpacetimeClientState>,
+    file_path: String,
+) -> Result<(), String> {
+    // Try to delete from SpacetimeDB first (non-blocking, ignore errors)
+    if let Ok(client_guard) = spacetimedb_client.lock() {
+        if let Some(ref client) = *client_guard {
+            if client.is_connected() {
+                if let Err(e) = client.delete_recording_by_path(&file_path) {
+                    crate::debug!("SpacetimeDB recording delete (may not exist): {}", e);
+                }
+            }
+        }
+    }
+
+    // Delete the actual file
     delete_recording_impl(&file_path)
 }
 
@@ -712,6 +757,90 @@ pub fn open_accessibility_preferences() -> Result<(), String> {
 
     crate::info!("Opened Accessibility preferences");
     Ok(())
+}
+
+// =============================================================================
+// Transcription Storage Commands (SpacetimeDB)
+// =============================================================================
+
+/// Transcription record for frontend consumption
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TranscriptionInfo {
+    pub id: String,
+    pub recording_id: String,
+    pub text: String,
+    pub language: Option<String>,
+    pub model_version: String,
+    pub duration_ms: u64,
+    pub created_at: String,
+}
+
+/// List all transcriptions from SpacetimeDB
+///
+/// Returns all stored transcriptions if SpacetimeDB is connected,
+/// otherwise returns an empty list.
+#[tauri::command]
+pub fn list_transcriptions(
+    spacetimedb_client: State<'_, SpacetimeClientState>,
+) -> Result<Vec<TranscriptionInfo>, String> {
+    if let Ok(client_guard) = spacetimedb_client.lock() {
+        if let Some(ref client) = *client_guard {
+            if client.is_connected() {
+                return client
+                    .list_transcriptions()
+                    .map(|transcriptions| {
+                        transcriptions
+                            .into_iter()
+                            .map(|t| TranscriptionInfo {
+                                id: t.id,
+                                recording_id: t.recording_id,
+                                text: t.text,
+                                language: t.language,
+                                model_version: t.model_version,
+                                duration_ms: t.duration_ms,
+                                created_at: t.created_at,
+                            })
+                            .collect()
+                    })
+                    .map_err(|e| format!("Failed to list transcriptions: {}", e));
+            }
+        }
+    }
+    Ok(Vec::new())
+}
+
+/// Get transcriptions for a specific recording
+///
+/// Returns all transcriptions linked to the given recording ID.
+#[tauri::command]
+pub fn get_transcriptions_by_recording(
+    spacetimedb_client: State<'_, SpacetimeClientState>,
+    recording_id: String,
+) -> Result<Vec<TranscriptionInfo>, String> {
+    if let Ok(client_guard) = spacetimedb_client.lock() {
+        if let Some(ref client) = *client_guard {
+            if client.is_connected() {
+                return client
+                    .get_transcriptions_by_recording(&recording_id)
+                    .map(|transcriptions| {
+                        transcriptions
+                            .into_iter()
+                            .map(|t| TranscriptionInfo {
+                                id: t.id,
+                                recording_id: t.recording_id,
+                                text: t.text,
+                                language: t.language,
+                                model_version: t.model_version,
+                                duration_ms: t.duration_ms,
+                                created_at: t.created_at,
+                            })
+                            .collect()
+                    })
+                    .map_err(|e| format!("Failed to get transcriptions: {}", e));
+            }
+        }
+    }
+    Ok(Vec::new())
 }
 
 // =============================================================================

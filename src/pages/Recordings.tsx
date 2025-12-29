@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "../lib/queryKeys";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { Search } from "lucide-react";
 import {
@@ -29,9 +31,21 @@ export function Recordings(_props: RecordingsProps) {
     deviceName: settings.audio.selectedDevice,
   });
 
-  const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Fetch recordings via React Query - auto-updates via event bridge
+  const {
+    data: recordings = [],
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.tauri.listRecordings,
+    queryFn: () => invoke<RecordingInfo[]>("list_recordings"),
+  });
+
+  const error = queryError ? (queryError instanceof Error ? queryError.message : String(queryError)) : null;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterOption, setFilterOption] = useState<FilterOption>("all");
   const [sortOption, setSortOption] = useState<SortOption>("newest");
@@ -47,23 +61,6 @@ export function Recordings(_props: RecordingsProps) {
 
   // Playing state
   const [playingPath, setPlayingPath] = useState<string | null>(null);
-
-  const loadRecordings = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await invoke<RecordingInfo[]>("list_recordings");
-      setRecordings(result);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadRecordings();
-  }, [loadRecordings]);
 
   // Filter and sort recordings
   const filteredRecordings = useMemo(() => {
@@ -118,13 +115,9 @@ export function Recordings(_props: RecordingsProps) {
   const handleTranscribe = async (filePath: string) => {
     setTranscribingPath(filePath);
     try {
-      const text = await invoke<string>("transcribe_file", { filePath });
-      // Update the recording with the transcription
-      setRecordings((prev) =>
-        prev.map((rec) =>
-          rec.file_path === filePath ? { ...rec, transcription: text } : rec
-        )
-      );
+      await invoke<string>("transcribe_file", { filePath });
+      // Invalidate to refetch with updated transcription
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listRecordings });
       toast({
         type: "success",
         title: "Transcription complete",
@@ -176,7 +169,8 @@ export function Recordings(_props: RecordingsProps) {
     const recording = recordings.find((r) => r.file_path === filePath);
     try {
       await invoke("delete_recording", { filePath });
-      setRecordings((prev) => prev.filter((r) => r.file_path !== filePath));
+      // Invalidate to refetch without the deleted recording
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listRecordings });
       setDeleteConfirmPath(null);
       if (expandedPath === filePath) {
         setExpandedPath(null);
@@ -245,7 +239,7 @@ export function Recordings(_props: RecordingsProps) {
             </div>
             <button
               type="button"
-              onClick={loadRecordings}
+              onClick={() => refetch()}
               className="mt-4 text-heycat-orange hover:text-heycat-orange-light"
             >
               Retry

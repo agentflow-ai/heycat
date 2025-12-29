@@ -4,14 +4,44 @@
 // when the window or matched context changes.
 
 use super::types::ActiveWindowInfo;
-use super::{get_active_window, WindowContextStore};
+use super::{get_active_window, WindowContext};
 use crate::events::window_context_events::{self, ActiveWindowChangedPayload};
+use crate::spacetimedb::client::SpacetimeClient;
+use regex::Regex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
+
+/// Find the highest-priority matching context for a window from a list of contexts
+fn find_matching_context<'a>(
+    contexts: &'a [WindowContext],
+    window: &ActiveWindowInfo,
+) -> Option<&'a WindowContext> {
+    contexts
+        .iter()
+        .filter(|ctx| ctx.enabled)
+        .filter(|ctx| {
+            // Case-insensitive app name match
+            ctx.matcher.app_name.to_lowercase() == window.app_name.to_lowercase()
+        })
+        .filter(|ctx| {
+            // Check title pattern if present
+            match (&ctx.matcher.title_pattern, &window.window_title) {
+                (Some(pattern), Some(title)) => {
+                    // Try to compile and match regex
+                    Regex::new(pattern)
+                        .map(|re| re.is_match(title))
+                        .unwrap_or(false)
+                }
+                (Some(_), None) => false,
+                (None, _) => true,
+            }
+        })
+        .max_by_key(|ctx| ctx.priority)
+}
 
 /// Default polling interval in milliseconds
 const DEFAULT_POLL_INTERVAL_MS: u64 = 200;
@@ -68,14 +98,14 @@ impl WindowMonitor {
     ///
     /// # Arguments
     /// * `app_handle` - Tauri app handle for event emission
-    /// * `context_store` - Shared window context store for matching
+    /// * `spacetime_client` - SpacetimeDB client for window context retrieval
     ///
     /// # Returns
     /// Ok(()) if started successfully, Err if already running
     pub fn start(
         &mut self,
         app_handle: AppHandle,
-        context_store: Arc<Mutex<WindowContextStore>>,
+        spacetime_client: Arc<Mutex<SpacetimeClient>>,
     ) -> Result<(), String> {
         if self.running.load(Ordering::SeqCst) {
             return Err("Monitor is already running".to_string());
@@ -108,14 +138,16 @@ impl WindowMonitor {
                         };
 
                         if window_changed {
-                            // Find matching context
-                            let matched_context = context_store
+                            // Find matching context from SpacetimeDB
+                            let matched_context = spacetime_client
                                 .lock()
                                 .ok()
-                                .and_then(|store| {
-                                    store.find_matching_context(&window).map(|ctx| {
-                                        (ctx.id, ctx.name.clone())
-                                    })
+                                .and_then(|client| {
+                                    client.list_window_contexts().ok()
+                                })
+                                .and_then(|contexts| {
+                                    find_matching_context(&contexts, &window)
+                                        .map(|ctx| (ctx.id, ctx.name.clone()))
                                 });
 
                             let matched_context_id = matched_context.as_ref().map(|(id, _)| *id);

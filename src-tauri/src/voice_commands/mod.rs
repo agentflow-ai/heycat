@@ -5,6 +5,7 @@ pub mod executor;
 pub mod matcher;
 pub mod registry;
 
+use crate::spacetimedb::client::SpacetimeClient;
 use registry::{ActionType, CommandDefinition, CommandRegistry, RegistryError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,10 +18,9 @@ pub struct VoiceCommandsState {
 }
 
 impl VoiceCommandsState {
-    pub fn new_with_context(
-        worktree_context: Option<&crate::worktree::WorktreeContext>,
-    ) -> Result<Self, RegistryError> {
-        let mut registry = CommandRegistry::with_default_path_context(worktree_context)?;
+    /// Create a new VoiceCommandsState with a SpacetimeDB client
+    pub fn new(client: Arc<Mutex<SpacetimeClient>>) -> Result<Self, RegistryError> {
+        let mut registry = CommandRegistry::new(client);
         registry.load()?;
         Ok(Self {
             registry: Arc::new(Mutex::new(registry)),

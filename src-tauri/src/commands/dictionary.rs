@@ -5,13 +5,14 @@
 #![cfg_attr(coverage_nightly, coverage(off))]
 
 use crate::commands::TranscriptionServiceState;
-use crate::dictionary::{DictionaryEntry, DictionaryError, DictionaryStore};
+use crate::dictionary::{DictionaryEntry, DictionaryError};
 use crate::events::dictionary_events::{self, DictionaryUpdatedPayload};
+use crate::spacetimedb::SpacetimeClient;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
-/// Type alias for dictionary store state
-pub type DictionaryStoreState = Arc<Mutex<DictionaryStore>>;
+/// Type alias for SpacetimeDB client state (required - no fallback)
+pub type SpacetimeClientState = Arc<Mutex<SpacetimeClient>>;
 
 /// Helper macro to emit events with error logging
 macro_rules! emit_or_warn {
@@ -32,30 +33,39 @@ fn to_user_error(error: DictionaryError) -> String {
     }
 }
 
-/// Refresh the dictionary expander in the transcription service with current entries
+/// Refresh the dictionary expander in the transcription service with current entries from SpacetimeDB
 fn refresh_dictionary_expander(
-    store: &DictionaryStore,
+    client: &SpacetimeClient,
     transcription_service: &TranscriptionServiceState,
 ) {
-    let entries: Vec<DictionaryEntry> = store.list().into_iter().cloned().collect();
-    transcription_service.update_dictionary(&entries);
+    // Read entries from SpacetimeDB (the source of truth)
+    match client.list_dictionary_entries() {
+        Ok(entries) => {
+            transcription_service.update_dictionary(&entries);
+        }
+        Err(e) => {
+            crate::warn!("Failed to refresh dictionary expander from SpacetimeDB: {:?}", e);
+        }
+    }
 }
 
 /// List all dictionary entries
 ///
-/// Returns all entries from the dictionary store.
+/// Returns all entries from SpacetimeDB.
 #[tauri::command]
 pub fn list_dictionary_entries(
-    store: State<'_, DictionaryStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
 ) -> Result<Vec<DictionaryEntry>, String> {
-    let store = store.lock().map_err(|_| "Failed to access dictionary store".to_string())?;
-    Ok(store.list().into_iter().cloned().collect())
+    let client = spacetimedb_client
+        .lock()
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+    client.list_dictionary_entries().map_err(to_user_error)
 }
 
 /// Add a new dictionary entry
 ///
 /// Creates a new entry with the given trigger and expansion, generates a unique ID,
-/// persists to storage, updates the transcription service expander, and emits a dictionary_updated event.
+/// persists to SpacetimeDB, updates the transcription service expander, and emits a dictionary_updated event.
 ///
 /// # Arguments
 /// * `trigger` - The trigger word/phrase (e.g., "brb")
@@ -69,7 +79,7 @@ pub fn list_dictionary_entries(
 #[tauri::command]
 pub fn add_dictionary_entry(
     app_handle: AppHandle,
-    store: State<'_, DictionaryStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     transcription_service: State<'_, TranscriptionServiceState>,
     trigger: String,
     expansion: String,
@@ -82,19 +92,26 @@ pub fn add_dictionary_entry(
         return Err("Trigger cannot be empty".to_string());
     }
 
-    let mut store = store.lock().map_err(|_| "Failed to access dictionary store".to_string())?;
-    let entry = store
-        .add(
-            trigger,
-            expansion,
-            suffix,
-            auto_enter.unwrap_or(false),
-            disable_suffix.unwrap_or(false),
+    let auto_enter_val = auto_enter.unwrap_or(false);
+    let disable_suffix_val = disable_suffix.unwrap_or(false);
+
+    // Add entry to SpacetimeDB
+    let client = spacetimedb_client
+        .lock()
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+
+    let entry = client
+        .add_dictionary_entry(
+            trigger.clone(),
+            expansion.clone(),
+            suffix.clone(),
+            auto_enter_val,
+            disable_suffix_val,
         )
         .map_err(to_user_error)?;
 
-    // Refresh the dictionary expander in the transcription service
-    refresh_dictionary_expander(&store, &transcription_service);
+    // Refresh the dictionary expander with entries from SpacetimeDB
+    refresh_dictionary_expander(&client, &transcription_service);
 
     // Emit dictionary_updated event
     emit_or_warn!(
@@ -113,7 +130,7 @@ pub fn add_dictionary_entry(
 /// Update an existing dictionary entry
 ///
 /// Updates the trigger and expansion for the entry with the given ID,
-/// persists to storage, updates the transcription service expander, and emits a dictionary_updated event.
+/// persists to SpacetimeDB, updates the transcription service expander, and emits a dictionary_updated event.
 ///
 /// # Arguments
 /// * `id` - The unique ID of the entry to update
@@ -125,7 +142,7 @@ pub fn add_dictionary_entry(
 #[tauri::command]
 pub fn update_dictionary_entry(
     app_handle: AppHandle,
-    store: State<'_, DictionaryStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     transcription_service: State<'_, TranscriptionServiceState>,
     id: String,
     trigger: String,
@@ -139,20 +156,27 @@ pub fn update_dictionary_entry(
         return Err("Trigger cannot be empty".to_string());
     }
 
-    let mut store = store.lock().map_err(|_| "Failed to access dictionary store".to_string())?;
-    store
-        .update(
+    let auto_enter_val = auto_enter.unwrap_or(false);
+    let disable_suffix_val = disable_suffix.unwrap_or(false);
+
+    // Update entry in SpacetimeDB
+    let client = spacetimedb_client
+        .lock()
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+
+    client
+        .update_dictionary_entry(
             id.clone(),
-            trigger,
-            expansion,
-            suffix,
-            auto_enter.unwrap_or(false),
-            disable_suffix.unwrap_or(false),
+            trigger.clone(),
+            expansion.clone(),
+            suffix.clone(),
+            auto_enter_val,
+            disable_suffix_val,
         )
         .map_err(to_user_error)?;
 
-    // Refresh the dictionary expander in the transcription service
-    refresh_dictionary_expander(&store, &transcription_service);
+    // Refresh the dictionary expander with entries from SpacetimeDB
+    refresh_dictionary_expander(&client, &transcription_service);
 
     // Emit dictionary_updated event
     emit_or_warn!(
@@ -170,7 +194,7 @@ pub fn update_dictionary_entry(
 
 /// Delete a dictionary entry
 ///
-/// Removes the entry with the given ID, persists to storage,
+/// Removes the entry with the given ID, persists to SpacetimeDB,
 /// updates the transcription service expander, and emits a dictionary_updated event.
 ///
 /// # Arguments
@@ -178,15 +202,19 @@ pub fn update_dictionary_entry(
 #[tauri::command]
 pub fn delete_dictionary_entry(
     app_handle: AppHandle,
-    store: State<'_, DictionaryStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     transcription_service: State<'_, TranscriptionServiceState>,
     id: String,
 ) -> Result<(), String> {
-    let mut store = store.lock().map_err(|_| "Failed to access dictionary store".to_string())?;
-    store.delete(&id).map_err(to_user_error)?;
+    // Delete entry from SpacetimeDB
+    let client = spacetimedb_client
+        .lock()
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
 
-    // Refresh the dictionary expander in the transcription service
-    refresh_dictionary_expander(&store, &transcription_service);
+    client.delete_dictionary_entry(&id).map_err(to_user_error)?;
+
+    // Refresh the dictionary expander with entries from SpacetimeDB
+    refresh_dictionary_expander(&client, &transcription_service);
 
     // Emit dictionary_updated event
     emit_or_warn!(

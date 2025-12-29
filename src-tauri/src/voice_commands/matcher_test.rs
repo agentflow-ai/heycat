@@ -1,13 +1,10 @@
+// Tests for voice command matching
+//
+// Note: These tests use match_commands() directly with command slices,
+// avoiding the need for SpacetimeDB integration.
+
 use super::*;
 use crate::voice_commands::registry::{ActionType, CommandDefinition};
-use tempfile::TempDir;
-
-fn create_test_registry() -> (CommandRegistry, TempDir) {
-    let temp_dir = TempDir::new().unwrap();
-    let config_path = temp_dir.path().join("commands.json");
-    let registry = CommandRegistry::new(config_path);
-    (registry, temp_dir)
-}
 
 fn create_command(trigger: &str) -> CommandDefinition {
     CommandDefinition {
@@ -21,12 +18,11 @@ fn create_command(trigger: &str) -> CommandDefinition {
 
 #[test]
 fn test_exact_match_open_slack() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd = create_command("open slack");
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("open slack", &registry);
+    let result = matcher.match_commands("open slack", &commands);
 
     match result {
         MatchResult::Exact { command, .. } => {
@@ -38,12 +34,11 @@ fn test_exact_match_open_slack() {
 
 #[test]
 fn test_fuzzy_match_typo() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd = create_command("open slack");
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("opn slack", &registry);
+    let result = matcher.match_commands("opn slack", &commands);
 
     match result {
         MatchResult::Fuzzy { command, score, .. } => {
@@ -56,12 +51,11 @@ fn test_fuzzy_match_typo() {
 
 #[test]
 fn test_case_insensitive_match() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd = create_command("open slack");
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("OPEN SLACK", &registry);
+    let result = matcher.match_commands("OPEN SLACK", &commands);
 
     match result {
         MatchResult::Exact { command, .. } => {
@@ -73,13 +67,12 @@ fn test_case_insensitive_match() {
 
 #[test]
 fn test_parameter_extraction() {
-    let (mut registry, _temp) = create_test_registry();
     let mut cmd = create_command("type {text}");
     cmd.action_type = ActionType::TypeText;
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("type hello world", &registry);
+    let result = matcher.match_commands("type hello world", &commands);
 
     match result {
         MatchResult::Exact { parameters, .. } => {
@@ -91,24 +84,21 @@ fn test_parameter_extraction() {
 
 #[test]
 fn test_no_match_different_text() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd = create_command("open slack");
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("xyz abc", &registry);
+    let result = matcher.match_commands("xyz abc", &commands);
 
     assert!(matches!(result, MatchResult::NoMatch));
 }
 
 #[test]
 fn test_ambiguous_similar_commands() {
-    let (mut registry, _temp) = create_test_registry();
     // Use commands that are very similar to each other
     let cmd1 = create_command("open slack");
     let cmd2 = create_command("open slick");
-    registry.add(cmd1).unwrap();
-    registry.add(cmd2).unwrap();
+    let commands = vec![cmd1, cmd2];
 
     // Configure matcher with higher ambiguity delta to make the test more reliable
     let config = MatcherConfig {
@@ -116,8 +106,8 @@ fn test_ambiguous_similar_commands() {
         ambiguity_delta: 0.15,
     };
     let matcher = CommandMatcher::with_config(config);
-    // Input that's similar to both: "slaick" is between "slack" and "slick"
-    let result = matcher.match_input("open slaik", &registry);
+    // Input that's similar to both: "slaik" is between "slack" and "slick"
+    let result = matcher.match_commands("open slaik", &commands);
 
     match result {
         MatchResult::Ambiguous { candidates } => {
@@ -129,12 +119,11 @@ fn test_ambiguous_similar_commands() {
 
 #[test]
 fn test_whitespace_normalization() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd = create_command("open slack");
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("  open slack  ", &registry);
+    let result = matcher.match_commands("  open slack  ", &commands);
 
     match result {
         MatchResult::Exact { command, .. } => {
@@ -146,32 +135,30 @@ fn test_whitespace_normalization() {
 
 #[test]
 fn test_disabled_command_not_matched() {
-    let (mut registry, _temp) = create_test_registry();
     let mut cmd = create_command("open slack");
     cmd.enabled = false;
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("open slack", &registry);
+    let result = matcher.match_commands("open slack", &commands);
 
     assert!(matches!(result, MatchResult::NoMatch));
 }
 
 #[test]
-fn test_empty_registry_returns_no_match() {
-    let (registry, _temp) = create_test_registry();
+fn test_empty_commands_returns_no_match() {
+    let commands: Vec<CommandDefinition> = vec![];
 
     let matcher = CommandMatcher::new();
-    let result = matcher.match_input("open slack", &registry);
+    let result = matcher.match_commands("open slack", &commands);
 
     assert!(matches!(result, MatchResult::NoMatch));
 }
 
 #[test]
 fn test_custom_threshold() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd = create_command("open slack");
-    registry.add(cmd.clone()).unwrap();
+    let commands = vec![cmd.clone()];
 
     // Set a very high threshold that won't match fuzzy
     let config = MatcherConfig {
@@ -179,26 +166,21 @@ fn test_custom_threshold() {
         ambiguity_delta: 0.1,
     };
     let matcher = CommandMatcher::with_config(config);
-    let result = matcher.match_input("opn slack", &registry);
+    let result = matcher.match_commands("opn slack", &commands);
 
     // With high threshold, fuzzy match shouldn't work
     assert!(matches!(result, MatchResult::NoMatch));
 }
 
-// test_match_result_serialization removed per docs/TESTING.md:
-// - Serialization format tests are low-value (derive macros handle correctly)
-
 #[test]
 fn test_best_match_selected_when_not_ambiguous() {
-    let (mut registry, _temp) = create_test_registry();
     let cmd1 = create_command("open slack");
     let cmd2 = create_command("open zoom");
-    registry.add(cmd1).unwrap();
-    registry.add(cmd2).unwrap();
+    let commands = vec![cmd1, cmd2];
 
     let matcher = CommandMatcher::new();
     // "open slack" should match exactly, not be ambiguous with "open zoom"
-    let result = matcher.match_input("open slack", &registry);
+    let result = matcher.match_commands("open slack", &commands);
 
     match result {
         MatchResult::Exact { command, .. } => {

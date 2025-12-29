@@ -1,11 +1,14 @@
 // Voice command registry - stores and persists command definitions
+//
+// Commands are stored in SpacetimeDB and cached locally for quick access.
+// Mutations go through SpacetimeDB reducers.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+
+use crate::spacetimedb::client::SpacetimeClient;
 
 /// Type of action to execute when a command matches
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,94 +74,41 @@ pub enum RegistryError {
 }
 
 /// Registry for voice commands
-#[derive(Debug)]
+///
+/// Commands are stored in SpacetimeDB and cached locally.
+/// The local cache is updated on load and after each mutation.
 pub struct CommandRegistry {
-    /// Commands indexed by ID
+    /// Commands indexed by ID (local cache)
     commands: HashMap<Uuid, CommandDefinition>,
-    /// Path to persistence file
-    config_path: PathBuf,
+    /// SpacetimeDB client for persistence
+    client: Arc<Mutex<SpacetimeClient>>,
 }
 
 impl CommandRegistry {
-    /// Create a new registry with the given config path
-    pub fn new(config_path: PathBuf) -> Self {
+    /// Create a new registry with a SpacetimeDB client
+    pub fn new(client: Arc<Mutex<SpacetimeClient>>) -> Self {
         Self {
             commands: HashMap::new(),
-            config_path,
+            client,
         }
     }
 
-    /// Create a registry using the default config path with worktree context
-    pub fn with_default_path_context(
-        worktree_context: Option<&crate::worktree::WorktreeContext>,
-    ) -> Result<Self, RegistryError> {
-        let config_dir = crate::paths::get_config_dir(worktree_context).map_err(|e| {
-            RegistryError::LoadError(format!("Could not determine config directory: {}", e))
-        })?;
-        let config_path = config_dir.join("commands.json");
-        Ok(Self::new(config_path))
-    }
-
-    /// Load commands from the persistence file
+    /// Load commands from SpacetimeDB
     pub fn load(&mut self) -> Result<(), RegistryError> {
-        crate::debug!("Loading commands from {:?}", self.config_path);
+        crate::debug!("Loading commands from SpacetimeDB");
 
-        if !self.config_path.exists() {
-            crate::debug!("No commands file found, starting with empty registry");
-            return Ok(());
-        }
+        let client = self.client.lock().map_err(|e| {
+            RegistryError::LoadError(format!("Failed to acquire client lock: {}", e))
+        })?;
 
-        let content = fs::read_to_string(&self.config_path)
-            .map_err(|e| RegistryError::LoadError(e.to_string()))?;
-
-        let commands: Vec<CommandDefinition> = serde_json::from_str(&content)
-            .map_err(|e| RegistryError::LoadError(e.to_string()))?;
+        let commands = client.list_voice_commands()?;
 
         self.commands.clear();
         for cmd in commands {
             self.commands.insert(cmd.id, cmd);
         }
 
-        crate::info!("Loaded {} commands from registry", self.commands.len());
-        Ok(())
-    }
-
-    /// Persist commands to the file using atomic write (temp file + rename)
-    fn persist(&self) -> Result<(), RegistryError> {
-        crate::debug!("Persisting {} commands to {:?}", self.commands.len(), self.config_path);
-
-        // Ensure parent directory exists
-        if let Some(parent) = self.config_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| RegistryError::PersistenceError(e.to_string()))?;
-        }
-
-        let commands: Vec<&CommandDefinition> = self.commands.values().collect();
-        let content = serde_json::to_string_pretty(&commands)
-            .map_err(|e| RegistryError::PersistenceError(e.to_string()))?;
-
-        // Use atomic temp file + rename pattern
-        let temp_path = self.config_path.with_extension("tmp");
-
-        // Write to temp file with explicit sync
-        {
-            let mut file = File::create(&temp_path)
-                .map_err(|e| RegistryError::PersistenceError(format!("Failed to create temp file: {}", e)))?;
-            file.write_all(content.as_bytes())
-                .map_err(|e| RegistryError::PersistenceError(format!("Failed to write: {}", e)))?;
-            file.sync_all()
-                .map_err(|e| RegistryError::PersistenceError(format!("Failed to sync: {}", e)))?;
-        } // File closed here
-
-        // Atomic rename
-        fs::rename(&temp_path, &self.config_path)
-            .map_err(|e| {
-                // Clean up temp file on error
-                let _ = fs::remove_file(&temp_path);
-                RegistryError::PersistenceError(format!("Failed to rename: {}", e))
-            })?;
-
-        crate::debug!("Commands persisted successfully");
+        crate::info!("Loaded {} commands from SpacetimeDB", self.commands.len());
         Ok(())
     }
 
@@ -179,8 +129,18 @@ impl CommandRegistry {
     #[must_use = "this returns a Result that should be handled"]
     pub fn add(&mut self, cmd: CommandDefinition) -> Result<(), RegistryError> {
         self.validate(&cmd, true)?;
+
+        // Persist to SpacetimeDB
+        {
+            let client = self.client.lock().map_err(|e| {
+                RegistryError::PersistenceError(format!("Failed to acquire client lock: {}", e))
+            })?;
+            client.add_voice_command(&cmd)?;
+        }
+
+        // Update local cache
         self.commands.insert(cmd.id, cmd);
-        self.persist()?;
+        crate::debug!("Added command to registry");
         Ok(())
     }
 
@@ -191,18 +151,39 @@ impl CommandRegistry {
             return Err(RegistryError::NotFound(cmd.id));
         }
         self.validate(&cmd, false)?;
+
+        // Persist to SpacetimeDB
+        {
+            let client = self.client.lock().map_err(|e| {
+                RegistryError::PersistenceError(format!("Failed to acquire client lock: {}", e))
+            })?;
+            client.update_voice_command(&cmd)?;
+        }
+
+        // Update local cache
         self.commands.insert(cmd.id, cmd);
-        self.persist()?;
+        crate::debug!("Updated command in registry");
         Ok(())
     }
 
     /// Delete a command by ID
     #[must_use = "this returns a Result that should be handled"]
     pub fn delete(&mut self, id: Uuid) -> Result<(), RegistryError> {
-        if self.commands.remove(&id).is_none() {
+        if !self.commands.contains_key(&id) {
             return Err(RegistryError::NotFound(id));
         }
-        self.persist()?;
+
+        // Delete from SpacetimeDB
+        {
+            let client = self.client.lock().map_err(|e| {
+                RegistryError::PersistenceError(format!("Failed to acquire client lock: {}", e))
+            })?;
+            client.delete_voice_command(id)?;
+        }
+
+        // Update local cache
+        self.commands.remove(&id);
+        crate::debug!("Deleted command from registry");
         Ok(())
     }
 

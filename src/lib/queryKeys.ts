@@ -23,6 +23,12 @@ export const queryKeys = {
     /** Query key factory for check_parakeet_model_status command */
     checkModelStatus: (type: string) =>
       ["tauri", "check_parakeet_model_status", type] as const,
+
+    /** Query key for get_commands command */
+    listCommands: ["tauri", "list_commands"] as const,
+
+    /** Query key for get_recording_shortcut command */
+    recordingShortcut: ["tauri", "recording_shortcut"] as const,
   },
   dictionary: {
     /** Base key for all dictionary queries */

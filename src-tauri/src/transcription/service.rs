@@ -4,7 +4,7 @@
 // This service decouples transcription from HotkeyIntegration, enabling
 // button-initiated recordings and wake word flows to share the same logic.
 
-use crate::dictionary::{DictionaryEntry, DictionaryExpander, DictionaryStore, ExpansionResult};
+use crate::dictionary::{DictionaryEntry, DictionaryExpander, ExpansionResult};
 use crate::events::{
     current_timestamp, CommandAmbiguousPayload, CommandCandidate, CommandEventEmitter,
     CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
@@ -13,15 +13,72 @@ use crate::events::{
 };
 use crate::parakeet::{SharedTranscriptionModel, TranscriptionService as TranscriptionServiceTrait};
 use crate::recording::RecordingManager;
+use crate::spacetimedb::SpacetimeClient;
 use crate::voice_commands::executor::ActionDispatcher;
 use crate::voice_commands::matcher::{CommandMatcher, MatchResult};
 use crate::voice_commands::registry::CommandRegistry;
 use crate::window_context::ContextResolver;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::sync::Semaphore;
+
+/// Type alias for SpacetimeDB client state (required - no fallback)
+pub type SpacetimeClientState = Arc<Mutex<SpacetimeClient>>;
+
+/// Store transcription result in SpacetimeDB
+///
+/// This function is called after successful transcription to persist the result.
+/// It looks up the recording by file_path and stores the transcription linked to it.
+fn store_transcription_in_spacetimedb(
+    app_handle: &AppHandle,
+    file_path: &str,
+    text: &str,
+    duration_ms: u64,
+) {
+    // Get SpacetimeDB client from managed state
+    let spacetimedb_client: Option<tauri::State<'_, SpacetimeClientState>> =
+        app_handle.try_state();
+
+    if let Some(client_state) = spacetimedb_client {
+        if let Ok(client_guard) = client_state.lock() {
+            // Look up recording by file_path to get recording_id
+            match client_guard.get_recording_by_path(file_path) {
+                Ok(Some(recording)) => {
+                    let transcription_id = uuid::Uuid::new_v4().to_string();
+                    // Get model version from the transcription model if available
+                    let model_version = "whisper-tiny-quantized".to_string();
+
+                    if let Err(e) = client_guard.add_transcription(
+                        transcription_id,
+                        recording.id.clone(),
+                        text.to_string(),
+                        None, // language - could be detected in future
+                        model_version,
+                        duration_ms,
+                    ) {
+                        crate::warn!("Failed to store transcription in SpacetimeDB: {}", e);
+                    } else {
+                        crate::debug!(
+                            "Transcription stored in SpacetimeDB for recording {}",
+                            recording.id
+                        );
+                    }
+                }
+                Ok(None) => {
+                    crate::debug!(
+                        "Recording not found in SpacetimeDB for path: {}",
+                        file_path
+                    );
+                }
+                Err(e) => {
+                    crate::debug!("Failed to look up recording in SpacetimeDB: {}", e);
+                }
+            }
+        }
+    }
+}
 
 /// Maximum concurrent transcriptions allowed
 const MAX_CONCURRENT_TRANSCRIPTIONS: usize = 2;
@@ -90,8 +147,8 @@ where
     dictionary_expander: Arc<RwLock<Option<DictionaryExpander>>>,
     /// Optional context resolver for window-aware command/dictionary resolution
     context_resolver: Option<Arc<ContextResolver>>,
-    /// Optional dictionary store for context-aware dictionary expansion
-    dictionary_store: Option<Arc<Mutex<DictionaryStore>>>,
+    /// Optional SpacetimeDB client for context-aware dictionary expansion
+    spacetime_client: Option<Arc<Mutex<SpacetimeClient>>>,
 }
 
 impl<T, C> RecordingTranscriptionService<T, C>
@@ -119,7 +176,7 @@ where
             transcription_timeout: Duration::from_secs(DEFAULT_TRANSCRIPTION_TIMEOUT_SECS),
             dictionary_expander: Arc::new(RwLock::new(None)),
             context_resolver: None,
-            dictionary_store: None,
+            spacetime_client: None,
         }
     }
 
@@ -166,9 +223,9 @@ where
         self
     }
 
-    /// Add dictionary store for context-aware dictionary expansion (builder pattern)
-    pub fn with_dictionary_store(mut self, store: Arc<Mutex<DictionaryStore>>) -> Self {
-        self.dictionary_store = Some(store);
+    /// Add SpacetimeDB client for context-aware dictionary expansion (builder pattern)
+    pub fn with_spacetime_client(mut self, client: Arc<Mutex<SpacetimeClient>>) -> Self {
+        self.spacetime_client = Some(client);
         self
     }
 
@@ -230,7 +287,7 @@ where
         let timeout_duration = self.transcription_timeout;
         let dictionary_expander = self.dictionary_expander.clone();
         let context_resolver = self.context_resolver.clone();
-        let dictionary_store = self.dictionary_store.clone();
+        let spacetime_client = self.spacetime_client.clone();
 
         crate::info!("Spawning transcription task for: {}", file_path);
 
@@ -265,6 +322,9 @@ where
             });
 
             crate::debug!("Transcribing file: {}", file_path);
+
+            // Clone file_path before it's moved into the closure
+            let file_path_for_storage = file_path.clone();
 
             // Perform transcription on blocking thread pool (CPU-intensive) with timeout
             let transcriber = shared_model.clone();
@@ -322,26 +382,43 @@ where
                 text.len()
             );
 
+            // Store transcription in SpacetimeDB if connected
+            store_transcription_in_spacetimedb(
+                &app_handle,
+                &file_path_for_storage,
+                &text,
+                duration_ms,
+            );
+
             // Apply dictionary expansion using context-resolved entries when available
             let expansion_result = {
                 // Try context-aware dictionary expansion first
-                let context_entries = match (&context_resolver, &dictionary_store) {
-                    (Some(resolver), Some(store)) => {
-                        match store.lock() {
-                            Ok(store_guard) => {
-                                let entries = resolver.get_effective_dictionary(&store_guard);
-                                if !entries.is_empty() {
-                                    crate::debug!(
-                                        "Using {} context-resolved dictionary entries for expansion",
-                                        entries.len()
-                                    );
-                                    Some(entries)
-                                } else {
-                                    None
+                let context_entries = match (&context_resolver, &spacetime_client) {
+                    (Some(resolver), Some(client)) => {
+                        match client.lock() {
+                            Ok(client_guard) => {
+                                // Get all dictionary entries from SpacetimeDB
+                                match client_guard.list_dictionary_entries() {
+                                    Ok(all_entries) => {
+                                        let entries = resolver.get_effective_dictionary(&all_entries);
+                                        if !entries.is_empty() {
+                                            crate::debug!(
+                                                "Using {} context-resolved dictionary entries for expansion",
+                                                entries.len()
+                                            );
+                                            Some(entries)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    Err(e) => {
+                                        crate::warn!("Failed to get dictionary entries from SpacetimeDB: {}", e);
+                                        None
+                                    }
                                 }
                             }
                             Err(_) => {
-                                crate::warn!("Failed to lock dictionary store for context resolution");
+                                crate::warn!("Failed to lock SpacetimeDB client for context resolution");
                                 None
                             }
                         }
@@ -506,13 +583,16 @@ where
                 }
             };
 
+            // Get all commands from registry as a list for matching
+            let all_commands: Vec<_> = registry_guard.list().into_iter().cloned().collect();
+
             // Get effective commands - either context-resolved or all commands
             let match_result = match context_resolver {
                 Some(resolver) => {
-                    let effective_commands = resolver.get_effective_commands(&registry_guard);
+                    let effective_commands = resolver.get_effective_commands(&all_commands);
                     if effective_commands.is_empty() {
                         crate::debug!("No effective commands for current context, falling back to global");
-                        matcher.match_input(text, &registry_guard)
+                        matcher.match_commands(text, &all_commands)
                     } else {
                         crate::debug!(
                             "Using {} context-resolved commands for matching",
@@ -521,7 +601,7 @@ where
                         matcher.match_commands(text, &effective_commands)
                     }
                 }
-                None => matcher.match_input(text, &registry_guard),
+                None => matcher.match_commands(text, &all_commands),
             };
 
             match match_result {

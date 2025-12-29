@@ -38,8 +38,16 @@ export const eventNames = {
   // Window context events
   WINDOW_CONTEXTS_UPDATED: "window_contexts_updated",
 
+  // Voice commands events
+  VOICE_COMMANDS_UPDATED: "voice_commands_updated",
+
   // Hotkey events
   KEY_BLOCKING_UNAVAILABLE: "key_blocking_unavailable",
+
+  // SpacetimeDB events
+  RECORDINGS_UPDATED: "recordings_updated",
+  TRANSCRIPTIONS_UPDATED: "transcriptions_updated",
+  SPACETIMEDB_CONNECTION_STATUS: "spacetimedb_connection_status",
 
   // UI state events
   OVERLAY_MODE: "overlay-mode",
@@ -65,6 +73,28 @@ export interface TranscriptionErrorPayload {
 /** Payload for key_blocking_unavailable event */
 export interface KeyBlockingUnavailablePayload {
   reason: string;
+  timestamp: string;
+}
+
+/** Payload for recordings_updated event (from SpacetimeDB) */
+export interface RecordingsUpdatedPayload {
+  changeType: string;
+  recordingId: string | null;
+  timestamp: string;
+}
+
+/** Payload for transcriptions_updated event (from SpacetimeDB) */
+export interface TranscriptionsUpdatedPayload {
+  changeType: string;
+  transcriptionId: string | null;
+  recordingId: string | null;
+  timestamp: string;
+}
+
+/** Payload for spacetimedb_connection_status event */
+export interface SpacetimeDBConnectionStatusPayload {
+  connected: boolean;
+  error: string | null;
   timestamp: string;
 }
 
@@ -155,6 +185,15 @@ export async function setupEventBridge(
     })
   );
 
+  // Voice commands events - invalidate commands list query
+  unlistenFns.push(
+    await listen(eventNames.VOICE_COMMANDS_UPDATED, () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tauri.listCommands,
+      });
+    })
+  );
+
   // Hotkey events - log warnings for edge cases
   unlistenFns.push(
     await listen<KeyBlockingUnavailablePayload>(eventNames.KEY_BLOCKING_UNAVAILABLE, (event) => {
@@ -164,6 +203,47 @@ export async function setupEventBridge(
         "- Escape key may propagate to other apps during recording cancel"
       );
     })
+  );
+
+  // ============================================================
+  // SpacetimeDB events → Query invalidation
+  // These events are emitted when SpacetimeDB subscription callbacks fire
+  // ============================================================
+
+  // Recordings updated via SpacetimeDB - invalidate recordings list
+  unlistenFns.push(
+    await listen<RecordingsUpdatedPayload>(eventNames.RECORDINGS_UPDATED, () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tauri.listRecordings,
+      });
+    })
+  );
+
+  // Transcriptions updated via SpacetimeDB - invalidate recordings list
+  // (transcriptions are displayed as part of recordings)
+  unlistenFns.push(
+    await listen<TranscriptionsUpdatedPayload>(eventNames.TRANSCRIPTIONS_UPDATED, () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tauri.listRecordings,
+      });
+    })
+  );
+
+  // SpacetimeDB connection status - log for debugging
+  unlistenFns.push(
+    await listen<SpacetimeDBConnectionStatusPayload>(
+      eventNames.SPACETIMEDB_CONNECTION_STATUS,
+      (event) => {
+        if (event.payload.connected) {
+          console.log("[heycat] SpacetimeDB connected");
+        } else {
+          console.warn(
+            "[heycat] SpacetimeDB disconnected:",
+            event.payload.error ?? "unknown reason"
+          );
+        }
+      }
+    )
   );
 
   // ============================================================

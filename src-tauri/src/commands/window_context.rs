@@ -5,16 +5,17 @@
 #![cfg_attr(coverage_nightly, coverage(off))]
 
 use crate::events::window_context_events::{self, WindowContextsUpdatedPayload};
+use crate::spacetimedb::SpacetimeClient;
 use crate::window_context::{
     get_active_window, get_running_applications, ActiveWindowInfo, OverrideMode,
-    RunningApplication, WindowContext, WindowContextStore, WindowContextStoreError, WindowMatcher,
+    RunningApplication, WindowContext, WindowContextStoreError, WindowMatcher,
 };
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
-/// Type alias for window context store state
-pub type WindowContextStoreState = Arc<Mutex<WindowContextStore>>;
+/// Type alias for SpacetimeDB client state (required - no fallback)
+pub type SpacetimeClientState = Arc<Mutex<SpacetimeClient>>;
 
 /// Helper macro to emit events with error logging
 macro_rules! emit_or_warn {
@@ -59,25 +60,25 @@ pub fn list_running_applications() -> Vec<RunningApplication> {
 
 /// List all window contexts
 ///
-/// Returns all contexts from the store.
+/// Returns all contexts from SpacetimeDB.
 #[tauri::command]
 pub fn list_window_contexts(
-    store: State<'_, WindowContextStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
 ) -> Result<Vec<WindowContext>, String> {
-    let store = store
+    let client = spacetimedb_client
         .lock()
-        .map_err(|_| "Failed to access window context store".to_string())?;
-    Ok(store.list().into_iter().cloned().collect())
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+    client.list_window_contexts().map_err(to_user_error)
 }
 
 /// Add a new window context
 ///
 /// Creates a new context with the given parameters, generates a unique ID,
-/// persists to storage, and emits a window_contexts_updated event.
+/// persists to SpacetimeDB, and emits a window_contexts_updated event.
 #[tauri::command]
 pub fn add_window_context(
     app_handle: AppHandle,
-    store: State<'_, WindowContextStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     name: String,
     app_name: String,
     title_pattern: Option<String>,
@@ -105,28 +106,34 @@ pub fn add_window_context(
         bundle_id,
     };
 
-    let command_mode = parse_override_mode(command_mode.as_deref());
-    let dictionary_mode = parse_override_mode(dictionary_mode.as_deref());
+    let command_mode_val = parse_override_mode(command_mode.as_deref());
+    let dictionary_mode_val = parse_override_mode(dictionary_mode.as_deref());
 
-    let command_ids = command_ids
+    let command_ids_val: Vec<Uuid> = command_ids
+        .clone()
         .unwrap_or_default()
         .into_iter()
         .filter_map(|s| Uuid::parse_str(&s).ok())
         .collect();
+    let dictionary_entry_ids_val = dictionary_entry_ids.clone().unwrap_or_default();
+    let enabled_val = enabled.unwrap_or(true);
+    let priority_val = priority.unwrap_or(0);
 
-    let mut store = store
+    // Add context to SpacetimeDB
+    let client = spacetimedb_client
         .lock()
-        .map_err(|_| "Failed to access window context store".to_string())?;
-    let context = store
-        .add(
-            name,
-            matcher,
-            command_mode,
-            dictionary_mode,
-            command_ids,
-            dictionary_entry_ids.unwrap_or_default(),
-            enabled.unwrap_or(true),
-            priority.unwrap_or(0),
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+
+    let context = client
+        .add_window_context(
+            name.clone(),
+            matcher.clone(),
+            command_mode_val,
+            dictionary_mode_val,
+            command_ids_val,
+            dictionary_entry_ids_val,
+            enabled_val,
+            priority_val,
         )
         .map_err(to_user_error)?;
 
@@ -146,12 +153,12 @@ pub fn add_window_context(
 
 /// Update an existing window context
 ///
-/// Updates the context with the given ID, persists to storage,
+/// Updates the context with the given ID, persists to SpacetimeDB,
 /// and emits a window_contexts_updated event.
 #[tauri::command]
 pub fn update_window_context(
     app_handle: AppHandle,
-    store: State<'_, WindowContextStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     id: String,
     name: String,
     app_name: String,
@@ -182,10 +189,10 @@ pub fn update_window_context(
         bundle_id,
     };
 
-    let command_mode = parse_override_mode(command_mode.as_deref());
-    let dictionary_mode = parse_override_mode(dictionary_mode.as_deref());
+    let command_mode_val = parse_override_mode(command_mode.as_deref());
+    let dictionary_mode_val = parse_override_mode(dictionary_mode.as_deref());
 
-    let command_ids = command_ids
+    let command_ids_val: Vec<Uuid> = command_ids
         .unwrap_or_default()
         .into_iter()
         .filter_map(|s| Uuid::parse_str(&s).ok())
@@ -195,18 +202,20 @@ pub fn update_window_context(
         id: uuid,
         name,
         matcher,
-        command_mode,
-        dictionary_mode,
-        command_ids,
+        command_mode: command_mode_val,
+        dictionary_mode: dictionary_mode_val,
+        command_ids: command_ids_val,
         dictionary_entry_ids: dictionary_entry_ids.unwrap_or_default(),
         enabled: enabled.unwrap_or(true),
         priority: priority.unwrap_or(0),
     };
 
-    let mut store = store
+    // Update context in SpacetimeDB
+    let client = spacetimedb_client
         .lock()
-        .map_err(|_| "Failed to access window context store".to_string())?;
-    store.update(context).map_err(to_user_error)?;
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+
+    client.update_window_context(context).map_err(to_user_error)?;
 
     // Emit window_contexts_updated event
     emit_or_warn!(
@@ -224,20 +233,22 @@ pub fn update_window_context(
 
 /// Delete a window context
 ///
-/// Removes the context with the given ID, persists to storage,
+/// Removes the context with the given ID, persists to SpacetimeDB,
 /// and emits a window_contexts_updated event.
 #[tauri::command]
 pub fn delete_window_context(
     app_handle: AppHandle,
-    store: State<'_, WindowContextStoreState>,
+    spacetimedb_client: State<'_, SpacetimeClientState>,
     id: String,
 ) -> Result<(), String> {
     let uuid = Uuid::parse_str(&id).map_err(|_| format!("Invalid UUID: {}", id))?;
 
-    let mut store = store
+    // Delete context from SpacetimeDB
+    let client = spacetimedb_client
         .lock()
-        .map_err(|_| "Failed to access window context store".to_string())?;
-    store.delete(uuid).map_err(to_user_error)?;
+        .map_err(|_| "Failed to access SpacetimeDB client".to_string())?;
+
+    client.delete_window_context(uuid).map_err(to_user_error)?;
 
     // Emit window_contexts_updated event
     emit_or_warn!(

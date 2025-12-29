@@ -16,6 +16,7 @@ mod parakeet;
 mod paths;
 mod recording;
 mod shutdown;
+mod spacetimedb;
 mod swift;
 mod transcription;
 mod voice_commands;
@@ -171,6 +172,58 @@ pub fn run() {
                 }
             }
 
+            // Start SpacetimeDB sidecar process (REQUIRED)
+            // This provides local database storage with real-time sync capabilities
+            let worktree_id = worktree_context.as_ref().map(|ctx| ctx.identifier.as_str());
+            let sidecar_manager = spacetimedb::SidecarManager::with_defaults(worktree_id);
+            let spacetimedb_handle: Arc<Mutex<spacetimedb::SidecarHandle>> = match sidecar_manager.start_and_wait() {
+                Ok(handle) => {
+                    let sidecar_pid = handle.pid();
+                    info!(
+                        "SpacetimeDB sidecar started on {} (PID: {})",
+                        handle.config().websocket_url(),
+                        sidecar_pid
+                    );
+
+                    // Update lock file with sidecar PID for crash recovery
+                    if let Err(e) = worktree::update_lock_with_sidecar_pid(
+                        worktree_context.as_ref(),
+                        sidecar_pid,
+                    ) {
+                        warn!("Failed to update lock file with sidecar PID: {}", e);
+                    }
+
+                    Arc::new(Mutex::new(handle))
+                }
+                Err(e) => {
+                    // Fatal: SpacetimeDB is required for data storage
+                    error!("Failed to start SpacetimeDB sidecar: {}", e);
+                    return Err(format!("SpacetimeDB sidecar failed to start: {}. Please check that SpacetimeDB is installed correctly.", e).into());
+                }
+            };
+            app.manage(spacetimedb_handle.clone());
+
+            // Connect to SpacetimeDB via SDK client (REQUIRED)
+            let spacetimedb_client: Arc<Mutex<spacetimedb::SpacetimeClient>> = {
+                let sidecar_guard = spacetimedb_handle.lock().unwrap();
+                let config = sidecar_guard.config().clone();
+                drop(sidecar_guard); // Release lock before connecting
+
+                let mut client = spacetimedb::SpacetimeClient::new(config, app.handle().clone());
+                match client.connect() {
+                    Ok(()) => {
+                        info!("SpacetimeDB SDK client connected");
+                        Arc::new(Mutex::new(client))
+                    }
+                    Err(e) => {
+                        // Fatal: SpacetimeDB connection is required
+                        error!("Failed to connect SpacetimeDB SDK client: {}", e);
+                        return Err(format!("SpacetimeDB client connection failed: {}. Please check that SpacetimeDB is running.", e).into());
+                    }
+                }
+            };
+            app.manage(spacetimedb_client.clone());
+
             // Create shared state for recording manager
             let recording_state = Arc::new(Mutex::new(recording::RecordingManager::new()));
 
@@ -229,7 +282,7 @@ pub fn run() {
 
             // Create and manage VoiceCommandsState
             debug!("Creating VoiceCommandsState...");
-            let (command_registry, command_matcher, action_dispatcher) = match voice_commands::VoiceCommandsState::new_with_context(worktree_context.as_ref()) {
+            let (command_registry, command_matcher, action_dispatcher) = match voice_commands::VoiceCommandsState::new(spacetimedb_client.clone()) {
                 Ok(voice_state) => {
                     // Share the same registry between UI and matcher
                     let registry = voice_state.registry.clone();
@@ -278,44 +331,11 @@ pub fn run() {
                 app.handle().clone(),
             );
 
-            // Create shared dictionary store (used by both transcription and CRUD commands)
-            debug!("Loading dictionary entries...");
-            let dictionary_store = Arc::new({
-                let mut store = match dictionary::DictionaryStore::with_default_path_context(worktree_context.as_ref()) {
-                    Ok(store) => store,
-                    Err(e) => {
-                        warn!("Failed to initialize dictionary store: {}, using empty dictionary", e);
-                        dictionary::DictionaryStore::new(std::path::PathBuf::new())
-                    }
-                };
-                if let Err(e) = store.load() {
-                    warn!("Failed to load dictionary entries: {}, using empty dictionary", e);
-                }
-                Mutex::new(store)
-            });
-
-            // Create shared window context store for context-sensitive commands
-            // This must be created before transcription service so resolver can be wired in
-            debug!("Loading window contexts...");
-            let window_context_store = Arc::new({
-                let mut store = match window_context::WindowContextStore::with_default_path_context(worktree_context.as_ref()) {
-                    Ok(store) => store,
-                    Err(e) => {
-                        warn!("Failed to initialize window context store: {}, using empty store", e);
-                        window_context::WindowContextStore::new(std::path::PathBuf::new())
-                    }
-                };
-                if let Err(e) = store.load() {
-                    warn!("Failed to load window contexts: {}, using empty store", e);
-                }
-                Mutex::new(store)
-            });
-
             // Start window monitor for context-sensitive commands
             debug!("Starting window monitor...");
             let window_monitor = Arc::new({
                 let mut monitor = window_context::WindowMonitor::new();
-                if let Err(e) = monitor.start(app.handle().clone(), window_context_store.clone()) {
+                if let Err(e) = monitor.start(app.handle().clone(), spacetimedb_client.clone()) {
                     warn!("Failed to start window monitor: {}", e);
                 }
                 Mutex::new(monitor)
@@ -325,20 +345,26 @@ pub fn run() {
             debug!("Creating context resolver...");
             let context_resolver = Arc::new(window_context::ContextResolver::new(
                 window_monitor.clone(),
-                window_context_store.clone(),
+                spacetimedb_client.clone(),
             ));
 
-            // Create expander for transcription service from shared store
+            // Create expander for transcription service from SpacetimeDB dictionary entries
             {
-                let store = dictionary_store.lock().expect("dictionary store lock poisoned during setup");
-                let entries: Vec<dictionary::DictionaryEntry> = store.list().into_iter().cloned().collect();
-                if entries.is_empty() {
-                    debug!("No dictionary entries loaded");
-                } else {
-                    info!("Loaded {} dictionary entries for expansion", entries.len());
-                    let expander = dictionary::DictionaryExpander::new(&entries);
-                    transcription_service = transcription_service.with_dictionary_expander(expander);
-                    debug!("Dictionary expander wired to TranscriptionService");
+                let client = spacetimedb_client.lock().expect("spacetimedb client lock poisoned during setup");
+                match client.list_dictionary_entries() {
+                    Ok(entries) => {
+                        if entries.is_empty() {
+                            debug!("No dictionary entries loaded from SpacetimeDB");
+                        } else {
+                            info!("Loaded {} dictionary entries for expansion from SpacetimeDB", entries.len());
+                            let expander = dictionary::DictionaryExpander::new(&entries);
+                            transcription_service = transcription_service.with_dictionary_expander(expander);
+                            debug!("Dictionary expander wired to TranscriptionService");
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to load dictionary entries from SpacetimeDB: {}", e);
+                    }
                 }
             }
 
@@ -356,7 +382,7 @@ pub fn run() {
             // Wire context resolver to transcription service for window-aware command resolution
             transcription_service = transcription_service
                 .with_context_resolver(context_resolver)
-                .with_dictionary_store(dictionary_store.clone());
+                .with_spacetime_client(spacetimedb_client.clone());
             debug!("Context resolver wired to TranscriptionService");
 
             let transcription_service = Arc::new(transcription_service);
@@ -489,11 +515,8 @@ pub fn run() {
             let keyboard_capture = Arc::new(Mutex::new(keyboard_capture::KeyboardCapture::new()));
             app.manage(keyboard_capture);
 
-            // Manage shared stores for CRUD commands
-            // Note: dictionary_store, window_context_store, and window_monitor were created earlier
-            // and wired to the transcription service. We manage them here for the Tauri commands.
-            app.manage(dictionary_store);
-            app.manage(window_context_store);
+            // Manage window monitor for Tauri commands (window context and dictionary
+            // now use SpacetimeDB directly via spacetimedb_client)
             app.manage(window_monitor);
 
             info!("Setup complete! Ready to record.");
@@ -505,6 +528,17 @@ pub fn run() {
                 shutdown::signal_shutdown();
 
                 debug!("Window destroyed, cleaning up...");
+
+                // Stop SpacetimeDB sidecar process
+                // This must happen early to ensure clean database shutdown
+                if let Some(handle) = window.app_handle().try_state::<Arc<Mutex<spacetimedb::SidecarHandle>>>() {
+                    if let Ok(mut guard) = handle.lock() {
+                        match guard.stop() {
+                            Ok(()) => debug!("SpacetimeDB sidecar stopped successfully"),
+                            Err(e) => warn!("Failed to stop SpacetimeDB sidecar: {}", e),
+                        }
+                    }
+                }
 
                 // Get worktree context for cleanup
                 let worktree_context = window.app_handle()
@@ -589,7 +623,9 @@ pub fn run() {
             commands::window_context::list_window_contexts,
             commands::window_context::add_window_context,
             commands::window_context::update_window_context,
-            commands::window_context::delete_window_context
+            commands::window_context::delete_window_context,
+            commands::list_transcriptions,
+            commands::get_transcriptions_by_recording
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "../lib/queryKeys";
 import { Plus, Search } from "lucide-react";
 import {
   Card,
@@ -29,10 +31,22 @@ export interface CommandsProps {
 
 export function Commands(_props: CommandsProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { contexts: contextsQuery, updateContext } = useWindowContext();
-  const [commands, setCommands] = useState<CommandDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // Fetch commands via React Query - auto-updates via event bridge
+  const {
+    data: commands = [],
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.tauri.listCommands,
+    queryFn: () => invoke<CommandDto[]>("get_commands"),
+  });
+
+  const error = queryError ? (queryError instanceof Error ? queryError.message : String(queryError)) : null;
+
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modal state
@@ -56,23 +70,6 @@ export function Commands(_props: CommandsProps) {
     }
     return map;
   }, [contextList]);
-
-  const loadCommands = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await invoke<CommandDto[]>("get_commands");
-      setCommands(result);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadCommands();
-  }, [loadCommands]);
 
   // Filter commands by search query
   const filteredCommands = useMemo(() => {
@@ -116,9 +113,8 @@ export function Commands(_props: CommandsProps) {
           },
         });
         commandId = updatedCommand.id;
-        setCommands((prev) =>
-          prev.map((c) => (c.id === editingCommand.id ? updatedCommand : c))
-        );
+        // Invalidate to refetch with updated command
+        await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listCommands });
         toast({
           type: "success",
           title: "Command updated",
@@ -135,7 +131,8 @@ export function Commands(_props: CommandsProps) {
           },
         });
         commandId = newCommand.id;
-        setCommands((prev) => [...prev, newCommand]);
+        // Invalidate to refetch with new command
+        await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listCommands });
         toast({
           type: "success",
           title: "Command created",
@@ -209,7 +206,8 @@ export function Commands(_props: CommandsProps) {
     const command = commands.find((c) => c.id === id);
     try {
       await invoke("remove_command", { id });
-      setCommands((prev) => prev.filter((c) => c.id !== id));
+      // Invalidate to refetch without the deleted command
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listCommands });
       setDeleteConfirmId(null);
       toast({
         type: "success",
@@ -227,7 +225,7 @@ export function Commands(_props: CommandsProps) {
 
   const handleToggleEnabled = async (command: CommandDto) => {
     try {
-      const updatedCommand = await invoke<CommandDto>("update_command", {
+      await invoke<CommandDto>("update_command", {
         input: {
           id: command.id,
           trigger: command.trigger,
@@ -236,9 +234,8 @@ export function Commands(_props: CommandsProps) {
           enabled: !command.enabled,
         },
       });
-      setCommands((prev) =>
-        prev.map((c) => (c.id === command.id ? updatedCommand : c))
-      );
+      // Invalidate to refetch with updated enabled state
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listCommands });
     } catch (e) {
       toast({
         type: "error",
@@ -271,7 +268,7 @@ export function Commands(_props: CommandsProps) {
             <div className="text-error" role="alert">
               {error}
             </div>
-            <Button onClick={loadCommands} className="mt-4">
+            <Button onClick={() => refetch()} className="mt-4">
               Retry
             </Button>
           </CardContent>

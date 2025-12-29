@@ -189,11 +189,28 @@ fn test_lock_info_serialize_roundtrip() {
     let original = LockInfo {
         pid: 42,
         timestamp: 1703347200,
+        sidecar_pid: None,
     };
 
     let serialized = original.serialize();
     let parsed = LockInfo::parse(&serialized);
 
+    assert!(parsed.is_some());
+    assert_eq!(parsed.unwrap(), original);
+}
+
+#[test]
+fn test_lock_info_serialize_roundtrip_with_sidecar() {
+    let original = LockInfo {
+        pid: 42,
+        timestamp: 1703347200,
+        sidecar_pid: Some(12345),
+    };
+
+    let serialized = original.serialize();
+    assert!(serialized.contains("sidecar_pid: 12345"));
+
+    let parsed = LockInfo::parse(&serialized);
     assert!(parsed.is_some());
     assert_eq!(parsed.unwrap(), original);
 }

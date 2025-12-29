@@ -1,0 +1,15 @@
+[package]
+name = "heycat-db"
+version = "0.1.0"
+edition = "2021"
+description = "SpacetimeDB module for heycat data persistence"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true

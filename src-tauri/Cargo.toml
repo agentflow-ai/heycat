@@ -53,6 +53,9 @@ foreign-types = "0.5"
 io-kit-sys = "0.4"
 swift-rs = "1.0"
 
+# SpacetimeDB client SDK for database operations
+spacetimedb-sdk = "1.11"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
