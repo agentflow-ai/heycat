@@ -6,26 +6,6 @@
 use super::*;
 
 #[test]
-fn test_keyboard_simulator_creation() {
-    // Verify we can create the simulator without panic
-    // This tests the enigo initialization path
-    let result = KeyboardSimulator::new();
-    // On CI or systems without display, this may fail - that's expected
-    // The important thing is it doesn't panic
-    match result {
-        Ok(_) => (), // Successfully created
-        Err(e) => {
-            // Expected on CI or headless systems
-            assert!(
-                e.contains("Failed to create keyboard simulator"),
-                "Unexpected error: {}",
-                e
-            );
-        }
-    }
-}
-
-#[test]
 #[ignore] // Requires display and keyboard permissions
 fn test_enter_keypress_integration() {
     let mut simulator = KeyboardSimulator::new().expect("Failed to create simulator");

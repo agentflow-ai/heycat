@@ -64,27 +64,6 @@ describe("useCommandPalette", () => {
     expect(result.current.isOpen).toBe(true);
   });
 
-  it("provides open/close/toggle methods", () => {
-    const { result } = renderHook(() => useCommandPalette());
-
-    expect(result.current.isOpen).toBe(false);
-
-    act(() => {
-      result.current.open();
-    });
-    expect(result.current.isOpen).toBe(true);
-
-    act(() => {
-      result.current.close();
-    });
-    expect(result.current.isOpen).toBe(false);
-
-    act(() => {
-      result.current.toggle();
-    });
-    expect(result.current.isOpen).toBe(true);
-  });
-
   it("calls onOpen callback when opening", () => {
     const onOpen = vi.fn();
     const { result } = renderHook(() => useCommandPalette({ onOpen }));

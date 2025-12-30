@@ -294,6 +294,77 @@ tcr status  # Check current TCR state
 tcr reset   # Reset after failures
 ```
 
+## Test File Organization
+
+### Rust Tests (`*_test.rs` Pattern)
+
+Rust tests use separate `*_test.rs` files co-located with their source modules. This pattern provides several benefits:
+
+1. **CI-friendly**: Coverage tools can exclude test files via `--ignore-filename-regex '_test\.rs$'`
+2. **Maintains private function access**: Test modules can access private items through `#[path]`
+3. **Clean separation**: Test code is clearly separated from production code
+4. **Path-based tooling**: Enables rules and exclusions based on file naming
+
+**How to set up a test file:**
+
+```rust
+// In src-tauri/src/mymodule/mod.rs (or mymodule.rs)
+pub fn my_function() -> i32 { 42 }
+
+#[cfg(test)]
+#[path = "mod_test.rs"]
+mod tests;
+```
+
+```rust
+// In src-tauri/src/mymodule/mod_test.rs
+use super::*;
+
+#[test]
+fn test_my_function() {
+    assert_eq!(my_function(), 42);
+}
+```
+
+**File naming conventions:**
+- For `mod.rs` → use `mod_test.rs`
+- For `foo.rs` → use `foo_test.rs`
+
+**Example from codebase:** See `src-tauri/src/keyboard/mod.rs` (uses `#[path]`) and `src-tauri/src/keyboard/keyboard_test.rs`
+
+### Frontend Tests (`*.test.ts/tsx` Pattern)
+
+Frontend tests are co-located with their source files using the `.test.ts` or `.test.tsx` suffix:
+
+```
+src/
+├── hooks/
+│   ├── useRecording.ts
+│   └── useRecording.test.tsx    # Co-located test file
+├── components/overlays/
+│   └── __tests__/
+│       └── useCommandPalette.test.ts  # Tests in __tests__ directory
+└── lib/
+    └── __tests__/
+        └── eventBridge.test.ts
+```
+
+**When to use which:**
+- **Co-located** (`*.test.ts` next to source): Preferred for hooks and simple modules
+- **`__tests__` directory**: Used when tests need shared fixtures or test utilities
+
+### CI Coverage Commands
+
+```bash
+# Frontend coverage (excludes test files automatically)
+bun run test:coverage
+
+# Backend coverage (excludes *_test.rs files)
+cd src-tauri && cargo +nightly llvm-cov --fail-under-lines 60 --fail-under-functions 60 --ignore-filename-regex '_test\.rs$'
+```
+
+---
+
 ## Decision Tree: When to Write a Test
 
 ```

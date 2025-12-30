@@ -61,16 +61,6 @@ fn test_map_unknown_error() {
 }
 
 #[test]
-fn test_service_new() {
-    let svc = HotkeyService::new(MockBackend {
-        should_fail: false,
-        error_msg: String::new(),
-    });
-    // Just verify the service can be created
-    assert!(!svc.backend.should_fail);
-}
-
-#[test]
 fn test_backend_register_success() {
     let backend = MockBackend {
         should_fail: false,

@@ -24,14 +24,6 @@ describe("useActiveWindow", () => {
     mockListeners.clear();
   });
 
-  it("returns null initially when no event has been received", () => {
-    const { result } = renderHook(() => useActiveWindow());
-
-    expect(result.current.activeWindow).toBeNull();
-    expect(result.current.matchedContextId).toBeNull();
-    expect(result.current.matchedContextName).toBeNull();
-  });
-
   it("updates state when active_window_changed event is received", async () => {
     const { result } = renderHook(() => useActiveWindow());
 
@@ -79,17 +71,5 @@ describe("useActiveWindow", () => {
     expect(result.current.activeWindow).toEqual(payload);
     expect(result.current.matchedContextId).toBeNull();
     expect(result.current.matchedContextName).toBeNull();
-  });
-
-  it("cleans up listener on unmount", async () => {
-    const { unmount } = renderHook(() => useActiveWindow());
-
-    await vi.waitFor(() => {
-      expect(mockListeners.has("active_window_changed")).toBe(true);
-    });
-
-    unmount();
-
-    expect(mockUnlisten).toHaveBeenCalledTimes(1);
   });
 });

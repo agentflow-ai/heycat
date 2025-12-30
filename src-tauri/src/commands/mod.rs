@@ -940,4 +940,5 @@ pub fn get_settings_file_name(worktree_state: State<'_, crate::worktree::Worktre
 }
 
 #[cfg(test)]
+#[path = "mod_test.rs"]
 mod tests;

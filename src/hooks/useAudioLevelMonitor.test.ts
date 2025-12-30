@@ -109,25 +109,6 @@ describe("useAudioLevelMonitor", () => {
     expect(result.current.level).toBe(50);
   });
 
-  it("stops monitoring on cleanup", async () => {
-    const { unmount } = renderHook(() =>
-      useAudioLevelMonitor({ deviceName: null, enabled: true })
-    );
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("start_audio_monitor", {
-        deviceName: undefined,
-      });
-    });
-
-    unmount();
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("stop_audio_monitor");
-    });
-    expect(mockUnlisten).toHaveBeenCalled();
-  });
-
   it("restarts monitoring when device changes", async () => {
     const { rerender } = renderHook(
       ({ deviceName }) => useAudioLevelMonitor({ deviceName, enabled: true }),

@@ -197,4 +197,5 @@ pub async fn delete_dictionary_entry(
 }
 
 #[cfg(test)]
+#[path = "dictionary_test.rs"]
 mod tests;

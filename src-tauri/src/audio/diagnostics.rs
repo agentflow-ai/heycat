@@ -8,11 +8,18 @@
 //! - Debug mode for raw audio capture
 //! - Frontend warning events
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
+/// Threshold for "too quiet" warning (-30dBFS RMS ≈ 0.0316 linear)
+const QUIET_THRESHOLD_RMS: f32 = 0.0316;
+
 /// Threshold for clipping detection (samples at or near ±1.0)
+#[allow(dead_code)]
 const CLIPPING_THRESHOLD: f32 = 0.99;
+
+/// Minimum sample count before issuing warnings (avoid false positives on short bursts)
+const MIN_SAMPLES_FOR_WARNING: usize = 8000; // ~0.5 seconds at 16kHz
 
 /// Check if diagnostics verbose mode is enabled via environment variable
 fn diagnostics_verbose() -> bool {
@@ -25,8 +32,6 @@ pub fn debug_audio_enabled() -> bool {
 }
 
 /// Quality warning types emitted to the frontend
-/// Note: Currently unused but kept for API compatibility with StopResult
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QualityWarningType {
@@ -37,8 +42,6 @@ pub enum QualityWarningType {
 }
 
 /// Severity level for quality warnings
-/// Note: Currently unused but kept for API compatibility with StopResult
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WarningSeverity {
@@ -46,16 +49,6 @@ pub enum WarningSeverity {
     Info,
     /// Warning - likely to affect transcription quality
     Warning,
-}
-
-/// Quality warning event payload for frontend
-/// Note: Currently unused but kept for API compatibility with StopResult
-#[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct QualityWarning {
-    pub warning_type: QualityWarningType,
-    pub severity: WarningSeverity,
-    pub message: String,
 }
 
 /// Pipeline processing stages for timing metrics
@@ -70,6 +63,14 @@ pub enum PipelineStage {
     Denoising,
     /// Automatic gain control
     Agc,
+}
+
+/// Quality warning event payload for frontend
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct QualityWarning {
+    pub warning_type: QualityWarningType,
+    pub severity: WarningSeverity,
+    pub message: String,
 }
 
 /// Audio level metrics
@@ -199,6 +200,9 @@ pub struct RecordingDiagnostics {
     debug_enabled: bool,
     /// Buffer for raw (pre-processing) audio in debug mode
     raw_audio_buffer: std::sync::Mutex<Vec<f32>>,
+    /// Whether warnings have been emitted (to avoid spam)
+    quiet_warning_emitted: AtomicBool,
+    clipping_warning_emitted: AtomicBool,
     /// Pipeline stage timing metrics
     timing: std::sync::Mutex<TimingMetrics>,
 }
@@ -217,6 +221,8 @@ impl RecordingDiagnostics {
             verbose: diagnostics_verbose(),
             debug_enabled: debug_audio_enabled(),
             raw_audio_buffer: std::sync::Mutex::new(Vec::new()),
+            quiet_warning_emitted: AtomicBool::new(false),
+            clipping_warning_emitted: AtomicBool::new(false),
             timing: std::sync::Mutex::new(TimingMetrics::default()),
         }
     }
@@ -274,6 +280,25 @@ impl RecordingDiagnostics {
         }
     }
 
+    /// Record output samples (call after processing)
+    pub fn record_output(&self, samples: &[f32]) {
+        let count = samples.len();
+        self.output_sample_count.fetch_add(count, Ordering::Relaxed);
+
+        // Update peak and sum of squares
+        if let (Ok(mut peak), Ok(mut sum_sq)) =
+            (self.output_peak.lock(), self.output_sum_sq.lock())
+        {
+            for &sample in samples {
+                let abs_sample = sample.abs();
+                if abs_sample > *peak {
+                    *peak = abs_sample;
+                }
+                *sum_sq += (sample * sample) as f64;
+            }
+        }
+    }
+
     /// Get input level metrics
     pub fn input_metrics(&self) -> LevelMetrics {
         let sample_count = self.input_sample_count.load(Ordering::Relaxed);
@@ -316,6 +341,55 @@ impl RecordingDiagnostics {
     /// Get clipping count
     pub fn clipping_count(&self) -> usize {
         self.clipping_count.load(Ordering::Relaxed)
+    }
+
+    /// Check for quality warnings and return them
+    ///
+    /// Call this periodically or at the end of recording.
+    /// Each warning type is only returned once per recording session.
+    pub fn check_warnings(&self) -> Vec<QualityWarning> {
+        let mut warnings = Vec::new();
+
+        let input = self.input_metrics();
+
+        // Check for quiet input (only after enough samples)
+        if input.sample_count >= MIN_SAMPLES_FOR_WARNING {
+            if input.rms < QUIET_THRESHOLD_RMS
+                && !self.quiet_warning_emitted.swap(true, Ordering::Relaxed)
+            {
+                warnings.push(QualityWarning {
+                    warning_type: QualityWarningType::TooQuiet,
+                    severity: WarningSeverity::Warning,
+                    message: format!(
+                        "Input signal is very quiet ({:.1}dBFS RMS). Move closer to microphone or speak louder.",
+                        input.rms_dbfs()
+                    ),
+                });
+            }
+        }
+
+        // Check for clipping
+        let clip_count = self.clipping_count();
+        if clip_count > 0
+            && !self.clipping_warning_emitted.swap(true, Ordering::Relaxed)
+        {
+            let severity = if clip_count > 100 {
+                WarningSeverity::Warning
+            } else {
+                WarningSeverity::Info
+            };
+
+            warnings.push(QualityWarning {
+                warning_type: QualityWarningType::Clipping,
+                severity,
+                message: format!(
+                    "Audio clipping detected ({} samples). Reduce microphone gain or move further away.",
+                    clip_count
+                ),
+            });
+        }
+
+        warnings
     }
 
     /// Get raw audio buffer for debug mode
@@ -395,78 +469,5 @@ unsafe impl Send for RecordingDiagnostics {}
 unsafe impl Sync for RecordingDiagnostics {}
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_level_metrics_from_samples() {
-        let samples = vec![0.5_f32, -0.3, 0.8, -0.2, 0.1];
-        let metrics = LevelMetrics::from_samples(&samples);
-
-        assert_eq!(metrics.sample_count, 5);
-        assert!((metrics.peak - 0.8).abs() < 0.001);
-        // RMS = sqrt((0.25 + 0.09 + 0.64 + 0.04 + 0.01) / 5) = sqrt(0.206) ≈ 0.454
-        assert!((metrics.rms - 0.454).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_level_metrics_empty() {
-        let metrics = LevelMetrics::from_samples(&[]);
-        assert_eq!(metrics.sample_count, 0);
-        assert_eq!(metrics.peak, 0.0);
-        assert_eq!(metrics.rms, 0.0);
-    }
-
-    #[test]
-    fn test_dbfs_conversion() {
-        let metrics = LevelMetrics {
-            peak: 1.0, // 0 dBFS
-            rms: 0.5,  // ~-6 dBFS
-            sample_count: 100,
-        };
-
-        assert!((metrics.peak_dbfs() - 0.0).abs() < 0.001);
-        assert!((metrics.rms_dbfs() - (-6.02)).abs() < 0.1);
-    }
-
-    #[test]
-    fn test_dbfs_zero() {
-        let metrics = LevelMetrics {
-            peak: 0.0,
-            rms: 0.0,
-            sample_count: 0,
-        };
-
-        assert!(metrics.peak_dbfs() == f32::NEG_INFINITY);
-        assert!(metrics.rms_dbfs() == f32::NEG_INFINITY);
-    }
-
-    #[test]
-    fn test_diagnostics_record_input() {
-        let diag = RecordingDiagnostics::new();
-
-        let samples = vec![0.5_f32; 1000];
-        diag.record_input(&samples);
-
-        let metrics = diag.input_metrics();
-        assert_eq!(metrics.sample_count, 1000);
-        assert!((metrics.peak - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_clipping_detection() {
-        let diag = RecordingDiagnostics::new();
-
-        let samples = vec![0.5, 0.99, 1.0, -1.0, 0.5]; // 3 clipping samples
-        diag.record_input(&samples);
-
-        assert_eq!(diag.clipping_count(), 3);
-    }
-
-    #[test]
-    fn test_diagnostics_default() {
-        let diag = RecordingDiagnostics::default();
-        assert_eq!(diag.input_metrics().sample_count, 0);
-        assert_eq!(diag.clipping_count(), 0);
-    }
-}
+#[path = "diagnostics_test.rs"]
+mod tests;

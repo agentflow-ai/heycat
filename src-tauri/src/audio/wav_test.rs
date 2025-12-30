@@ -81,38 +81,6 @@ impl FileWriter for MockFileWriter {
 }
 
 // =============================================================================
-// Error Enum Tests
-// =============================================================================
-
-#[test]
-fn test_error_variants_io_error() {
-    let error = WavEncodingError::IoError("test error".to_string());
-    assert_eq!(error, WavEncodingError::IoError("test error".to_string()));
-}
-
-#[test]
-fn test_error_variants_encoding_error() {
-    let error = WavEncodingError::EncodingError("encoding failed".to_string());
-    assert_eq!(
-        error,
-        WavEncodingError::EncodingError("encoding failed".to_string())
-    );
-}
-
-#[test]
-fn test_error_variants_invalid_input() {
-    let error = WavEncodingError::InvalidInput("invalid".to_string());
-    assert_eq!(
-        error,
-        WavEncodingError::InvalidInput("invalid".to_string())
-    );
-}
-
-// Tests removed per docs/TESTING.md:
-// - test_error_debug_format: Debug trait test
-// - test_error_clone: Type system guarantee
-
-// =============================================================================
 // Validation Tests
 // =============================================================================
 

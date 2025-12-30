@@ -110,24 +110,6 @@ async fn test_configurable_delay() {
 }
 
 #[test]
-fn test_text_input_default() {
-    let action = TextInputAction::default();
-    // Just verify it can be created
-    assert!(std::mem::size_of_val(&action) >= 0);
-}
-
-#[test]
-fn test_action_result_data_structure() {
-    let data = serde_json::json!({
-        "typed": "hello",
-        "length": 5
-    });
-
-    assert_eq!(data["typed"], "hello");
-    assert_eq!(data["length"], 5);
-}
-
-#[test]
 fn test_check_accessibility_permission_callable() {
     // Just verify the function is callable (doesn't panic)
     let _result = check_accessibility_permission();

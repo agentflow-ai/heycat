@@ -299,11 +299,6 @@ fn test_is_debouncing() {
 }
 
 #[test]
-fn test_default_debounce_duration() {
-    assert_eq!(DEBOUNCE_DURATION_MS, 200);
-}
-
-#[test]
 fn test_multiple_rapid_toggles_only_first_accepted() {
     ensure_test_model_files();
     let emitter = MockEmitter::new();

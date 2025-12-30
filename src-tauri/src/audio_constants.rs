@@ -37,12 +37,45 @@ pub const VAD_CHUNK_SIZE_16KHZ: usize = 512;
 #[allow(dead_code)]
 pub const VAD_CHUNK_SIZE_8KHZ: usize = 256;
 
+/// Minimum samples to process for a partial VAD chunk.
+///
+/// When the remaining audio buffer doesn't fill a complete VAD chunk,
+/// we still process it if it contains at least this many samples.
+/// Set to half a chunk (256 samples at 16kHz = 16ms) to avoid
+/// missing speech at buffer boundaries while filtering noise.
+pub const MIN_PARTIAL_VAD_CHUNK: usize = VAD_CHUNK_SIZE_16KHZ / 2;
+
+// =============================================================================
+// VAD THRESHOLDS
+// =============================================================================
+
+/// VAD speech threshold for wake word detection (0.0 - 1.0).
+///
+/// Lower threshold = more sensitive to speech. Set to 0.3 for better
+/// sensitivity to varied pronunciations and volumes. The cost of false
+/// positives here is only an extra transcription attempt.
+pub const VAD_THRESHOLD_WAKE_WORD: f32 = 0.3;
+
+/// VAD speech threshold for balanced general use (0.0 - 1.0).
+///
+/// A middle ground between sensitivity and precision. Suitable for
+/// general-purpose VAD where neither extreme sensitivity nor precision
+/// is critical.
+pub const VAD_THRESHOLD_BALANCED: f32 = 0.4;
+
 /// VAD speech threshold for silence/end-of-speech detection (0.0 - 1.0).
 ///
 /// Higher threshold = more confident speech is present. Used by the
 /// silence detector to avoid cutting off speech prematurely during
 /// pauses or soft speech.
 pub const VAD_THRESHOLD_SILENCE: f32 = 0.5;
+
+/// VAD speech threshold for wake word detector (aggressive filtering).
+///
+/// Set higher (0.6) to aggressively filter ambient noise. May miss
+/// very quiet speech but significantly reduces false positives during
+/// continuous listening.
+pub const VAD_THRESHOLD_AGGRESSIVE: f32 = 0.6;
 
 // =============================================================================
 // SILENCE DETECTION
@@ -157,55 +190,5 @@ pub const fn chunk_size_for_sample_rate(sample_rate: u32) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_chunk_size_calculation() {
-        assert_eq!(chunk_size_for_sample_rate(16000), VAD_CHUNK_SIZE_16KHZ);
-        assert_eq!(chunk_size_for_sample_rate(8000), VAD_CHUNK_SIZE_8KHZ);
-    }
-
-    #[test]
-    fn test_chunk_sizes_match_formula() {
-        // Verify the constants match the formula
-        assert_eq!(
-            VAD_CHUNK_SIZE_16KHZ,
-            (DEFAULT_SAMPLE_RATE * OPTIMAL_CHUNK_DURATION_MS / 1000) as usize
-        );
-        assert_eq!(
-            VAD_CHUNK_SIZE_8KHZ,
-            (8000 * OPTIMAL_CHUNK_DURATION_MS / 1000) as usize
-        );
-    }
-
-    #[test]
-    fn test_sample_rate_valid_for_silero() {
-        // Silero VAD only supports 8000 or 16000 Hz
-        assert!(DEFAULT_SAMPLE_RATE == 16000 || DEFAULT_SAMPLE_RATE == 8000);
-    }
-
-    #[test]
-    fn test_preferred_buffer_size_reasonable() {
-        // Buffer size should be a power of 2 for efficient audio processing
-        assert!(PREFERRED_BUFFER_SIZE.is_power_of_two());
-        // Should be at least 64 samples for stable operation
-        assert!(PREFERRED_BUFFER_SIZE >= 64);
-        // Should be at most 1024 to keep latency reasonable
-        assert!(PREFERRED_BUFFER_SIZE <= 1024);
-        // 256 is the recommended default
-        assert_eq!(PREFERRED_BUFFER_SIZE, 256);
-    }
-
-    #[test]
-    fn test_buffer_latency_calculation() {
-        // Verify the latency values from the doc comment
-        let latency_16khz_ms = PREFERRED_BUFFER_SIZE as f32 / 16000.0 * 1000.0;
-        let latency_48khz_ms = PREFERRED_BUFFER_SIZE as f32 / 48000.0 * 1000.0;
-
-        // 256 samples @ 16kHz = 16ms
-        assert!((latency_16khz_ms - 16.0).abs() < 0.1);
-        // 256 samples @ 48kHz ≈ 5.3ms
-        assert!((latency_48khz_ms - 5.33).abs() < 0.1);
-    }
-}
+#[path = "audio_constants_test.rs"]
+mod tests;

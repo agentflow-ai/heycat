@@ -114,21 +114,3 @@ async fn test_missing_app_parameter_returns_error() {
     assert!(error.message.contains("app"));
 }
 
-#[test]
-fn test_action_result_data_structure() {
-    // Test that our data structure is correct
-    let data = serde_json::json!({
-        "app": "Safari",
-        "action": "open"
-    });
-
-    assert_eq!(data["app"], "Safari");
-    assert_eq!(data["action"], "open");
-}
-
-#[test]
-fn test_app_launcher_default() {
-    let action = AppLauncherAction::default();
-    // Just verify it can be created
-    assert!(std::mem::size_of_val(&action) >= 0);
-}

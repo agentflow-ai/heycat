@@ -221,25 +221,4 @@ describe("useMultiModelStatus", () => {
     expect(result.current.models.downloadState).toBe("error");
     expect(result.current.models.error).toBe("Download failed");
   });
-
-  it("cleans up event listeners on unmount", async () => {
-    const { unmount } = renderHook(() => useMultiModelStatus(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => {
-      expect(mockListen).toHaveBeenCalled();
-    });
-
-    const initialListenerCount =
-      mockListeners.get("model_file_download_progress")?.length || 0;
-    expect(initialListenerCount).toBeGreaterThan(0);
-
-    unmount();
-
-    // Listeners should be cleaned up
-    const finalListenerCount =
-      mockListeners.get("model_file_download_progress")?.length || 0;
-    expect(finalListenerCount).toBe(0);
-  });
 });

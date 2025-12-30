@@ -16,15 +16,6 @@ describe("useTranscription", () => {
     });
   });
 
-  it("returns initial transcription state", () => {
-    const { result } = renderHook(() => useTranscription());
-
-    expect(result.current.isTranscribing).toBe(false);
-    expect(result.current.transcribedText).toBeNull();
-    expect(result.current.error).toBeNull();
-    expect(result.current.durationMs).toBeNull();
-  });
-
   it("reflects transcriptionStarted state from store", () => {
     const { result } = renderHook(() => useTranscription());
 
