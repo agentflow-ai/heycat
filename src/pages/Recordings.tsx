@@ -148,7 +148,7 @@ export function Recordings(_props: RecordingsProps) {
     try {
       await invoke<string>("transcribe_file", { filePath });
       // Invalidate all pages to refetch with updated transcription
-      await queryClient.invalidateQueries({ queryKey: ["tauri", "list_recordings"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listRecordings() });
       toast({
         type: "success",
         title: "Transcription complete",
@@ -201,7 +201,7 @@ export function Recordings(_props: RecordingsProps) {
     try {
       await invoke("delete_recording", { filePath });
       // Invalidate all pages to refetch without the deleted recording
-      await queryClient.invalidateQueries({ queryKey: ["tauri", "list_recordings"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listRecordings() });
       setDeleteConfirmPath(null);
       if (expandedPath === filePath) {
         setExpandedPath(null);

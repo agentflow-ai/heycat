@@ -20,11 +20,17 @@ import { ToastProvider } from "./components/overlays";
  */
 function AppInitializer({ children }: { children: ReactNode }) {
   useEffect(() => {
+    let isMounted = true;
     let cleanup: (() => void) | undefined;
 
-    // Initialize settings from Tauri Store into Zustand
-    // This happens before event bridge setup to ensure settings are available
-    initializeSettings().then(async () => {
+    const init = async () => {
+      // Initialize settings from Tauri Store into Zustand
+      // This happens before event bridge setup to ensure settings are available
+      await initializeSettings();
+
+      // Check if component was unmounted during async operation
+      if (!isMounted) return;
+
       // Pre-initialize audio monitor for instant audio settings UI
       // This starts the AVAudioEngine so it's ready when user opens settings
       try {
@@ -34,14 +40,26 @@ function AppInitializer({ children }: { children: ReactNode }) {
         // Non-fatal - monitor will start on-demand when settings opened
       }
 
+      // Check again after async operation
+      if (!isMounted) return;
+
       // Initialize event bridge with query client and store
       const store = useAppStore.getState();
-      setupEventBridge(queryClient, store).then((cleanupFn) => {
+      const cleanupFn = await setupEventBridge(queryClient, store);
+
+      // Only assign cleanup if still mounted to prevent race condition
+      if (isMounted) {
         cleanup = cleanupFn;
-      });
-    });
+      } else {
+        // Component unmounted during setup - clean up immediately
+        cleanupFn();
+      }
+    };
+
+    init();
 
     return () => {
+      isMounted = false;
       cleanup?.();
     };
   }, []);
