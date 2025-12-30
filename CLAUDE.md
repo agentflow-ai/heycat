@@ -13,6 +13,24 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 | Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `devloop:agile` plugin (Linear backend) |
 | TCR/Testing | writing and test, TDD, coverage, commit, tcr check | `devloop:tcr` plugin and docs/TESTING.md |
 
+## ⚠️ Required: Worktree-First Development
+
+**Before running `/devloop:agile:loop` or implementing any feature/bug/spec, you MUST create a worktree:**
+
+```
+/create-worktree
+```
+
+This project uses the "cattle model" - worktrees are ephemeral, disposable environments. Never develop directly on main.
+
+**Full workflow:**
+1. `/create-worktree` - Create worktree for the issue (from main repo)
+2. `/devloop:agile:loop` - Implement specs in the worktree
+3. `/submit-pr` - Push and create PR when done
+4. `/close-worktree` - Delete worktree after PR merges
+
+---
+
 ## Key Entry Points
 
 IMPORTANT: You must use these to discover the stated topics. Dont assume things within the areas each entry point describes.
@@ -29,11 +47,14 @@ You may never use npm or npx, always use bun or bunx.
 ### Agile Workflow
 **ALWAYS invoke the `devloop:agile` skill** for issue and spec management, code reviews, and workflow tasks like writing code.
 
+**PREREQUISITE:** Create a worktree first (see "Worktree-First Development" above). Never run `/devloop:agile:loop` from main.
+
 **IMPORTANT:** The `agile` command is NOT a system CLI. Do NOT run `agile ...` directly in bash - it will fail with "command not found".
 
 **Correct approach:**
-1. Use `Skill(devloop:agile)` to get the command documentation
-2. Run commands via bun: `bun <plugin-path>/agile.ts <command> [args]`
+1. `/create-worktree` - Set up isolated development environment
+2. Use `Skill(devloop:agile)` to get the command documentation
+3. Run commands via bun: `bun <plugin-path>/agile.ts <command> [args]`
 
 
 ### TCR (Test-Commit-Refactor) - Writing and Running tests
@@ -45,11 +66,7 @@ You may never use npm or npx, always use bun or bunx.
 Reviews must use a **fresh subagent** with no implementation context. Use `/devloop:agile:review`.
 
 ### Worktrees (Cattle Model)
-**When:** Starting a new feature, submitting for review, cleaning up after PR merge
-**Commands:**
-- `/create-worktree` - Create ephemeral worktree for new feature (run from main repo)
-- `/sync-worktree` - Rebase worktree onto latest main
-- `/submit-pr` - Push branch and create PR (run from worktree)
+See "⚠️ Required: Worktree-First Development" section above. Additional commands:
+- `/sync-worktree` - Rebase worktree onto latest main (use when main has updates)
+- `/submit-pr` - Push branch and create PR (run from worktree when specs complete)
 - `/close-worktree` - Delete worktree after PR is merged
-
-**Workflow:** Create worktree → develop → submit PR → (review) → close worktree
