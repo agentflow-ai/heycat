@@ -6,6 +6,7 @@
 // - This allows subsequent transcriptions to proceed normally after a panic
 // - std::sync::Mutex would poison the lock, making the model permanently unavailable
 
+use hound::WavReader;
 use parking_lot::{Mutex, MutexGuard};
 use parakeet_rs::ParakeetTDT;
 use std::path::Path;
@@ -13,6 +14,66 @@ use std::sync::Arc;
 
 use super::types::{TranscriptionError, TranscriptionResult, TranscriptionService, TranscriptionState};
 use super::utils::fix_parakeet_text;
+
+// ============================================================================
+// WAV Validation - Prevent panics in parakeet-rs
+// ============================================================================
+
+/// Validates a WAV file before transcription to prevent known panic triggers in parakeet-rs.
+///
+/// This function checks:
+/// - File exists
+/// - File is not empty (size > 0)
+/// - Valid WAV header (parseable by hound)
+/// - WAV contains at least one audio sample
+///
+/// # Arguments
+/// * `file_path` - Path to the WAV file to validate
+///
+/// # Returns
+/// * `Ok(())` if the WAV file is valid for transcription
+/// * `Err(TranscriptionError::InvalidAudio)` with descriptive message if invalid
+///
+/// # Why This Is Needed
+/// parakeet-rs panics with 'index out of bounds: the len is 0' when given empty
+/// or invalid audio files (see audio.rs:29 in parakeet-rs). This validation
+/// catches such files before they reach the model.
+fn validate_wav_for_transcription(file_path: &str) -> TranscriptionResult<()> {
+    let path = Path::new(file_path);
+
+    // Check file exists
+    if !path.exists() {
+        return Err(TranscriptionError::InvalidAudio(format!(
+            "File not found: {}",
+            file_path
+        )));
+    }
+
+    // Check file is not empty
+    let metadata = std::fs::metadata(path).map_err(|e| {
+        TranscriptionError::InvalidAudio(format!("Cannot read file metadata: {}", e))
+    })?;
+
+    if metadata.len() == 0 {
+        return Err(TranscriptionError::InvalidAudio(
+            "File is empty".to_string(),
+        ));
+    }
+
+    // Validate WAV header using hound
+    let reader = WavReader::open(path).map_err(|e| {
+        TranscriptionError::InvalidAudio(format!("Invalid WAV file: {}", e))
+    })?;
+
+    // Check that WAV has samples (prevents 'index out of bounds' panic in parakeet-rs)
+    if reader.len() == 0 {
+        return Err(TranscriptionError::InvalidAudio(
+            "WAV file contains no audio samples".to_string(),
+        ));
+    }
+
+    Ok(())
+}
 
 // ============================================================================
 // TranscribingGuard - RAII guard for state transitions
@@ -333,6 +394,10 @@ impl SharedTranscriptionModel {
                 "Empty file path".to_string(),
             ));
         }
+
+        // Validate WAV file BEFORE acquiring locks to prevent parakeet-rs panics.
+        // This catches empty/invalid files that would cause 'index out of bounds' errors.
+        validate_wav_for_transcription(file_path)?;
 
         // Acquire exclusive transcription access - blocks if streaming is active
         let _transcription_permit = self.acquire_transcription_lock();

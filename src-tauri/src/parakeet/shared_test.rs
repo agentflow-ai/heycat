@@ -10,11 +10,13 @@ use super::*;
 // These test actual user-visible behavior and error handling
 
 #[test]
-fn test_transcribe_file_returns_error_when_model_not_loaded() {
+fn test_transcribe_file_returns_error_for_nonexistent_file() {
+    // With WAV validation, nonexistent files are caught BEFORE the model check
+    // This is intentional - we want to fail fast on invalid input
     let model = SharedTranscriptionModel::new();
     let result = model.transcribe_file("/nonexistent/audio.wav");
     assert!(result.is_err());
-    assert!(matches!(result, Err(TranscriptionError::ModelNotLoaded)));
+    assert!(matches!(result, Err(TranscriptionError::InvalidAudio(_))));
 }
 
 #[test]
