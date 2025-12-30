@@ -34,9 +34,8 @@ pub enum TranscriptionError {
     /// Audio data is invalid or empty
     #[error("Invalid audio: {0}")]
     InvalidAudio(String),
-    /// Failed to acquire lock on context
-    #[error("Internal lock error")]
-    LockPoisoned,
+    // NOTE: LockPoisoned variant removed - parking_lot::Mutex doesn't poison on panic,
+    // so this error case is no longer possible.
 }
 
 /// Result type for transcription operations
