@@ -266,11 +266,5 @@ fn monitor_thread_main(command_rx: Receiver<MonitorCommand>) {
 }
 
 #[cfg(test)]
-}
-
-    crate::debug!("Audio monitor thread exiting");
-}
-
-#[cfg(test)]
 #[path = "monitor_test.rs"]
 mod tests;
