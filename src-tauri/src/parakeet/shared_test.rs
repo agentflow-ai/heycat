@@ -207,7 +207,7 @@ fn test_unload_sets_model_to_none_and_state_to_unloaded() {
 
     // Set up a state as if model was loaded
     {
-        let mut state = model.state.lock().unwrap();
+        let mut state = model.state.lock();
         *state = TranscriptionState::Idle;
     }
 
@@ -229,9 +229,9 @@ fn test_unload_releases_lock_after_completion() {
     // Unload
     let _ = model.unload();
 
-    // Lock should be acquirable again
-    let guard = model.acquire_transcription_lock();
-    assert!(guard.is_ok());
+    // Lock should be acquirable again - with parking_lot, this always succeeds
+    let _guard = model.acquire_transcription_lock();
+    // If we get here, the lock was successfully acquired
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn test_reload_fails_with_invalid_path() {
 
     // Set up initial state
     {
-        let mut state = model.state.lock().unwrap();
+        let mut state = model.state.lock();
         *state = TranscriptionState::Idle;
     }
 
@@ -260,9 +260,9 @@ fn test_reload_releases_lock_after_failure() {
     // Reload with invalid path
     let _ = model.reload(Path::new("/nonexistent/model/path"));
 
-    // Lock should be acquirable again
-    let guard = model.acquire_transcription_lock();
-    assert!(guard.is_ok());
+    // Lock should be acquirable again - with parking_lot, this always succeeds
+    let _guard = model.acquire_transcription_lock();
+    // If we get here, the lock was successfully acquired
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn test_unload_is_thread_safe() {
 
     // Set up initial state
     {
-        let mut state = model.state.lock().unwrap();
+        let mut state = model.state.lock();
         *state = TranscriptionState::Idle;
     }
 
@@ -293,4 +293,141 @@ fn test_unload_is_thread_safe() {
 
     // Final state should be Unloaded
     assert_eq!(model.state(), TranscriptionState::Unloaded);
+}
+
+// ==================== WAV Validation Tests ====================
+// These tests verify the validate_wav_for_transcription function behavior
+
+#[test]
+fn test_wav_validation_rejects_empty_file() {
+    use tempfile::NamedTempFile;
+
+    // Create an empty file
+    let temp_file = NamedTempFile::new().unwrap();
+    let path = temp_file.path().to_str().unwrap();
+
+    let model = SharedTranscriptionModel::new();
+    let result = model.transcribe_file(path);
+
+    assert!(result.is_err());
+    match result {
+        Err(TranscriptionError::InvalidAudio(msg)) => {
+            assert!(msg.contains("empty") || msg.contains("Invalid WAV"));
+        }
+        _ => panic!("Expected InvalidAudio error for empty file"),
+    }
+}
+
+#[test]
+fn test_wav_validation_accepts_valid_wav() {
+    use hound::{WavSpec, WavWriter};
+    use tempfile::NamedTempFile;
+
+    // Create a valid WAV file with audio samples
+    let temp_file = NamedTempFile::with_suffix(".wav").unwrap();
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 16000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+
+    {
+        let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
+        // Write some audio samples (simple sine wave approximation)
+        for i in 0..1600 {
+            // 0.1 seconds of audio
+            let sample = (i as f32 * 0.1).sin() * 10000.0;
+            writer.write_sample(sample as i16).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    let model = SharedTranscriptionModel::new();
+    let path = temp_file.path().to_str().unwrap();
+    let result = model.transcribe_file(path);
+
+    // Should NOT fail with InvalidAudio - it passes validation
+    // It will fail with ModelNotLoaded since we haven't loaded a model,
+    // which proves validation passed.
+    match result {
+        Err(TranscriptionError::ModelNotLoaded) => {
+            // This is expected - validation passed, but model isn't loaded
+        }
+        Err(TranscriptionError::InvalidAudio(msg)) => {
+            panic!("Valid WAV should pass validation, got InvalidAudio: {}", msg);
+        }
+        _ => {
+            // Any other result is also fine (success or other errors)
+        }
+    }
+}
+
+// ==================== Model Resilience Tests ====================
+// Verify the model remains usable after various failure scenarios
+
+#[test]
+fn test_model_remains_usable_after_validation_failures() {
+    use tempfile::NamedTempFile;
+
+    let model = SharedTranscriptionModel::new();
+
+    // Simulate multiple validation failures
+    for _ in 0..5 {
+        // Nonexistent file
+        let _ = model.transcribe_file("/nonexistent/file.wav");
+
+        // Empty file
+        let temp_file = NamedTempFile::new().unwrap();
+        let _ = model.transcribe_file(temp_file.path().to_str().unwrap());
+
+        // Empty path
+        let _ = model.transcribe_file("");
+    }
+
+    // Model should still be usable - locks not poisoned
+    // The lock should be acquirable
+    let _guard = model.acquire_transcription_lock();
+
+    // State should be Unloaded (no model loaded, but not stuck in error state)
+    assert_eq!(model.state(), TranscriptionState::Unloaded);
+}
+
+#[test]
+fn test_model_remains_usable_after_state_guard_panic() {
+    use std::panic::{self, AssertUnwindSafe};
+
+    let model = SharedTranscriptionModel::new();
+
+    // Set model to Idle state so guard can be acquired
+    {
+        let mut state = model.state.lock();
+        *state = TranscriptionState::Idle;
+    }
+
+    // Simulate a panic during transcription
+    let model_clone = model.clone();
+    let result = panic::catch_unwind(AssertUnwindSafe(move || {
+        let _guard = TranscribingGuard::new(model_clone.state.clone()).unwrap();
+        panic!("Simulated panic during transcription");
+    }));
+
+    assert!(result.is_err());
+
+    // Model should still be usable after panic - this is the key resilience feature
+    // With parking_lot::Mutex, the lock is NOT poisoned
+    assert_eq!(model.state(), TranscriptionState::Idle);
+
+    // Can still acquire locks (verify lock isn't poisoned)
+    {
+        let _guard = model.acquire_transcription_lock();
+        // Lock acquired successfully - not poisoned
+    }
+    // Guard dropped here
+
+    // Can still attempt operations (will fail for other reasons, but not due to poison)
+    // This verifies the full transcription path works after a panic
+    let result = model.transcribe_samples(vec![0.1], 16000, 1);
+    // Should fail with ModelNotLoaded (state is Idle but no model), not a lock error
+    assert!(matches!(result, Err(TranscriptionError::ModelNotLoaded)));
 }
