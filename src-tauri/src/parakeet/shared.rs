@@ -283,23 +283,17 @@ impl SharedTranscriptionModel {
     #[allow(dead_code)]
     pub fn unload(&self) -> TranscriptionResult<()> {
         // Acquire exclusive transcription access - blocks if transcription is active
-        let _transcription_permit = self.acquire_transcription_lock()?;
+        let _transcription_permit = self.acquire_transcription_lock();
 
         // Set model to None
         {
-            let mut model_guard = self
-                .model
-                .lock()
-                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            let mut model_guard = self.model.lock();
             *model_guard = None;
         }
 
         // Set state to Unloaded
         {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            let mut state = self.state.lock();
             *state = TranscriptionState::Unloaded;
         }
 
@@ -319,21 +313,15 @@ impl SharedTranscriptionModel {
     #[allow(dead_code)]
     pub fn reload(&self, model_dir: &Path) -> TranscriptionResult<()> {
         // Acquire exclusive transcription access - blocks if transcription is active
-        let _transcription_permit = self.acquire_transcription_lock()?;
+        let _transcription_permit = self.acquire_transcription_lock();
 
         // First unload (without acquiring lock again - we already have it)
         {
-            let mut model_guard = self
-                .model
-                .lock()
-                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            let mut model_guard = self.model.lock();
             *model_guard = None;
         }
         {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            let mut state = self.state.lock();
             *state = TranscriptionState::Unloaded;
         }
         crate::info!("Model unloaded for reload");
@@ -349,18 +337,12 @@ impl SharedTranscriptionModel {
             .map_err(|e| TranscriptionError::ModelLoadFailed(e.to_string()))?;
 
         {
-            let mut guard = self
-                .model
-                .lock()
-                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            let mut guard = self.model.lock();
             *guard = Some(tdt);
         }
 
         {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| TranscriptionError::LockPoisoned)?;
+            let mut state = self.state.lock();
             *state = TranscriptionState::Idle;
         }
 
