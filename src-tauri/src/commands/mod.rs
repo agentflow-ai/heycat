@@ -780,6 +780,66 @@ pub fn get_recording_shortcut(app_handle: AppHandle) -> String {
         .unwrap_or_default()
 }
 
+/// Get the current recording mode from settings
+///
+/// Returns the configured recording mode: "toggle" (default) or "push-to-talk".
+#[tauri::command]
+pub fn get_recording_mode(app_handle: AppHandle) -> crate::hotkey::RecordingMode {
+    use tauri_plugin_store::StoreExt;
+
+    let settings_file = get_settings_file(&app_handle);
+    app_handle
+        .store(&settings_file)
+        .ok()
+        .and_then(|store| store.get("hotkey.recordingMode"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// Set the recording mode in settings
+///
+/// Persists the recording mode to settings. Rejects if recording is currently active.
+///
+/// # Arguments
+/// * `mode` - The new recording mode: "toggle" or "push-to-talk"
+///
+/// # Errors
+/// Returns an error if recording is currently active (not Idle state).
+#[tauri::command]
+pub fn set_recording_mode(
+    app_handle: AppHandle,
+    state: State<'_, ProductionState>,
+    mode: crate::hotkey::RecordingMode,
+) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+
+    // Check if recording is active
+    let manager = state.lock().map_err(|_| {
+        "Unable to access recording state. Please try again or restart the application."
+    })?;
+
+    let current_state = manager.get_state();
+    if current_state != crate::recording::RecordingState::Idle {
+        return Err("Cannot change recording mode while recording is active.".to_string());
+    }
+    drop(manager); // Release lock before saving
+
+    // Save to settings
+    let settings_file = get_settings_file(&app_handle);
+    if let Ok(store) = app_handle.store(&settings_file) {
+        store.set("hotkey.recordingMode", serde_json::to_value(&mode).unwrap_or_default());
+        if let Err(e) = store.save() {
+            crate::warn!("Failed to persist settings: {}", e);
+            return Err(format!("Failed to save settings: {}", e));
+        }
+    } else {
+        return Err("Failed to access settings store.".to_string());
+    }
+
+    crate::info!("Recording mode updated to: {:?}", mode);
+    Ok(())
+}
+
 // =============================================================================
 // Keyboard Capture Commands (for fn key and special key recording)
 // =============================================================================
