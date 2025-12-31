@@ -50,6 +50,9 @@ impl std::fmt::Display for HotkeyError {
 impl std::error::Error for HotkeyError {}
 
 /// Recording mode determines how the hotkey triggers recording
+///
+/// Used by HotkeyIntegration (update-hotkey-integration spec) and settings commands
+/// (add-recording-mode-commands spec) to support push-to-talk mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecordingMode {
@@ -82,6 +85,10 @@ pub trait ShortcutBackend {
 ///
 /// This trait adds support for push-to-talk mode where we need separate
 /// callbacks for key press and key release events.
+///
+/// Implemented by CGEventTapHotkeyBackend (extend-cgeventtap-backend spec) and
+/// RdevShortcutBackend (implement-rdev-backend spec).
+#[allow(dead_code)] // Used by upcoming specs: extend-cgeventtap-backend, update-hotkey-integration
 pub trait ShortcutBackendExt: ShortcutBackend {
     /// Register a shortcut with separate press and release callbacks
     ///
