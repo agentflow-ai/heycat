@@ -3,6 +3,7 @@
 // Enable coverage attribute on nightly for explicit exclusions
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+mod activation;
 mod audio;
 mod audio_constants;
 mod commands;
@@ -512,6 +513,11 @@ pub fn run() {
 
             // Manage window monitor for Tauri commands
             app.manage(window_monitor);
+
+            // Ensure the app is activated on macOS so the UI receives events immediately.
+            // Without this, the window may be visible but not receive left-clicks
+            // until the user manually activates the app (e.g., via Cmd+Tab).
+            activation::activate_app();
 
             info!("Setup complete! Ready to record.");
             Ok(())
