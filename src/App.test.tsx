@@ -66,11 +66,12 @@ describe("App Integration", () => {
   const defaultSettingsMock: useSettingsModule.UseSettingsReturn = {
     settings: {
       audio: { selectedDevice: null },
-      shortcuts: { distinguishLeftRight: false },
+      shortcuts: { distinguishLeftRight: false, recordingMode: "toggle" },
     },
     isLoading: false,
     updateAudioDevice: vi.fn(),
     updateDistinguishLeftRight: vi.fn(),
+    updateRecordingMode: vi.fn(),
   };
 
   beforeEach(() => {

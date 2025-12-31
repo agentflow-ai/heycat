@@ -37,6 +37,7 @@ describe("useSettings", () => {
       mockStore.get.mockImplementation((key: string) => {
         if (key === "audio.selectedDevice") return Promise.resolve("USB Microphone");
         if (key === "shortcuts.distinguishLeftRight") return Promise.resolve(true);
+        if (key === "hotkey.recordingMode") return Promise.resolve("push-to-talk");
         return Promise.resolve(undefined);
       });
 
@@ -47,7 +48,7 @@ describe("useSettings", () => {
       expect(state.isSettingsLoaded).toBe(true);
       expect(state.settingsCache).toEqual({
         audio: { selectedDevice: "USB Microphone" },
-        shortcuts: { distinguishLeftRight: true },
+        shortcuts: { distinguishLeftRight: true, recordingMode: "push-to-talk" },
       });
     });
 
@@ -68,7 +69,7 @@ describe("useSettings", () => {
       useAppStore.setState({
         settingsCache: {
           audio: { selectedDevice: "My Mic" },
-          shortcuts: { distinguishLeftRight: false },
+          shortcuts: { distinguishLeftRight: false, recordingMode: "toggle" },
         },
         isSettingsLoaded: true,
       });
@@ -90,7 +91,7 @@ describe("useSettings", () => {
       useAppStore.setState({
         settingsCache: {
           audio: { selectedDevice: null },
-          shortcuts: { distinguishLeftRight: false },
+          shortcuts: { distinguishLeftRight: false, recordingMode: "toggle" },
         },
         isSettingsLoaded: true,
       });
@@ -109,7 +110,7 @@ describe("useSettings", () => {
       useAppStore.setState({
         settingsCache: {
           audio: { selectedDevice: "USB Microphone" },
-          shortcuts: { distinguishLeftRight: false },
+          shortcuts: { distinguishLeftRight: false, recordingMode: "toggle" },
         },
         isSettingsLoaded: true,
       });

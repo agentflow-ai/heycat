@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import { queryKeys } from "../../lib/queryKeys";
 import { Card, CardContent, LabeledToggle, Button } from "../../components/ui";
-import { useSettings } from "../../hooks/useSettings";
+import { useSettings, RecordingMode } from "../../hooks/useSettings";
+import { useRecordingState } from "../../hooks/useRecording";
 import { useToast } from "../../components/overlays";
 import { ShortcutEditor } from "./ShortcutEditor";
 
@@ -23,9 +25,13 @@ function backendToDisplay(shortcut: string): string {
 }
 
 export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
-  const { settings, updateDistinguishLeftRight } = useSettings();
+  const { settings, updateDistinguishLeftRight, updateRecordingMode } = useSettings();
+  const { isRecording, isProcessing } = useRecordingState();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Disable recording mode changes while recording is active
+  const isRecordingActive = isRecording || isProcessing;
 
   // Local state for settings that don't have hooks yet
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
@@ -69,6 +75,28 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
     });
   };
 
+  const handleRecordingModeChange = async (mode: RecordingMode) => {
+    try {
+      // Update backend via Tauri command
+      await invoke("set_recording_mode", { mode });
+      // Update frontend settings
+      await updateRecordingMode(mode);
+      toast({
+        type: "success",
+        title: "Setting saved",
+        description: mode === "toggle"
+          ? "Recording mode set to Toggle (press to start/stop)."
+          : "Recording mode set to Push-to-Talk (hold to record).",
+      });
+    } catch (error) {
+      toast({
+        type: "error",
+        title: "Failed to update recording mode",
+        description: String(error),
+      });
+    }
+  };
+
   return (
     <div className={`space-y-6 ${className}`.trim()}>
       {/* General Settings Section */}
@@ -105,11 +133,65 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
         </h2>
         <Card>
           <CardContent className="space-y-3">
-            {/* Toggle Recording */}
-            <div className="flex items-center justify-between py-2">
+            {/* Recording Mode */}
+            <div className="py-2">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <span className="text-sm font-medium text-text-primary">
+                    Recording Mode
+                  </span>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Choose how the recording shortcut behaves
+                  </p>
+                </div>
+                <RadioGroupPrimitive.Root
+                  value={settings.shortcuts.recordingMode}
+                  onValueChange={(value) => handleRecordingModeChange(value as RecordingMode)}
+                  disabled={isRecordingActive}
+                  className="flex flex-col gap-2"
+                >
+                  <label className={`flex items-center gap-3 cursor-pointer ${isRecordingActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <RadioGroupPrimitive.Item
+                      value="toggle"
+                      className="h-4 w-4 rounded-full border border-neutral-400 bg-white focus:outline-none focus:ring-2 focus:ring-heycat-teal focus:ring-offset-1 data-[state=checked]:border-heycat-orange data-[state=checked]:bg-heycat-orange disabled:cursor-not-allowed"
+                    >
+                      <RadioGroupPrimitive.Indicator className="flex items-center justify-center">
+                        <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                      </RadioGroupPrimitive.Indicator>
+                    </RadioGroupPrimitive.Item>
+                    <div className="flex flex-col">
+                      <span className="text-sm text-text-primary">Toggle</span>
+                      <span className="text-xs text-text-secondary">Press to start, press again to stop</span>
+                    </div>
+                  </label>
+                  <label className={`flex items-center gap-3 cursor-pointer ${isRecordingActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <RadioGroupPrimitive.Item
+                      value="push-to-talk"
+                      className="h-4 w-4 rounded-full border border-neutral-400 bg-white focus:outline-none focus:ring-2 focus:ring-heycat-teal focus:ring-offset-1 data-[state=checked]:border-heycat-orange data-[state=checked]:bg-heycat-orange disabled:cursor-not-allowed"
+                    >
+                      <RadioGroupPrimitive.Indicator className="flex items-center justify-center">
+                        <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                      </RadioGroupPrimitive.Indicator>
+                    </RadioGroupPrimitive.Item>
+                    <div className="flex flex-col">
+                      <span className="text-sm text-text-primary">Push-to-Talk</span>
+                      <span className="text-xs text-text-secondary">Hold to record, release to stop</span>
+                    </div>
+                  </label>
+                </RadioGroupPrimitive.Root>
+                {isRecordingActive && (
+                  <p className="text-xs text-amber-600">
+                    Recording mode cannot be changed while recording
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Recording Shortcut */}
+            <div className="flex items-center justify-between py-2 border-t border-border">
               <div>
                 <span className="text-sm font-medium text-text-primary">
-                  Toggle Recording
+                  Recording Shortcut
                 </span>
               </div>
               <div className="flex items-center gap-2">

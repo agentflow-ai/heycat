@@ -122,26 +122,23 @@ describe("appStore", () => {
 
     it("updateSetting updates a single setting key", () => {
       const mockSettings = {
-        listening: { enabled: true, wakeWord: "hey cat" },
-        recording: { silenceThreshold: 0.01, device: null },
-        transcription: { model: "small" },
-        dictionary: { entries: [], enabled: true },
+        audio: { selectedDevice: "Default Mic" },
+        shortcuts: { distinguishLeftRight: false, recordingMode: "toggle" as const },
       };
 
-      useAppStore.getState().setSettings(mockSettings as never);
+      useAppStore.getState().setSettings(mockSettings);
       useAppStore
         .getState()
-        .updateSetting("listening", { enabled: false, wakeWord: "hey cat" });
+        .updateSetting("audio", { selectedDevice: "USB Microphone" });
 
-      expect(useAppStore.getState().settingsCache?.listening.enabled).toBe(
-        false
+      expect(useAppStore.getState().settingsCache?.audio.selectedDevice).toBe(
+        "USB Microphone"
       );
     });
 
     it("updateSetting does nothing when settingsCache is null", () => {
-      useAppStore.getState().updateSetting("listening", {
-        enabled: false,
-        wakeWord: "test",
+      useAppStore.getState().updateSetting("audio", {
+        selectedDevice: "Test Device",
       });
 
       expect(useAppStore.getState().settingsCache).toBeNull();

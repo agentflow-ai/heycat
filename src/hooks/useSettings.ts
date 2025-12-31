@@ -7,9 +7,13 @@ import {
 } from "../stores/appStore";
 import { getSettingsFile } from "../lib/settingsFile";
 
+/** Recording mode determines how the hotkey triggers recording */
+export type RecordingMode = "toggle" | "push-to-talk";
+
 /** Settings related to keyboard shortcuts */
 export interface ShortcutSettings {
   distinguishLeftRight: boolean;
+  recordingMode: RecordingMode;
 }
 
 /** All application settings */
@@ -23,6 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   audio: DEFAULT_AUDIO_SETTINGS,
   shortcuts: {
     distinguishLeftRight: false,
+    recordingMode: "toggle",
   },
 };
 
@@ -32,6 +37,7 @@ export interface UseSettingsReturn {
   isLoading: boolean;
   updateAudioDevice: (deviceName: string | null) => Promise<void>;
   updateDistinguishLeftRight: (enabled: boolean) => Promise<void>;
+  updateRecordingMode: (mode: RecordingMode) => Promise<void>;
 }
 
 /**
@@ -54,6 +60,9 @@ export async function initializeSettings(): Promise<void> {
   const distinguishLeftRight = await store.get<boolean>(
     "shortcuts.distinguishLeftRight"
   );
+  const recordingMode = await store.get<RecordingMode>(
+    "hotkey.recordingMode"
+  );
 
   const settings: AppSettings = {
     audio: {
@@ -63,6 +72,8 @@ export async function initializeSettings(): Promise<void> {
     shortcuts: {
       distinguishLeftRight:
         distinguishLeftRight ?? DEFAULT_SETTINGS.shortcuts.distinguishLeftRight,
+      recordingMode:
+        recordingMode ?? DEFAULT_SETTINGS.shortcuts.recordingMode,
     },
   };
 
@@ -135,10 +146,15 @@ export function useSettings(): UseSettingsReturn {
     );
   };
 
+  const updateRecordingMode = async (mode: RecordingMode): Promise<void> => {
+    await updateSettingInBothStores("shortcuts", "recordingMode", mode);
+  };
+
   return {
     settings,
     isLoading,
     updateAudioDevice,
     updateDistinguishLeftRight,
+    updateRecordingMode,
   };
 }
