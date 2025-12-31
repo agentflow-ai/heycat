@@ -10,6 +10,11 @@ pub use tauri_backend::TauriShortcutBackend;
 #[cfg(target_os = "macos")]
 mod cgeventtap_backend;
 
+#[cfg(not(target_os = "macos"))]
+mod rdev_backend;
+#[cfg(not(target_os = "macos"))]
+pub use rdev_backend::RdevShortcutBackend;
+
 pub mod double_tap;
 
 pub mod integration;
