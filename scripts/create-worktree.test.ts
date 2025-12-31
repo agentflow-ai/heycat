@@ -68,8 +68,8 @@ describe("create-worktree", () => {
 
   describe("getWorktreeIdentifier", () => {
     it("extracts directory name from path", () => {
-      const id = getWorktreeIdentifier("/path/to/heycat-feature");
-      expect(id).toBe("heycat-feature");
+      const id = getWorktreeIdentifier("/path/to/feature-audio");
+      expect(id).toBe("feature-audio");
     });
 
     it("handles paths with trailing slash", () => {

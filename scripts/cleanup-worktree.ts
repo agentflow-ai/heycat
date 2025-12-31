@@ -248,7 +248,7 @@ export function findWorktreeByPathOrId(
   const normalizedPath = resolve(pathOrId);
   const potentialId = basename(normalizedPath);
 
-  // Check if this looks like a worktree directory name (heycat-xxx)
+  // Check if this looks like a data directory name (heycat-xxx)
   if (potentialId.startsWith(`${APP_DIR_NAME}-`)) {
     const identifier = potentialId.substring(APP_DIR_NAME.length + 1);
     const byExtractedId = allDirs.find((d) => d.identifier === identifier);
@@ -323,10 +323,10 @@ ${colors.bold}Examples:${colors.reset}
   ${colors.cyan}bun scripts/cleanup-worktree.ts --orphaned${colors.reset}
     Find and clean up data for worktrees that no longer exist
 
-  ${colors.cyan}bun scripts/cleanup-worktree.ts heycat-feature-branch${colors.reset}
-    Clean up data for the 'heycat-feature-branch' worktree
+  ${colors.cyan}bun scripts/cleanup-worktree.ts feature-branch${colors.reset}
+    Clean up data for the 'feature-branch' worktree
 
-  ${colors.cyan}bun scripts/cleanup-worktree.ts ../heycat-feature --remove-worktree${colors.reset}
+  ${colors.cyan}bun scripts/cleanup-worktree.ts feature-branch --remove-worktree${colors.reset}
     Remove both data and the git worktree itself
 
 ${colors.bold}Data Locations:${colors.reset}

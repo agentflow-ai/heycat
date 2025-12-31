@@ -12,14 +12,14 @@ Start a Claude session in a worktree (create new or resume existing).
 
 Options:
   -i, --issue ID       Create worktree for Linear issue (e.g., HEY-123)
-  -r, --resume NAME    Resume session in existing worktree heycat-NAME
+  -r, --resume NAME    Resume session in existing worktree
   -l, --list           List available worktrees
   -h, --help           Show this help
 
 Examples:
   $(basename "$0") --issue HEY-123      # Create worktree for Linear issue (PREFERRED)
   $(basename "$0") feature/audio        # Create new worktree, start Claude
-  $(basename "$0") --resume audio       # Resume in heycat-audio worktree
+  $(basename "$0") --resume feature/audio  # Resume in existing worktree
   $(basename "$0") -l                   # List worktrees
   $(basename "$0")                      # Interactive: Claude helps choose
 EOF
@@ -29,8 +29,8 @@ list_worktrees() {
   echo "Available worktrees:"
   if [ -d "$WORKTREES_DIR" ]; then
     local found=0
-    for dir in "$WORKTREES_DIR"/heycat-*; do
-      if [ -d "$dir" ]; then
+    for dir in "$WORKTREES_DIR"/*; do
+      if [ -d "$dir" ] && [ "$(basename "$dir")" != ".*" ]; then
         echo "  - $(basename "$dir")"
         found=1
       fi
@@ -67,13 +67,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Show configuration
+echo ""
+echo "Configuration:"
+if [ -n "$RESUME" ]; then
+  echo "  Mode: Resume existing worktree"
+  echo "  Name: $RESUME"
+elif [ -n "$ISSUE_ID" ]; then
+  echo "  Mode: Create from Linear issue"
+  echo "  Issue: $ISSUE_ID"
+elif [ -n "$BRANCH_NAME" ]; then
+  echo "  Mode: Create new worktree"
+  echo "  Branch: $BRANCH_NAME"
+else
+  echo "  Mode: Interactive (will prompt for branch/issue)"
+fi
+echo ""
+
 # Resume mode: go directly to existing worktree
 if [ -n "$RESUME" ]; then
-  WORKTREE_PATH="$WORKTREES_DIR/heycat-$RESUME"
-  if [ ! -d "$WORKTREE_PATH" ]; then
-    # Try without heycat- prefix (user might have typed full name)
-    WORKTREE_PATH="$WORKTREES_DIR/$RESUME"
-  fi
+  WORKTREE_PATH="$WORKTREES_DIR/$RESUME"
   if [ ! -d "$WORKTREE_PATH" ]; then
     echo "Error: Worktree not found: $RESUME"
     list_worktrees
@@ -122,21 +135,35 @@ IMPORTANT: Return the full absolute path to the worktree in your response.
 NOTE: Branch names starting with HEY-xxx enable automatic PR linking in Linear."
 
 echo "Creating worktree via Claude..."
+echo "  Sending request to Claude CLI..."
 
 RESULT=$(claude -p "$PROMPT" \
   --output-format json \
   --json-schema "$SCHEMA" \
-  --allowedTools "Bash,Read" \
-  2>&1)
+  --allowedTools "Bash,Read")
+
+echo "  Response received from Claude"
+
+# Check if Claude reported an error
+IS_ERROR=$(echo "$RESULT" | jq -r '.is_error // false' 2>/dev/null)
+if [ "$IS_ERROR" = "true" ]; then
+  echo ""
+  echo "Error: Claude reported an error"
+  echo "$RESULT" | jq -r '.result // "No details"' 2>/dev/null
+  exit 1
+fi
 
 # Extract worktree path from JSON response
-WORKTREE_PATH=$(echo "$RESULT" | jq -r '.result.worktreePath // empty' 2>/dev/null)
+WORKTREE_PATH=$(echo "$RESULT" | jq -r '.structured_output.worktreePath // empty' 2>/dev/null)
+echo "  Extracted path: $WORKTREE_PATH"
 
 if [ -z "$WORKTREE_PATH" ]; then
+  echo ""
   echo "Failed to extract worktree path from Claude's response"
   echo ""
-  echo "Response:"
-  echo "$RESULT"
+  echo "Expected field: .structured_output.worktreePath"
+  echo "Raw response:"
+  echo "$RESULT" | jq '.' 2>/dev/null || echo "$RESULT"
   exit 1
 fi
 

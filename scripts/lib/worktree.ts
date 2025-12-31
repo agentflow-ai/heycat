@@ -12,7 +12,7 @@ import { dirname, resolve } from "path";
  * Information about the current worktree context.
  */
 export interface WorktreeInfo {
-  /** Worktree directory name (e.g., "heycat-feature-audio") */
+  /** Worktree directory name (e.g., "feature-audio") */
   identifier: string;
   /** Path to the main repository */
   mainRepoPath: string;
