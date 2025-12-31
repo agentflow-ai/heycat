@@ -5,12 +5,13 @@ import { describe, expect, it } from "bun:test";
  * Matches the implementation in create-container.ts
  */
 function branchToContainerId(branchName: string): string {
+  // Order matters: truncate first, then remove leading/trailing dashes
   return branchName
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 32);
+    .slice(0, 32)
+    .replace(/^-|-$/g, "");
 }
 
 describe("create-container", () => {

@@ -101,12 +101,13 @@ function getProjectRoot(): string {
  */
 function branchToContainerId(branchName: string): string {
   // Replace special characters with dashes, limit to 32 chars
+  // Order matters: truncate first, then remove leading/trailing dashes
   return branchName
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 32);
+    .slice(0, 32)
+    .replace(/^-|-$/g, "");
 }
 
 /**
