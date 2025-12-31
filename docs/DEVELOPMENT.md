@@ -157,3 +157,124 @@ This deletes the worktree and cleans up all data directories.
 ### Legacy: Direct merge to main
 
 The `complete-feature.ts` script still exists for direct merging but is deprecated in favor of the PR workflow above.
+
+## Docker Development
+
+Docker provides an alternative development workflow for cloud/remote environments where macOS is not directly available. The container handles TypeScript, Rust tests, linting, and Claude Code workflows, while macOS builds are triggered via SSH/rsync.
+
+### When to use Docker vs Worktrees
+
+| Scenario | Recommended |
+|----------|-------------|
+| Local macOS development | Worktrees |
+| Cloud/remote development | Docker |
+| CI/CD pipelines | Docker |
+| Testing on Linux | Docker |
+
+### Quick Start
+
+```bash
+# Create a container for feature development
+bun scripts/docker/create-container.ts feature-my-feature
+
+# Access the container
+docker exec -it heycat-dev-feature-my-feature bash
+
+# Run tests inside container
+bun run test
+cd src-tauri && cargo test
+
+# Close container when done
+bun scripts/docker/close-container.ts feature-my-feature
+```
+
+### Docker Cattle Workflow
+
+Similar to worktrees, containers are ephemeral:
+
+```
+/create-container → develop → /mac-build → /submit-pr → /close-container
+```
+
+**1. Create container** (from project root):
+```bash
+/create-container
+# Or manually:
+bun scripts/docker/create-container.ts <branch-name>
+```
+
+**2. Develop inside container**:
+```bash
+docker exec -it heycat-dev-<id> bash
+# Make changes, run tests, commit
+```
+
+**3. Build for macOS** (when needed):
+```bash
+/mac-build
+# Or: bun scripts/docker/mac-build.ts
+```
+
+**4. Submit PR**:
+```bash
+/submit-pr
+```
+
+**5. Close container** (after PR merged):
+```bash
+/close-container
+# Or: bun scripts/docker/close-container.ts <id>
+```
+
+### macOS Host Configuration
+
+For Tauri/Swift builds, configure a macOS host:
+
+```bash
+# Add to .env file
+HEYCAT_MAC_HOST=192.168.1.100   # macOS IP or hostname
+HEYCAT_MAC_USER=myuser          # SSH username
+HEYCAT_MAC_PATH=~/heycat-docker # Path on macOS for project
+```
+
+Prerequisites on macOS host:
+- SSH key authentication configured
+- Bun installed: `curl -fsSL https://bun.sh/install | bash`
+- Rust installed: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- Xcode CLI tools: `xcode-select --install`
+
+### Container Isolation
+
+| Resource | Naming |
+|----------|--------|
+| Container | `heycat-dev-<id>` |
+| Bun cache | `heycat-bun-cache-<id>` |
+| Cargo registry | `heycat-cargo-registry-<id>` |
+| Cargo git | `heycat-cargo-git-<id>` |
+
+Multiple containers can run simultaneously, each with isolated dependencies.
+
+### Troubleshooting Docker
+
+**"Docker is not running"**
+- Start Docker Desktop or: `sudo systemctl start docker`
+
+**"SSH connection failed" (for mac-build)**
+- Check SSH key: `ssh-add -l`
+- Test connection: `ssh ${HEYCAT_MAC_USER}@${HEYCAT_MAC_HOST} echo ok`
+
+**"Container already exists"**
+- Remove existing: `docker rm -f heycat-dev-<id>`
+
+**"Build failed on macOS"**
+- Check Xcode: `xcode-select --install`
+- Verify Rust: `rustc --version`
+
+**Cleaning up all Docker resources**:
+```bash
+# Remove all heycat containers
+docker rm -f $(docker ps -a --filter name=heycat-dev -q)
+
+# Remove all heycat volumes
+docker volume rm $(docker volume ls --filter name=heycat- -q)
+```

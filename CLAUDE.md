@@ -12,22 +12,36 @@ heycat is a Tauri v2 desktop application with a React + TypeScript frontend and 
 | Development | commands, dev, build, run, prerequisites | docs/DEVELOPMENT.md |
 | Agile Workflow | issue, feature, bug, task, spec, kanban, backlog | `devloop:agile` plugin (Linear backend) |
 | TCR/Testing | writing and test, TDD, coverage, commit, tcr check | `devloop:tcr` plugin and docs/TESTING.md |
+| Docker Dev | container, cloud, remote, mac-build, rsync | docs/DEVELOPMENT.md#docker-development |
 
-## ⚠️ Required: Worktree-First Development
+## ⚠️ Required: Isolated Development Environment
 
-**Before running `/devloop:agile:loop` or implementing any feature/bug/spec, you MUST create a worktree:**
+**Before running `/devloop:agile:loop` or implementing any feature/bug/spec, you MUST create an isolated environment:**
 
+**Option A: Git Worktree (macOS local development)**
 ```
 /create-worktree
 ```
 
-This project uses the "cattle model" - worktrees are ephemeral, disposable environments. Never develop directly on main.
+**Option B: Docker Container (cloud/remote development)**
+```
+/create-container
+```
 
-**Full workflow:**
+This project uses the "cattle model" - environments are ephemeral and disposable. Never develop directly on main.
+
+**Worktree workflow (macOS):**
 1. `/create-worktree` - Create worktree for the issue (from main repo)
 2. `/devloop:agile:loop` - Implement specs in the worktree
 3. `/submit-pr` - Push and create PR when done
 4. `/close-worktree` - Delete worktree after PR merges
+
+**Docker workflow (cloud/remote):**
+1. `/create-container` - Create container for the issue
+2. `/devloop:agile:loop` - Implement specs in the container
+3. `/mac-build` - Build Tauri app on macOS host (when needed)
+4. `/submit-pr` - Push and create PR when done
+5. `/close-container` - Delete container after PR merges
 
 ---
 
@@ -47,12 +61,12 @@ You may never use npm or npx, always use bun or bunx.
 ### Agile Workflow
 **ALWAYS invoke the `devloop:agile` skill** for issue and spec management, code reviews, and workflow tasks like writing code.
 
-**PREREQUISITE:** Create a worktree first (see "Worktree-First Development" above). Never run `/devloop:agile:loop` from main.
+**PREREQUISITE:** Create an isolated environment first (see "Isolated Development Environment" above). Never run `/devloop:agile:loop` from main.
 
 **IMPORTANT:** The `agile` command is NOT a system CLI. Do NOT run `agile ...` directly in bash - it will fail with "command not found".
 
 **Correct approach:**
-1. `/create-worktree` - Set up isolated development environment
+1. `/create-worktree` or `/create-container` - Set up isolated development environment
 2. Use `Skill(devloop:agile)` to get the command documentation
 3. Run commands via bun: `bun <plugin-path>/agile.ts <command> [args]`
 
@@ -66,7 +80,7 @@ You may never use npm or npx, always use bun or bunx.
 Reviews must use a **fresh subagent** with no implementation context. Use `/devloop:agile:review`.
 
 ### Worktrees (Cattle Model)
-See "⚠️ Required: Worktree-First Development" section above. Additional commands:
+See "⚠️ Required: Isolated Development Environment" section above. Additional commands:
 - `/sync-worktree` - Rebase worktree onto latest main (use when main has updates)
 - `/submit-pr` - Push branch and create PR (run from worktree when specs complete)
 - `/close-worktree` - Delete worktree after PR is merged
@@ -82,4 +96,25 @@ To ensure subagents (like `/devloop:agile:review`) operate in the correct direct
 
 # List available worktrees
 ./scripts/start-worktree-session.sh --list
+```
+
+### Docker Containers (Cattle Model)
+Alternative to worktrees for cloud/remote development. See docs/DEVELOPMENT.md#docker-development.
+
+**Commands:**
+- `/create-container` - Create Docker container for feature development
+- `/close-container` - Stop and remove container after PR is merged
+- `/mac-build` - Sync code and trigger Tauri build on macOS host
+
+**When to use Docker:**
+- Cloud/remote development without direct macOS access
+- CI/CD pipelines
+- Testing on Linux
+
+**macOS host setup** (required for `/mac-build`):
+```bash
+# Add to .env
+HEYCAT_MAC_HOST=192.168.1.100
+HEYCAT_MAC_USER=myuser
+HEYCAT_MAC_PATH=~/heycat-docker
 ```
