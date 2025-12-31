@@ -599,6 +599,8 @@ pub fn run() {
             commands::resume_recording_shortcut,
             commands::update_recording_shortcut,
             commands::get_recording_shortcut,
+            commands::get_recording_mode,
+            commands::set_recording_mode,
             commands::start_shortcut_recording,
             commands::stop_shortcut_recording,
             commands::open_accessibility_preferences,
