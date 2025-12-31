@@ -99,6 +99,7 @@ fn test_dictionary_expander_integration_with_transcription_flow() {
             suffix: None,
             auto_enter: false,
             disable_suffix: false,
+            complete_match_only: false,
         },
         DictionaryEntry {
             id: "2".to_string(),
@@ -107,6 +108,7 @@ fn test_dictionary_expander_integration_with_transcription_flow() {
             suffix: None,
             auto_enter: false,
             disable_suffix: false,
+            complete_match_only: false,
         },
     ];
 
@@ -223,6 +225,7 @@ fn test_dictionary_expander_runtime_update() {
         suffix: None,
         auto_enter: false,
         disable_suffix: false,
+        complete_match_only: false,
     }];
     {
         let mut guard = dictionary_expander.write().unwrap();

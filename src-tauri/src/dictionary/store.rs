@@ -25,6 +25,10 @@ pub struct DictionaryEntry {
     /// When true, trailing punctuation after the trigger match is stripped
     #[serde(default, alias = "disable_suffix")]
     pub disable_suffix: bool,
+    /// Whether the trigger should only expand when it's the complete transcription input
+    /// When true, "brb" expands only if the entire input is "brb", not if it appears within a sentence
+    #[serde(default, alias = "complete_match_only")]
+    pub complete_match_only: bool,
 }
 
 /// Error types for dictionary operations

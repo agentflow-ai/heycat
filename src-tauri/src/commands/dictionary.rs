@@ -63,6 +63,7 @@ pub async fn list_dictionary_entries(
 /// * `suffix` - Optional suffix appended after expansion
 /// * `auto_enter` - Whether to simulate enter keypress after expansion (defaults to false)
 /// * `disable_suffix` - Whether to suppress trailing punctuation (defaults to false)
+/// * `complete_match_only` - Whether to only expand when trigger is complete input (defaults to false)
 ///
 /// # Returns
 /// The newly created DictionaryEntry with its generated ID
@@ -76,6 +77,7 @@ pub async fn add_dictionary_entry(
     suffix: Option<String>,
     auto_enter: Option<bool>,
     disable_suffix: Option<bool>,
+    complete_match_only: Option<bool>,
 ) -> Result<DictionaryEntry, String> {
     // Validate: trigger cannot be empty
     if trigger.trim().is_empty() {
@@ -84,6 +86,7 @@ pub async fn add_dictionary_entry(
 
     let auto_enter_val = auto_enter.unwrap_or(false);
     let disable_suffix_val = disable_suffix.unwrap_or(false);
+    let complete_match_only_val = complete_match_only.unwrap_or(false);
 
     // Add entry to Turso
     let entry = turso_client
@@ -93,6 +96,7 @@ pub async fn add_dictionary_entry(
             suffix.clone(),
             auto_enter_val,
             disable_suffix_val,
+            complete_match_only_val,
         )
         .await
         .map_err(to_user_error)?;
@@ -123,6 +127,7 @@ pub async fn add_dictionary_entry(
 /// * `suffix` - Optional suffix appended after expansion
 /// * `auto_enter` - Whether to simulate enter keypress after expansion (defaults to false)
 /// * `disable_suffix` - Whether to suppress trailing punctuation (defaults to false)
+/// * `complete_match_only` - Whether to only expand when trigger is complete input (defaults to false)
 #[tauri::command]
 pub async fn update_dictionary_entry(
     app_handle: AppHandle,
@@ -134,6 +139,7 @@ pub async fn update_dictionary_entry(
     suffix: Option<String>,
     auto_enter: Option<bool>,
     disable_suffix: Option<bool>,
+    complete_match_only: Option<bool>,
 ) -> Result<(), String> {
     // Validate: trigger cannot be empty
     if trigger.trim().is_empty() {
@@ -142,6 +148,7 @@ pub async fn update_dictionary_entry(
 
     let auto_enter_val = auto_enter.unwrap_or(false);
     let disable_suffix_val = disable_suffix.unwrap_or(false);
+    let complete_match_only_val = complete_match_only.unwrap_or(false);
 
     // Update entry in Turso
     turso_client
@@ -152,6 +159,7 @@ pub async fn update_dictionary_entry(
             suffix.clone(),
             auto_enter_val,
             disable_suffix_val,
+            complete_match_only_val,
         )
         .await
         .map_err(to_user_error)?;

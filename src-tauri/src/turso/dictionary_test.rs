@@ -24,6 +24,7 @@ async fn test_add_dictionary_entry() {
             None,
             false,
             false,
+            false,
         )
         .await
         .expect("Failed to add entry");
@@ -34,6 +35,7 @@ async fn test_add_dictionary_entry() {
     assert_eq!(entry.suffix, None);
     assert!(!entry.auto_enter);
     assert!(!entry.disable_suffix);
+    assert!(!entry.complete_match_only);
 }
 
 #[tokio::test]
@@ -47,6 +49,7 @@ async fn test_add_dictionary_entry_with_all_fields() {
             Some(" ".to_string()),
             true,
             true,
+            true,
         )
         .await
         .expect("Failed to add entry");
@@ -56,6 +59,7 @@ async fn test_add_dictionary_entry_with_all_fields() {
     assert_eq!(entry.suffix, Some(" ".to_string()));
     assert!(entry.auto_enter);
     assert!(entry.disable_suffix);
+    assert!(entry.complete_match_only);
 }
 
 #[tokio::test]
@@ -64,13 +68,13 @@ async fn test_add_duplicate_trigger_fails() {
 
     // Add first entry
     client
-        .add_dictionary_entry("dup".to_string(), "first".to_string(), None, false, false)
+        .add_dictionary_entry("dup".to_string(), "first".to_string(), None, false, false, false)
         .await
         .expect("First add should succeed");
 
     // Try to add with same trigger
     let result = client
-        .add_dictionary_entry("dup".to_string(), "second".to_string(), None, false, false)
+        .add_dictionary_entry("dup".to_string(), "second".to_string(), None, false, false, false)
         .await;
 
     assert!(result.is_err(), "Duplicate trigger should fail");
@@ -88,15 +92,15 @@ async fn test_list_dictionary_entries() {
 
     // Add multiple entries
     client
-        .add_dictionary_entry("a".to_string(), "apple".to_string(), None, false, false)
+        .add_dictionary_entry("a".to_string(), "apple".to_string(), None, false, false, false)
         .await
         .expect("Failed to add a");
     client
-        .add_dictionary_entry("b".to_string(), "banana".to_string(), None, false, false)
+        .add_dictionary_entry("b".to_string(), "banana".to_string(), None, false, false, false)
         .await
         .expect("Failed to add b");
     client
-        .add_dictionary_entry("c".to_string(), "cherry".to_string(), None, false, false)
+        .add_dictionary_entry("c".to_string(), "cherry".to_string(), None, false, false, false)
         .await
         .expect("Failed to add c");
 
@@ -130,7 +134,7 @@ async fn test_update_dictionary_entry() {
 
     // Add entry
     let entry = client
-        .add_dictionary_entry("old".to_string(), "old value".to_string(), None, false, false)
+        .add_dictionary_entry("old".to_string(), "old value".to_string(), None, false, false, false)
         .await
         .expect("Failed to add entry");
 
@@ -143,6 +147,7 @@ async fn test_update_dictionary_entry() {
             Some("!".to_string()),
             true,
             true,
+            true,
         )
         .await
         .expect("Failed to update entry");
@@ -153,6 +158,7 @@ async fn test_update_dictionary_entry() {
     assert_eq!(updated.suffix, Some("!".to_string()));
     assert!(updated.auto_enter);
     assert!(updated.disable_suffix);
+    assert!(updated.complete_match_only);
 
     // Verify by listing
     let entries = client.list_dictionary_entries().await.unwrap();
@@ -172,6 +178,7 @@ async fn test_update_nonexistent_entry_fails() {
             None,
             false,
             false,
+            false,
         )
         .await;
 
@@ -187,11 +194,11 @@ async fn test_update_trigger_conflict_fails() {
 
     // Add two entries
     let entry1 = client
-        .add_dictionary_entry("first".to_string(), "one".to_string(), None, false, false)
+        .add_dictionary_entry("first".to_string(), "one".to_string(), None, false, false, false)
         .await
         .expect("Failed to add first");
     client
-        .add_dictionary_entry("second".to_string(), "two".to_string(), None, false, false)
+        .add_dictionary_entry("second".to_string(), "two".to_string(), None, false, false, false)
         .await
         .expect("Failed to add second");
 
@@ -202,6 +209,7 @@ async fn test_update_trigger_conflict_fails() {
             "second".to_string(),
             "updated".to_string(),
             None,
+            false,
             false,
             false,
         )
@@ -222,7 +230,7 @@ async fn test_delete_dictionary_entry() {
 
     // Add entry
     let entry = client
-        .add_dictionary_entry("tbd".to_string(), "to be deleted".to_string(), None, false, false)
+        .add_dictionary_entry("tbd".to_string(), "to be deleted".to_string(), None, false, false, false)
         .await
         .expect("Failed to add entry");
 

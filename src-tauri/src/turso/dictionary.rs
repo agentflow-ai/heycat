@@ -20,6 +20,7 @@ impl TursoClient {
     /// * `suffix` - Optional suffix appended after expansion
     /// * `auto_enter` - Whether to simulate enter keypress
     /// * `disable_suffix` - Whether to suppress trailing punctuation
+    /// * `complete_match_only` - Whether to only expand when trigger is complete input
     ///
     /// # Returns
     /// The created DictionaryEntry with generated ID
@@ -30,14 +31,15 @@ impl TursoClient {
         suffix: Option<String>,
         auto_enter: bool,
         disable_suffix: bool,
+        complete_match_only: bool,
     ) -> Result<DictionaryEntry, DictionaryError> {
         let id = Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().to_rfc3339();
 
         self.execute(
             r#"INSERT INTO dictionary_entry
-               (id, trigger, expansion, suffix, auto_enter, disable_suffix, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+               (id, trigger, expansion, suffix, auto_enter, disable_suffix, complete_match_only, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
             params![
                 id.clone(),
                 trigger.clone(),
@@ -45,6 +47,7 @@ impl TursoClient {
                 suffix.clone(),
                 auto_enter as i32,
                 disable_suffix as i32,
+                complete_match_only as i32,
                 created_at
             ],
         )
@@ -63,6 +66,7 @@ impl TursoClient {
             suffix,
             auto_enter,
             disable_suffix,
+            complete_match_only,
         })
     }
 
@@ -75,6 +79,7 @@ impl TursoClient {
     /// * `suffix` - Optional suffix appended after expansion
     /// * `auto_enter` - Whether to simulate enter keypress
     /// * `disable_suffix` - Whether to suppress trailing punctuation
+    /// * `complete_match_only` - Whether to only expand when trigger is complete input
     ///
     /// # Returns
     /// The updated DictionaryEntry
@@ -86,6 +91,7 @@ impl TursoClient {
         suffix: Option<String>,
         auto_enter: bool,
         disable_suffix: bool,
+        complete_match_only: bool,
     ) -> Result<DictionaryEntry, DictionaryError> {
         // Check if entry exists
         let exists = self.dictionary_entry_exists(&id).await?;
@@ -116,14 +122,15 @@ impl TursoClient {
 
         self.execute(
             r#"UPDATE dictionary_entry
-               SET trigger = ?1, expansion = ?2, suffix = ?3, auto_enter = ?4, disable_suffix = ?5
-               WHERE id = ?6"#,
+               SET trigger = ?1, expansion = ?2, suffix = ?3, auto_enter = ?4, disable_suffix = ?5, complete_match_only = ?6
+               WHERE id = ?7"#,
             params![
                 trigger.clone(),
                 expansion.clone(),
                 suffix.clone(),
                 auto_enter as i32,
                 disable_suffix as i32,
+                complete_match_only as i32,
                 id.clone()
             ],
         )
@@ -137,6 +144,7 @@ impl TursoClient {
             suffix,
             auto_enter,
             disable_suffix,
+            complete_match_only,
         })
     }
 
@@ -168,7 +176,7 @@ impl TursoClient {
     pub async fn list_dictionary_entries(&self) -> Result<Vec<DictionaryEntry>, DictionaryError> {
         let mut rows = self
             .query(
-                "SELECT id, trigger, expansion, suffix, auto_enter, disable_suffix FROM dictionary_entry ORDER BY created_at",
+                "SELECT id, trigger, expansion, suffix, auto_enter, disable_suffix, complete_match_only FROM dictionary_entry ORDER BY created_at",
                 (),
             )
             .await
@@ -186,6 +194,7 @@ impl TursoClient {
             let suffix: Option<String> = row.get(3).map_err(|e| DictionaryError::LoadError(e.to_string()))?;
             let auto_enter: i32 = row.get(4).map_err(|e| DictionaryError::LoadError(e.to_string()))?;
             let disable_suffix: i32 = row.get(5).map_err(|e| DictionaryError::LoadError(e.to_string()))?;
+            let complete_match_only: i32 = row.get(6).map_err(|e| DictionaryError::LoadError(e.to_string()))?;
 
             entries.push(DictionaryEntry {
                 id,
@@ -194,6 +203,7 @@ impl TursoClient {
                 suffix,
                 auto_enter: auto_enter != 0,
                 disable_suffix: disable_suffix != 0,
+                complete_match_only: complete_match_only != 0,
             });
         }
 

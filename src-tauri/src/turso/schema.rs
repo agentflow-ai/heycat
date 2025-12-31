@@ -6,7 +6,7 @@
 use super::client::{TursoClient, TursoError};
 
 /// Current schema version
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 /// SQL statements to create all tables (each as a separate string)
 const CREATE_TABLES: &[&str] = &[
@@ -18,6 +18,7 @@ const CREATE_TABLES: &[&str] = &[
         suffix TEXT,
         auto_enter INTEGER NOT NULL DEFAULT 0,
         disable_suffix INTEGER NOT NULL DEFAULT 0,
+        complete_match_only INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
     )"#,
     // Window contexts for context-sensitive commands and dictionaries
@@ -161,8 +162,7 @@ async fn run_migrations(
 ) -> Result<(), TursoError> {
     for version in (from_version + 1)..=to_version {
         match version {
-            // Add migration functions here as schema evolves
-            // 2 => migrate_v1_to_v2(client).await?,
+            2 => migrate_v1_to_v2(client).await?,
             // 3 => migrate_v2_to_v3(client).await?,
             _ => {
                 // No migration needed for this version
@@ -171,6 +171,19 @@ async fn run_migrations(
         }
         set_schema_version(client, version).await?;
     }
+    Ok(())
+}
+
+/// Migrate from schema version 1 to 2.
+/// Adds complete_match_only column to dictionary_entry table.
+async fn migrate_v1_to_v2(client: &TursoClient) -> Result<(), TursoError> {
+    crate::info!("Running migration v1 -> v2: adding complete_match_only column to dictionary_entry");
+    client
+        .execute(
+            "ALTER TABLE dictionary_entry ADD COLUMN complete_match_only INTEGER NOT NULL DEFAULT 0",
+            (),
+        )
+        .await?;
     Ok(())
 }
 

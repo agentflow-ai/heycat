@@ -8,6 +8,7 @@ fn make_entry(trigger: &str, expansion: &str) -> DictionaryEntry {
         suffix: None,
         auto_enter: false,
         disable_suffix: false,
+        complete_match_only: false,
     }
 }
 
@@ -19,6 +20,7 @@ fn make_entry_with_suffix(trigger: &str, expansion: &str, suffix: &str) -> Dicti
         suffix: Some(suffix.to_string()),
         auto_enter: false,
         disable_suffix: false,
+        complete_match_only: false,
     }
 }
 
@@ -30,6 +32,7 @@ fn make_entry_with_auto_enter(trigger: &str, expansion: &str) -> DictionaryEntry
         suffix: None,
         auto_enter: true,
         disable_suffix: false,
+        complete_match_only: false,
     }
 }
 
@@ -185,6 +188,7 @@ fn make_entry_with_disable_suffix(trigger: &str, expansion: &str) -> DictionaryE
         suffix: None,
         auto_enter: false,
         disable_suffix: true,
+        complete_match_only: false,
     }
 }
 
@@ -246,6 +250,7 @@ fn test_expand_disable_suffix_ignores_explicit_suffix() {
         suffix: Some(".".to_string()), // This should be ignored
         auto_enter: false,
         disable_suffix: true, // This takes precedence
+        complete_match_only: false,
     };
     let expander = DictionaryExpander::new(&[entry]);
 
@@ -263,6 +268,7 @@ fn test_expand_with_suffix_and_disable_suffix_false() {
         suffix: Some(".".to_string()),
         auto_enter: false,
         disable_suffix: false,
+        complete_match_only: false,
     };
     let expander = DictionaryExpander::new(&[entry]);
 
