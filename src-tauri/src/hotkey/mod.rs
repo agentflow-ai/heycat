@@ -53,6 +53,7 @@ impl std::error::Error for HotkeyError {}
 ///
 /// Used by HotkeyIntegration (update-hotkey-integration spec) and settings commands
 /// (add-recording-mode-commands spec) to support push-to-talk mode.
+#[allow(dead_code)] // Used by upcoming specs: add-recording-mode-commands, update-hotkey-integration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecordingMode {
