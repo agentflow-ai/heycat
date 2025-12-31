@@ -8,7 +8,7 @@
 //
 // This is a macOS-only implementation. Other platforms use TauriShortcutBackend.
 
-use super::ShortcutBackend;
+use super::{ShortcutBackend, ShortcutBackendExt};
 use crate::keyboard_capture::cgeventtap::{CGEventTapCapture, CapturedKeyEvent};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -160,13 +160,28 @@ fn is_modifier_key_event(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool 
     }
 }
 
-/// Check if a captured key event matches a shortcut spec
+/// Check if a captured key event matches a shortcut spec (press events only)
 pub fn matches_shortcut(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
     // Only match on key press, not release
     if !event.pressed {
         return false;
     }
 
+    matches_shortcut_internal(event, spec)
+}
+
+/// Check if a captured key release event matches a shortcut spec
+pub fn matches_shortcut_release(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
+    // Only match on key release, not press
+    if event.pressed {
+        return false;
+    }
+
+    matches_shortcut_internal(event, spec)
+}
+
+/// Internal matching logic shared between press and release handlers
+fn matches_shortcut_internal(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
     // Check modifiers
     if spec.fn_key != event.fn_key {
         return false;
@@ -213,8 +228,10 @@ pub struct CGEventTapHotkeyBackend {
     capture: Arc<Mutex<Option<CGEventTapCapture>>>,
     /// Registered shortcuts mapped to their specs
     registered_shortcuts: Arc<Mutex<HashMap<String, ShortcutSpec>>>,
-    /// Callbacks for each registered shortcut
+    /// Callbacks for each registered shortcut (key press)
     callbacks: CallbackMap,
+    /// Callbacks for key release (used for push-to-talk mode)
+    release_callbacks: CallbackMap,
     /// Whether the event tap is currently running
     running: Arc<AtomicBool>,
 }
@@ -226,6 +243,7 @@ impl CGEventTapHotkeyBackend {
             capture: Arc::new(Mutex::new(None)),
             registered_shortcuts: Arc::new(Mutex::new(HashMap::new())),
             callbacks: Arc::new(Mutex::new(HashMap::new())),
+            release_callbacks: Arc::new(Mutex::new(HashMap::new())),
             running: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -238,13 +256,14 @@ impl CGEventTapHotkeyBackend {
 
         let shortcuts = self.registered_shortcuts.clone();
         let callbacks = self.callbacks.clone();
+        let release_callbacks = self.release_callbacks.clone();
 
         let mut capture_guard = self.capture.lock().map_err(|e| e.to_string())?;
 
         let mut capture = CGEventTapCapture::new();
 
         capture.start(move |event| {
-            Self::handle_key_event(&event, &shortcuts, &callbacks);
+            Self::handle_key_event(&event, &shortcuts, &callbacks, &release_callbacks);
         })?;
 
         *capture_guard = Some(capture);
@@ -277,6 +296,7 @@ impl CGEventTapHotkeyBackend {
         event: &CapturedKeyEvent,
         shortcuts: &Arc<Mutex<HashMap<String, ShortcutSpec>>>,
         callbacks: &CallbackMap,
+        release_callbacks: &CallbackMap,
     ) {
         // Get a snapshot of shortcuts and callbacks to avoid holding locks during callback execution
         let matching_callbacks: Vec<Arc<dyn Fn() + Send + Sync>> = {
@@ -284,15 +304,29 @@ impl CGEventTapHotkeyBackend {
                 Ok(g) => g,
                 Err(_) => return,
             };
-            let callbacks_guard = match callbacks.lock() {
-                Ok(g) => g,
-                Err(_) => return,
+
+            // Choose the appropriate callback map and matching function based on press/release
+            let callbacks_guard = if event.pressed {
+                match callbacks.lock() {
+                    Ok(g) => g,
+                    Err(_) => return,
+                }
+            } else {
+                match release_callbacks.lock() {
+                    Ok(g) => g,
+                    Err(_) => return,
+                }
             };
 
             shortcuts_guard
                 .iter()
                 .filter_map(|(shortcut_str, spec)| {
-                    if matches_shortcut(event, spec) {
+                    let matches = if event.pressed {
+                        matches_shortcut(event, spec)
+                    } else {
+                        matches_shortcut_release(event, spec)
+                    };
+                    if matches {
                         callbacks_guard.get(shortcut_str).cloned()
                     } else {
                         None
@@ -347,9 +381,11 @@ impl ShortcutBackend for CGEventTapHotkeyBackend {
         let should_stop = {
             let mut shortcuts_guard = self.registered_shortcuts.lock().map_err(|e| e.to_string())?;
             let mut callbacks_guard = self.callbacks.lock().map_err(|e| e.to_string())?;
+            let mut release_callbacks_guard = self.release_callbacks.lock().map_err(|e| e.to_string())?;
 
             shortcuts_guard.remove(shortcut);
             callbacks_guard.remove(shortcut);
+            release_callbacks_guard.remove(shortcut);
 
             shortcuts_guard.is_empty()
         };
@@ -361,6 +397,42 @@ impl ShortcutBackend for CGEventTapHotkeyBackend {
 
         crate::info!(
             "CGEventTapHotkeyBackend: Unregistered shortcut '{}'",
+            shortcut
+        );
+        Ok(())
+    }
+}
+
+impl ShortcutBackendExt for CGEventTapHotkeyBackend {
+    fn register_with_release(
+        &self,
+        shortcut: &str,
+        on_press: Box<dyn Fn() + Send + Sync>,
+        on_release: Box<dyn Fn() + Send + Sync>,
+    ) -> Result<(), String> {
+        // Parse the shortcut
+        let spec = parse_shortcut(shortcut)?;
+
+        // Store the shortcut and both callbacks
+        {
+            let mut shortcuts_guard = self.registered_shortcuts.lock().map_err(|e| e.to_string())?;
+            let mut callbacks_guard = self.callbacks.lock().map_err(|e| e.to_string())?;
+            let mut release_callbacks_guard = self.release_callbacks.lock().map_err(|e| e.to_string())?;
+
+            if shortcuts_guard.contains_key(shortcut) {
+                return Err(format!("Shortcut '{}' is already registered", shortcut));
+            }
+
+            shortcuts_guard.insert(shortcut.to_string(), spec);
+            callbacks_guard.insert(shortcut.to_string(), Arc::from(on_press));
+            release_callbacks_guard.insert(shortcut.to_string(), Arc::from(on_release));
+        }
+
+        // Start capture if this is the first registration
+        self.start_capture()?;
+
+        crate::info!(
+            "CGEventTapHotkeyBackend: Registered shortcut '{}' with release callback",
             shortcut
         );
         Ok(())
