@@ -33,6 +33,10 @@ impl ShortcutBackend for MockBackendExt {
             Ok(())
         }
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl ShortcutBackendExt for MockBackendExt {
@@ -68,6 +72,10 @@ impl ShortcutBackend for MockBackend {
         } else {
             Ok(())
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

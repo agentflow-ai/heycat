@@ -401,6 +401,10 @@ impl ShortcutBackend for CGEventTapHotkeyBackend {
         );
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl ShortcutBackendExt for CGEventTapHotkeyBackend {

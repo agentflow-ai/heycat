@@ -239,6 +239,10 @@ impl ShortcutBackend for RdevShortcutBackend {
 
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 impl ShortcutBackendExt for RdevShortcutBackend {

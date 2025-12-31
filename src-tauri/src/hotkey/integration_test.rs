@@ -629,6 +629,10 @@ impl crate::hotkey::ShortcutBackend for MockShortcutBackend {
             Err("Shortcut not registered".to_string())
         }
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[test]
@@ -1191,6 +1195,10 @@ impl crate::hotkey::ShortcutBackend for FailingShortcutBackend {
     fn unregister(&self, shortcut: &str) -> Result<(), String> {
         self.unregister_attempts.lock().unwrap().push(shortcut.to_string());
         Err("Nothing to unregister".to_string())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

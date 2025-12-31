@@ -41,4 +41,8 @@ impl ShortcutBackend for TauriShortcutBackend {
             .unregister(parsed)
             .map_err(|e| format!("{}", e))
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

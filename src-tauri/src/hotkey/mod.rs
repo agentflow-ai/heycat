@@ -8,7 +8,7 @@ mod tauri_backend;
 pub use tauri_backend::TauriShortcutBackend;
 
 #[cfg(target_os = "macos")]
-mod cgeventtap_backend;
+pub mod cgeventtap_backend;
 
 #[cfg(not(target_os = "macos"))]
 mod rdev_backend;
@@ -56,9 +56,7 @@ impl std::error::Error for HotkeyError {}
 
 /// Recording mode determines how the hotkey triggers recording
 ///
-/// Used by HotkeyIntegration (update-hotkey-integration spec) and settings commands
-/// (add-recording-mode-commands spec) to support push-to-talk mode.
-#[allow(dead_code)] // Used by upcoming specs: add-recording-mode-commands, update-hotkey-integration
+/// Used by HotkeyIntegration and settings commands to support push-to-talk mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecordingMode {
@@ -85,6 +83,12 @@ pub fn map_backend_error(msg: &str) -> HotkeyError {
 pub trait ShortcutBackend {
     fn register(&self, shortcut: &str, callback: Box<dyn Fn() + Send + Sync>) -> Result<(), String>;
     fn unregister(&self, shortcut: &str) -> Result<(), String>;
+
+    /// Returns a reference to Any for downcasting to concrete types
+    ///
+    /// This enables checking if a backend implements ShortcutBackendExt
+    /// for push-to-talk mode support.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Extended trait for shortcut backends that support key release detection
@@ -92,9 +96,7 @@ pub trait ShortcutBackend {
 /// This trait adds support for push-to-talk mode where we need separate
 /// callbacks for key press and key release events.
 ///
-/// Implemented by CGEventTapHotkeyBackend (extend-cgeventtap-backend spec) and
-/// RdevShortcutBackend (implement-rdev-backend spec).
-#[allow(dead_code)] // Used by upcoming specs: extend-cgeventtap-backend, update-hotkey-integration
+/// Implemented by CGEventTapHotkeyBackend (macOS) and RdevShortcutBackend (Windows/Linux).
 pub trait ShortcutBackendExt: ShortcutBackend {
     /// Register a shortcut with separate press and release callbacks
     ///
@@ -123,6 +125,10 @@ impl ShortcutBackend for NullShortcutBackend {
 
     fn unregister(&self, _shortcut: &str) -> Result<(), String> {
         Err("NullShortcutBackend: unregistration not supported".to_string())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
