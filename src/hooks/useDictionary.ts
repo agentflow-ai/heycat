@@ -25,6 +25,7 @@ export function useDictionary() {
       suffix?: string;
       autoEnter?: boolean;
       disableSuffix?: boolean;
+      completeMatchOnly?: boolean;
     }) =>
       invoke<DictionaryEntry>("add_dictionary_entry", {
         trigger: data.trigger,
@@ -32,6 +33,7 @@ export function useDictionary() {
         suffix: data.suffix,
         autoEnter: data.autoEnter,
         disableSuffix: data.disableSuffix,
+        completeMatchOnly: data.completeMatchOnly,
       }),
     // Note: NO onSuccess invalidation - Event Bridge handles it
   });
@@ -44,6 +46,7 @@ export function useDictionary() {
       suffix?: string;
       autoEnter?: boolean;
       disableSuffix?: boolean;
+      completeMatchOnly?: boolean;
     }) =>
       invoke<void>("update_dictionary_entry", {
         id: data.id,
@@ -52,6 +55,7 @@ export function useDictionary() {
         suffix: data.suffix,
         autoEnter: data.autoEnter,
         disableSuffix: data.disableSuffix,
+        completeMatchOnly: data.completeMatchOnly,
       }),
     // Note: NO onSuccess invalidation - Event Bridge handles it
   });

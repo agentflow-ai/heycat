@@ -17,9 +17,11 @@ interface SettingsPanelProps {
   suffix: string;
   autoEnter: boolean;
   disableSuffix: boolean;
+  completeMatchOnly: boolean;
   onSuffixChange: (value: string) => void;
   onAutoEnterChange: (value: boolean) => void;
   onDisableSuffixChange: (value: boolean) => void;
+  onCompleteMatchOnlyChange: (value: boolean) => void;
   suffixError?: string | null;
 }
 
@@ -27,9 +29,11 @@ function SettingsPanel({
   suffix,
   autoEnter,
   disableSuffix,
+  completeMatchOnly,
   onSuffixChange,
   onAutoEnterChange,
   onDisableSuffixChange,
+  onCompleteMatchOnlyChange,
   suffixError,
 }: SettingsPanelProps) {
   return (
@@ -88,6 +92,20 @@ function SettingsPanel({
             id="auto-enter-toggle"
             checked={autoEnter}
             onCheckedChange={onAutoEnterChange}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <label
+            htmlFor="complete-match-only-toggle"
+            className="text-sm font-medium text-text-secondary"
+            title="When enabled, trigger only expands if it's the entire transcription input"
+          >
+            Complete match only
+          </label>
+          <Toggle
+            id="complete-match-only-toggle"
+            checked={completeMatchOnly}
+            onCheckedChange={onCompleteMatchOnlyChange}
           />
         </div>
       </div>
@@ -161,7 +179,8 @@ interface AddEntryFormProps {
     contextIds: string[],
     suffix?: string,
     autoEnter?: boolean,
-    disableSuffix?: boolean
+    disableSuffix?: boolean,
+    completeMatchOnly?: boolean
   ) => Promise<void>;
   existingTriggers: string[];
   contextOptions: MultiSelectOption[];
@@ -173,13 +192,14 @@ function AddEntryForm({ onSubmit, existingTriggers, contextOptions }: AddEntryFo
   const [suffix, setSuffix] = useState("");
   const [autoEnter, setAutoEnter] = useState(false);
   const [disableSuffix, setDisableSuffix] = useState(false);
+  const [completeMatchOnly, setCompleteMatchOnly] = useState(false);
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [suffixError, setSuffixError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const hasSettings = suffix !== "" || autoEnter || disableSuffix;
+  const hasSettings = suffix !== "" || autoEnter || disableSuffix || completeMatchOnly;
 
   const validateSuffix = (value: string): boolean => {
     if (value.length > 5) {
@@ -223,7 +243,8 @@ function AddEntryForm({ onSubmit, existingTriggers, contextOptions }: AddEntryFo
         selectedContextIds,
         disableSuffix ? undefined : (suffix.trim() || undefined),
         autoEnter || undefined,
-        disableSuffix || undefined
+        disableSuffix || undefined,
+        completeMatchOnly || undefined
       );
       setTrigger("");
       setExpansion("");
@@ -231,6 +252,7 @@ function AddEntryForm({ onSubmit, existingTriggers, contextOptions }: AddEntryFo
       setSuffixError(null);
       setAutoEnter(false);
       setDisableSuffix(false);
+      setCompleteMatchOnly(false);
       setSelectedContextIds([]);
       setIsSettingsOpen(false);
     } finally {
@@ -295,9 +317,11 @@ function AddEntryForm({ onSubmit, existingTriggers, contextOptions }: AddEntryFo
                 suffix={suffix}
                 autoEnter={autoEnter}
                 disableSuffix={disableSuffix}
+                completeMatchOnly={completeMatchOnly}
                 onSuffixChange={handleSuffixChange}
                 onAutoEnterChange={setAutoEnter}
                 onDisableSuffixChange={setDisableSuffix}
+                onCompleteMatchOnlyChange={setCompleteMatchOnly}
                 suffixError={suffixError}
               />
               {contextOptions.length > 0 && (
@@ -330,11 +354,11 @@ interface EntryItemProps {
   onDelete: (id: string) => void;
   isEditing: boolean;
   isDeleting: boolean;
-  editValues: { trigger: string; expansion: string; suffix: string; autoEnter: boolean; disableSuffix: boolean; contextIds: string[] };
+  editValues: { trigger: string; expansion: string; suffix: string; autoEnter: boolean; disableSuffix: boolean; completeMatchOnly: boolean; contextIds: string[] };
   editError: string | null;
   editSuffixError: string | null;
   contextOptions: MultiSelectOption[];
-  onEditChange: (field: "trigger" | "expansion" | "suffix" | "autoEnter" | "disableSuffix" | "contextIds", value: string | boolean | string[]) => void;
+  onEditChange: (field: "trigger" | "expansion" | "suffix" | "autoEnter" | "disableSuffix" | "completeMatchOnly" | "contextIds", value: string | boolean | string[]) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onConfirmDelete: () => void;
@@ -360,8 +384,8 @@ function EntryItem({
 }: EntryItemProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const hasSettings = entry.suffix || entry.autoEnter || entry.disableSuffix;
-  const editHasSettings = editValues.suffix !== "" || editValues.autoEnter || editValues.disableSuffix;
+  const hasSettings = entry.suffix || entry.autoEnter || entry.disableSuffix || entry.completeMatchOnly;
+  const editHasSettings = editValues.suffix !== "" || editValues.autoEnter || editValues.disableSuffix || editValues.completeMatchOnly;
 
   if (isEditing) {
     return (
@@ -423,9 +447,11 @@ function EntryItem({
               suffix={editValues.suffix}
               autoEnter={editValues.autoEnter}
               disableSuffix={editValues.disableSuffix}
+              completeMatchOnly={editValues.completeMatchOnly}
               onSuffixChange={(value) => onEditChange("suffix", value)}
               onAutoEnterChange={(value) => onEditChange("autoEnter", value)}
               onDisableSuffixChange={(value) => onEditChange("disableSuffix", value)}
+              onCompleteMatchOnlyChange={(value) => onEditChange("completeMatchOnly", value)}
               suffixError={editSuffixError}
             />
             {contextOptions.length > 0 && (
@@ -493,7 +519,7 @@ function EntryItem({
           {hasSettings && (
             <span
               className="text-heycat-orange shrink-0"
-              title={`${entry.disableSuffix ? "No punctuation" : `Suffix: "${entry.suffix || ""}"`}${entry.autoEnter ? ", Auto-enter" : ""}`}
+              title={`${entry.disableSuffix ? "No punctuation" : `Suffix: "${entry.suffix || ""}"`}${entry.autoEnter ? ", Auto-enter" : ""}${entry.completeMatchOnly ? ", Complete match only" : ""}`}
             >
               <Settings className="h-4 w-4" />
             </span>
@@ -561,6 +587,7 @@ export function Dictionary(_props: DictionaryProps) {
     suffix: "",
     autoEnter: false,
     disableSuffix: false,
+    completeMatchOnly: false,
     contextIds: [] as string[],
   });
   const [editError, setEditError] = useState<string | null>(null);
@@ -617,10 +644,11 @@ export function Dictionary(_props: DictionaryProps) {
       contextIds: string[],
       suffix?: string,
       autoEnter?: boolean,
-      disableSuffix?: boolean
+      disableSuffix?: boolean,
+      completeMatchOnly?: boolean
     ) => {
       try {
-        const newEntry = await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter, disableSuffix });
+        const newEntry = await addEntry.mutateAsync({ trigger, expansion, suffix, autoEnter, disableSuffix, completeMatchOnly });
 
         // Update selected contexts to include the new entry
         for (const ctxId of contextIds) {
@@ -669,6 +697,7 @@ export function Dictionary(_props: DictionaryProps) {
       suffix: entry.suffix || "",
       autoEnter: entry.autoEnter || false,
       disableSuffix: entry.disableSuffix || false,
+      completeMatchOnly: entry.completeMatchOnly || false,
       contextIds: assignedContextIds,
     });
     setEditError(null);
@@ -676,7 +705,7 @@ export function Dictionary(_props: DictionaryProps) {
   }, [contextsByEntryId]);
 
   const handleEditChange = useCallback(
-    (field: "trigger" | "expansion" | "suffix" | "autoEnter" | "disableSuffix" | "contextIds", value: string | boolean | string[]) => {
+    (field: "trigger" | "expansion" | "suffix" | "autoEnter" | "disableSuffix" | "completeMatchOnly" | "contextIds", value: string | boolean | string[]) => {
       setEditValues((prev) => ({ ...prev, [field]: value }));
       if (field === "trigger") {
         setEditError(null);
@@ -726,6 +755,7 @@ export function Dictionary(_props: DictionaryProps) {
         suffix: editValues.disableSuffix ? undefined : (editValues.suffix.trim() || undefined),
         autoEnter: editValues.autoEnter || undefined,
         disableSuffix: editValues.disableSuffix || undefined,
+        completeMatchOnly: editValues.completeMatchOnly || undefined,
       });
 
       // Sync context assignments
@@ -781,7 +811,7 @@ export function Dictionary(_props: DictionaryProps) {
         description: `"${trimmedTrigger}" has been updated.`,
       });
       setEditingId(null);
-      setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false, disableSuffix: false, contextIds: [] });
+      setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false, disableSuffix: false, completeMatchOnly: false, contextIds: [] });
       setEditError(null);
       setEditSuffixError(null);
     } catch (e) {
@@ -795,7 +825,7 @@ export function Dictionary(_props: DictionaryProps) {
 
   const handleCancelEdit = useCallback(() => {
     setEditingId(null);
-    setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false, disableSuffix: false, contextIds: [] });
+    setEditValues({ trigger: "", expansion: "", suffix: "", autoEnter: false, disableSuffix: false, completeMatchOnly: false, contextIds: [] });
     setEditError(null);
     setEditSuffixError(null);
   }, []);

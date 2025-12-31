@@ -15,4 +15,6 @@ export interface DictionaryEntry {
   autoEnter?: boolean;
   /** Whether to suppress any trailing punctuation from the transcription */
   disableSuffix?: boolean;
+  /** Whether the trigger should only expand when it's the complete transcription input */
+  completeMatchOnly?: boolean;
 }
