@@ -16,7 +16,7 @@ use crate::events::{
 use crate::turso::{events as turso_events, TursoClient};
 use crate::window_context::get_active_window;
 use crate::hotkey::double_tap::{DoubleTapDetector, DEFAULT_DOUBLE_TAP_WINDOW_MS};
-use crate::hotkey::ShortcutBackend;
+use crate::hotkey::{RecordingMode, ShortcutBackend};
 use crate::recording::{RecordingDetectors, SilenceConfig};
 use crate::model::{check_model_exists_for_type, ModelType};
 use crate::recording::{RecordingManager, RecordingState};
@@ -295,6 +295,10 @@ pub struct HotkeyIntegration<R: RecordingEventEmitter, T: TranscriptionEventEmit
     last_toggle_time: Option<Instant>,
     debounce_duration: Duration,
 
+    // === Recording Mode ===
+    /// Current recording mode (Toggle or PushToTalk)
+    recording_mode: RecordingMode,
+
     // === Recording (required) ===
     recording_emitter: R,
 
@@ -342,6 +346,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         Self {
             last_toggle_time: None,
             debounce_duration: Duration::from_millis(DEBOUNCE_DURATION_MS),
+            recording_mode: RecordingMode::default(),
             recording_emitter,
             // Grouped configurations
             transcription: None,
@@ -363,6 +368,30 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             // Hotkey events
             hotkey_emitter: None,
         }
+    }
+
+    /// Get the current recording mode
+    pub fn recording_mode(&self) -> RecordingMode {
+        self.recording_mode
+    }
+
+    /// Set the recording mode (builder pattern)
+    ///
+    /// When set to PushToTalk, the hotkey will start recording on press and
+    /// stop on release. When set to Toggle (default), the hotkey toggles
+    /// recording state on each press.
+    pub fn with_recording_mode(mut self, mode: RecordingMode) -> Self {
+        self.recording_mode = mode;
+        self
+    }
+
+    /// Update the recording mode at runtime
+    ///
+    /// This allows changing the mode after construction, typically used when
+    /// the user changes the setting in the UI.
+    pub fn set_recording_mode(&mut self, mode: RecordingMode) {
+        self.recording_mode = mode;
+        crate::debug!("Recording mode updated to: {:?}", mode);
     }
 
     /// Add app handle for clipboard access (builder pattern)
@@ -709,6 +738,7 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         Self {
             last_toggle_time: None,
             debounce_duration: Duration::from_millis(debounce_ms),
+            recording_mode: RecordingMode::default(),
             recording_emitter,
             // Grouped configurations
             transcription: None,
@@ -907,6 +937,196 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
             RecordingState::Processing => {
                 // In Processing state - ignore toggle (busy)
                 crate::debug!("Toggle ignored - already processing");
+                false
+            }
+        }
+    }
+
+    /// Handle hotkey press event for push-to-talk mode
+    ///
+    /// In PTT mode, pressing the hotkey starts recording immediately (no debounce).
+    /// This is called when the hotkey key is pressed down.
+    ///
+    /// Returns true if recording was started, false otherwise.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn handle_hotkey_press(&mut self, state: &Mutex<RecordingManager>) -> bool {
+        // PTT mode skips debounce for immediate response
+        let current_state = match state.lock() {
+            Ok(guard) => guard.get_state(),
+            Err(e) => {
+                crate::error!("Failed to acquire lock: {}", e);
+                self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                    message: "Internal error: state lock poisoned".to_string(),
+                });
+                return false;
+            }
+        };
+
+        crate::debug!("PTT press received, current state: {:?}", current_state);
+
+        match current_state {
+            RecordingState::Idle => {
+                crate::info!("PTT: Starting recording on key press...");
+
+                // Check model availability
+                let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or(false);
+
+                let device_name = self.get_selected_audio_device();
+                match start_recording_impl(state, self.audio_thread.as_deref(), model_available, device_name) {
+                    Ok(()) => {
+                        self.recording_emitter
+                            .emit_recording_started(RecordingStartedPayload {
+                                timestamp: current_timestamp(),
+                            });
+                        crate::info!("PTT: Recording started");
+
+                        // Register Escape key listener for emergency cancel
+                        self.register_escape_listener();
+
+                        // Enable Escape key consumption
+                        set_consume_escape(true);
+
+                        // Note: PTT mode does NOT start silence detection
+                        // Recording stops on key release, not on silence
+
+                        true
+                    }
+                    Err(e) => {
+                        crate::error!("PTT: Failed to start recording: {}", e);
+                        self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                            message: e,
+                        });
+                        false
+                    }
+                }
+            }
+            RecordingState::Recording => {
+                // Already recording - ignore (user might have double-pressed)
+                crate::debug!("PTT press ignored - already recording");
+                false
+            }
+            RecordingState::Processing => {
+                // Busy - ignore
+                crate::debug!("PTT press ignored - processing");
+                false
+            }
+        }
+    }
+
+    /// Handle hotkey release event for push-to-talk mode
+    ///
+    /// In PTT mode, releasing the hotkey stops recording immediately.
+    /// This is called when the hotkey key is released.
+    ///
+    /// Returns true if recording was stopped, false otherwise.
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn handle_hotkey_release(&mut self, state: &Mutex<RecordingManager>) -> bool {
+        let current_state = match state.lock() {
+            Ok(guard) => guard.get_state(),
+            Err(e) => {
+                crate::error!("Failed to acquire lock: {}", e);
+                self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                    message: "Internal error: state lock poisoned".to_string(),
+                });
+                return false;
+            }
+        };
+
+        crate::debug!("PTT release received, current state: {:?}", current_state);
+
+        match current_state {
+            RecordingState::Recording => {
+                crate::info!("PTT: Stopping recording on key release...");
+
+                // Unregister Escape key listener
+                self.unregister_escape_listener();
+
+                // Disable Escape key consumption
+                set_consume_escape(false);
+
+                // Stop recording and process
+                match stop_recording_impl(state, self.audio_thread.as_deref(), false, self.recordings_dir.clone()) {
+                    Ok(metadata) => {
+                        crate::info!(
+                            "PTT: Recording stopped: {} samples, {:.2}s duration",
+                            metadata.sample_count, metadata.duration_secs
+                        );
+
+                        // Store recording metadata in Turso
+                        if let Some(ref app_handle) = self.app_handle {
+                            if !metadata.file_path.is_empty() {
+                                if let Some(turso_client) = app_handle.try_state::<std::sync::Arc<TursoClient>>() {
+                                    let (app_name, bundle_id, title) = match get_active_window() {
+                                        Ok(info) => (
+                                            Some(info.app_name),
+                                            info.bundle_id,
+                                            info.window_title,
+                                        ),
+                                        Err(e) => {
+                                            crate::debug!("Could not get active window info: {}", e);
+                                            (None, None, None)
+                                        }
+                                    };
+
+                                    let recording_id = uuid::Uuid::new_v4().to_string();
+                                    let file_path = metadata.file_path.clone();
+                                    let duration_secs = metadata.duration_secs;
+                                    let sample_count = metadata.sample_count as u64;
+                                    let stop_reason = metadata.stop_reason.clone();
+                                    let client = turso_client.inner().clone();
+                                    let app_handle_clone = app_handle.clone();
+
+                                    tauri::async_runtime::spawn(async move {
+                                        if let Err(e) = client
+                                            .add_recording(
+                                                recording_id.clone(),
+                                                file_path,
+                                                duration_secs,
+                                                sample_count,
+                                                stop_reason,
+                                                app_name,
+                                                bundle_id,
+                                                title,
+                                            )
+                                            .await
+                                        {
+                                            crate::warn!("Failed to store recording in Turso: {}", e);
+                                        } else {
+                                            crate::debug!("Recording metadata stored in Turso (PTT flow)");
+                                            turso_events::emit_recordings_updated(&app_handle_clone, "add", Some(&recording_id));
+                                        }
+                                    });
+                                }
+                            }
+                        }
+
+                        let file_path_for_transcription = metadata.file_path.clone();
+                        self.recording_emitter
+                            .emit_recording_stopped(RecordingStoppedPayload { metadata });
+                        crate::debug!("PTT: Emitted recording_stopped event");
+
+                        // Auto-transcribe
+                        self.spawn_transcription(file_path_for_transcription);
+
+                        true
+                    }
+                    Err(e) => {
+                        crate::error!("PTT: Failed to stop recording: {}", e);
+                        self.recording_emitter.emit_recording_error(RecordingErrorPayload {
+                            message: e,
+                        });
+                        false
+                    }
+                }
+            }
+            RecordingState::Idle => {
+                // Not recording - ignore (user might have released after cancel)
+                crate::debug!("PTT release ignored - not recording");
+                false
+            }
+            RecordingState::Processing => {
+                // Busy - ignore
+                crate::debug!("PTT release ignored - processing");
                 false
             }
         }
