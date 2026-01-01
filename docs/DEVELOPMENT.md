@@ -171,7 +171,33 @@ Docker provides an alternative development workflow for cloud/remote environment
 | CI/CD pipelines | Docker |
 | Testing on Linux | Docker |
 
-### Quick Start
+### Local Docker Desktop (Recommended)
+
+For local development on macOS with Docker Desktop, use the simplified workflow:
+
+```bash
+bun scripts/docker/local-dev.ts --shell   # Start container + enter shell
+bun scripts/docker/local-dev.ts --dev     # Start Tauri dev server on host
+bun scripts/docker/local-dev.ts --build   # Build release on host
+bun scripts/docker/local-dev.ts --stop    # Stop container
+```
+
+**How it works:**
+- Source code is bind-mounted (shared between container and host)
+- No SSH or rsync needed - files sync automatically
+- Run tests/linting in container, Tauri builds on host
+
+```bash
+# In container: tests, linting, TypeScript
+docker exec -it heycat-dev-default bun test
+
+# On host: Tauri/macOS builds
+bun scripts/docker/local-dev.ts --build
+```
+
+### Remote Docker (Requires SSH)
+
+For remote Docker hosts or cloud development:
 
 ```bash
 # Create a container for feature development

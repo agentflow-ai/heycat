@@ -4,6 +4,10 @@ description: Trigger macOS/Tauri build from Docker container
 
 # Mac Build - Trigger Tauri Build on macOS Host
 
+> **Local Docker Desktop?** Use `local-dev.ts` instead - no SSH required.
+> Files are bind-mounted, so run `bun scripts/docker/local-dev.ts --build` directly on your Mac.
+> This script (`mac-build.ts`) is for remote containers that need to sync files over SSH.
+
 You are triggering a Tauri/Swift build on a macOS host from within a Docker container. This is necessary because Tauri applications require macOS for building and running.
 
 ## Prerequisites Check
