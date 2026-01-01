@@ -10,14 +10,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 // Mock hooks
-const mockStartRecording = vi.fn();
 const mockDownloadModel = vi.fn();
-
-vi.mock("../hooks/useRecording", () => ({
-  useRecording: () => ({
-    startRecording: mockStartRecording,
-  }),
-}));
 
 vi.mock("../hooks/useMultiModelStatus", () => ({
   useMultiModelStatus: () => ({
@@ -28,16 +21,6 @@ vi.mock("../hooks/useMultiModelStatus", () => ({
       error: null,
     },
     downloadModel: mockDownloadModel,
-  }),
-}));
-
-vi.mock("../hooks/useSettings", () => ({
-  useSettings: () => ({
-    settings: {
-      audio: {
-        selectedDevice: null,
-      },
-    },
   }),
 }));
 
@@ -76,22 +59,11 @@ describe("Dashboard", () => {
     expect(screen.getByText("Recordings")).toBeDefined();
     expect(screen.getByText("Commands")).toBeDefined();
 
-    // Quick action buttons
-    expect(
-      screen.getByRole("button", { name: "Start Recording" })
-    ).toBeDefined();
+    // Quick action buttons (recording button removed - only hotkey-based recording)
     expect(screen.getByRole("button", { name: "Train Command" })).toBeDefined();
     expect(
       screen.getByRole("button", { name: "Download Model" })
     ).toBeDefined();
-  });
-
-  it("start recording button triggers recording", async () => {
-    const user = userEvent.setup();
-    render(<Dashboard />, { wrapper: createWrapper() });
-
-    await user.click(screen.getByRole("button", { name: "Start Recording" }));
-    expect(mockStartRecording).toHaveBeenCalled();
   });
 
   it("download model button triggers download", async () => {
