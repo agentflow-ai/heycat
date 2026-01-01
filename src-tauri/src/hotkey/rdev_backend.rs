@@ -133,19 +133,22 @@ impl RdevShortcutBackend {
         let release_callbacks = self.release_callbacks.clone();
         let running = self.running.clone();
 
-        let handle = thread::spawn(move || {
-            let callback = move |event: Event| {
-                Self::handle_event(&event, &shortcuts, &press_callbacks, &release_callbacks);
-            };
+        let handle = thread::Builder::new()
+            .name("rdev-hotkey-listener".to_string())
+            .spawn(move || {
+                let callback = move |event: Event| {
+                    Self::handle_event(&event, &shortcuts, &press_callbacks, &release_callbacks);
+                };
 
-            // rdev::listen blocks until an error occurs
-            if let Err(e) = listen(callback) {
-                // Log error but don't panic - the listener thread is stopping
-                crate::error!("RdevShortcutBackend: Listener error: {:?}", e);
-            }
+                // rdev::listen blocks until an error occurs
+                if let Err(e) = listen(callback) {
+                    // Log error but don't panic - the listener thread is stopping
+                    crate::error!("RdevShortcutBackend: Listener error: {:?}", e);
+                }
 
-            running.store(false, Ordering::SeqCst);
-        });
+                running.store(false, Ordering::SeqCst);
+            })
+            .map_err(|e| e.to_string())?;
 
         let mut handle_guard = self.listener_handle.lock().map_err(|e| e.to_string())?;
         *handle_guard = Some(handle);
@@ -226,6 +229,11 @@ impl ShortcutBackend for RdevShortcutBackend {
                 return Err(format!("Shortcut '{}' is already registered", shortcut));
             }
 
+            // Also check if any existing shortcut maps to the same key
+            if shortcuts_guard.values().any(|k| *k == key) {
+                return Err(format!("A shortcut for key '{:?}' is already registered", key));
+            }
+
             shortcuts_guard.insert(shortcut.to_string(), key);
             callbacks_guard.insert(shortcut.to_string(), Arc::from(callback));
         }
@@ -271,6 +279,11 @@ impl ShortcutBackendExt for RdevShortcutBackend {
 
             if shortcuts_guard.contains_key(shortcut) {
                 return Err(format!("Shortcut '{}' is already registered", shortcut));
+            }
+
+            // Also check if any existing shortcut maps to the same key
+            if shortcuts_guard.values().any(|k| *k == key) {
+                return Err(format!("A shortcut for key '{:?}' is already registered", key));
             }
 
             shortcuts_guard.insert(shortcut.to_string(), key);
