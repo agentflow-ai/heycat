@@ -13,8 +13,7 @@ use crate::events::{
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
     TranscriptionStartedPayload,
 };
-use crate::turso::{events as turso_events, TursoClient};
-use crate::window_context::get_active_window;
+use crate::turso::TursoClient;
 use crate::hotkey::double_tap::{DoubleTapDetector, DEFAULT_DOUBLE_TAP_WINDOW_MS};
 use crate::hotkey::{RecordingMode, ShortcutBackend};
 use crate::recording::{RecordingDetectors, SilenceConfig};
@@ -27,7 +26,7 @@ use crate::parakeet::{SharedTranscriptionModel, TranscriptionService};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::sync::Semaphore;
 
@@ -843,56 +842,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                             metadata.sample_count, metadata.duration_secs
                         );
 
-                        // Store recording metadata in Turso (same as stop_recording command)
+                        // Store recording metadata in Turso using storage abstraction
                         if let Some(ref app_handle) = self.app_handle {
                             if !metadata.file_path.is_empty() {
-                                // Get TursoClient from managed state
-                                if let Some(turso_client) = app_handle.try_state::<std::sync::Arc<TursoClient>>() {
-                                    // Capture active window info
-                                    let (app_name, bundle_id, title) = match get_active_window() {
-                                        Ok(info) => (
-                                            Some(info.app_name),
-                                            info.bundle_id,
-                                            info.window_title,
-                                        ),
-                                        Err(e) => {
-                                            crate::debug!("Could not get active window info: {}", e);
-                                            (None, None, None)
-                                        }
-                                    };
-
-                                    let recording_id = uuid::Uuid::new_v4().to_string();
-                                    let file_path = metadata.file_path.clone();
-                                    let duration_secs = metadata.duration_secs;
-                                    let sample_count = metadata.sample_count as u64;
-                                    let stop_reason = metadata.stop_reason.clone();
-                                    let client = turso_client.inner().clone();
-                                    let app_handle_clone = app_handle.clone();
-
-                                    // Spawn async task to store recording
-                                    tauri::async_runtime::spawn(async move {
-                                        if let Err(e) = client
-                                            .add_recording(
-                                                recording_id.clone(),
-                                                file_path,
-                                                duration_secs,
-                                                sample_count,
-                                                stop_reason,
-                                                app_name,
-                                                bundle_id,
-                                                title,
-                                            )
-                                            .await
-                                        {
-                                            crate::warn!("Failed to store recording in Turso: {}", e);
-                                        } else {
-                                            crate::debug!("Recording metadata stored in Turso (hotkey flow)");
-                                            turso_events::emit_recordings_updated(&app_handle_clone, "add", Some(&recording_id));
-                                        }
-                                    });
-                                } else {
-                                    crate::debug!("TursoClient not available in app state");
-                                }
+                                crate::storage::store_recording(app_handle, &metadata, "hotkey");
                             }
                         }
 
@@ -1034,51 +987,10 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                             metadata.sample_count, metadata.duration_secs
                         );
 
-                        // Store recording metadata in Turso
+                        // Store recording metadata in Turso using storage abstraction
                         if let Some(ref app_handle) = self.app_handle {
                             if !metadata.file_path.is_empty() {
-                                if let Some(turso_client) = app_handle.try_state::<std::sync::Arc<TursoClient>>() {
-                                    let (app_name, bundle_id, title) = match get_active_window() {
-                                        Ok(info) => (
-                                            Some(info.app_name),
-                                            info.bundle_id,
-                                            info.window_title,
-                                        ),
-                                        Err(e) => {
-                                            crate::debug!("Could not get active window info: {}", e);
-                                            (None, None, None)
-                                        }
-                                    };
-
-                                    let recording_id = uuid::Uuid::new_v4().to_string();
-                                    let file_path = metadata.file_path.clone();
-                                    let duration_secs = metadata.duration_secs;
-                                    let sample_count = metadata.sample_count as u64;
-                                    let stop_reason = metadata.stop_reason.clone();
-                                    let client = turso_client.inner().clone();
-                                    let app_handle_clone = app_handle.clone();
-
-                                    tauri::async_runtime::spawn(async move {
-                                        if let Err(e) = client
-                                            .add_recording(
-                                                recording_id.clone(),
-                                                file_path,
-                                                duration_secs,
-                                                sample_count,
-                                                stop_reason,
-                                                app_name,
-                                                bundle_id,
-                                                title,
-                                            )
-                                            .await
-                                        {
-                                            crate::warn!("Failed to store recording in Turso: {}", e);
-                                        } else {
-                                            crate::debug!("Recording metadata stored in Turso (PTT flow)");
-                                            turso_events::emit_recordings_updated(&app_handle_clone, "add", Some(&recording_id));
-                                        }
-                                    });
-                                }
+                                crate::storage::store_recording(app_handle, &metadata, "PTT");
                             }
                         }
 

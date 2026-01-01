@@ -17,6 +17,7 @@ mod parakeet;
 mod paths;
 mod recording;
 mod shutdown;
+mod storage;
 mod swift;
 mod turso;
 mod transcription;

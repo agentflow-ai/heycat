@@ -13,7 +13,7 @@ use crate::events::{
 };
 use crate::parakeet::{SharedTranscriptionModel, TranscriptionService as TranscriptionServiceTrait};
 use crate::recording::RecordingManager;
-use crate::turso::{events as turso_events, TursoClient};
+use crate::turso::TursoClient;
 use crate::voice_commands::executor::ActionDispatcher;
 use crate::voice_commands::matcher::{CommandMatcher, MatchResult};
 use crate::voice_commands::registry::CommandDefinition;
@@ -26,91 +26,6 @@ use tokio::sync::Semaphore;
 
 /// Type alias for Turso client state
 pub type TursoClientState = Arc<TursoClient>;
-
-/// Store transcription result in Turso
-///
-/// This function is called after successful transcription to persist the result.
-/// It looks up the recording by file_path and stores the transcription linked to it.
-fn store_transcription_in_turso(
-    app_handle: &AppHandle,
-    file_path: &str,
-    text: &str,
-    duration_ms: u64,
-) {
-    // Get Turso client from managed state
-    let turso_client: Option<tauri::State<'_, TursoClientState>> =
-        app_handle.try_state();
-
-    if let Some(client) = turso_client {
-        // Async block to run with Turso client
-        let async_block = async {
-            // Look up recording by file_path to get recording_id
-            let recording_id = match client.get_recording_by_path(file_path).await {
-                Ok(Some(recording)) => {
-                    crate::debug!("Found existing recording in Turso: {}", recording.id);
-                    recording.id
-                }
-                Ok(None) => {
-                    // Recording should exist - both normal and hotkey flows store recordings now
-                    crate::warn!(
-                        "Recording not found in Turso for transcription: {}",
-                        file_path
-                    );
-                    return;
-                }
-                Err(e) => {
-                    crate::debug!("Failed to look up recording in Turso: {}", e);
-                    return;
-                }
-            };
-
-            // Store the transcription
-            let transcription_id = uuid::Uuid::new_v4().to_string();
-            let model_version = "parakeet-tdt".to_string();
-
-            if let Err(e) = client
-                .add_transcription(
-                    transcription_id.clone(),
-                    recording_id.clone(),
-                    text.to_string(),
-                    None, // language - could be detected in future
-                    model_version,
-                    duration_ms,
-                )
-                .await
-            {
-                crate::warn!("Failed to store transcription in Turso: {}", e);
-            } else {
-                crate::debug!(
-                    "Transcription stored in Turso for recording {}",
-                    recording_id
-                );
-                // Emit transcriptions_updated event
-                turso_events::emit_transcriptions_updated(
-                    app_handle,
-                    "add",
-                    Some(&transcription_id),
-                    Some(&recording_id),
-                );
-            }
-        };
-
-        // Handle case where no Tokio runtime is available
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                tokio::task::block_in_place(|| handle.block_on(async_block));
-            }
-            Err(_) => {
-                // No runtime available, create a temporary one
-                if let Ok(rt) = tokio::runtime::Runtime::new() {
-                    rt.block_on(async_block);
-                } else {
-                    crate::warn!("Failed to create runtime for transcription storage");
-                }
-            }
-        }
-    }
-}
 
 /// Maximum concurrent transcriptions allowed
 const MAX_CONCURRENT_TRANSCRIPTIONS: usize = 2;
@@ -400,8 +315,8 @@ where
                 text.len()
             );
 
-            // Store transcription in Turso
-            store_transcription_in_turso(
+            // Store transcription in Turso using storage abstraction
+            crate::storage::store_transcription(
                 &app_handle,
                 &file_path_for_storage,
                 &text,

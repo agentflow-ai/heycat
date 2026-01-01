@@ -27,7 +27,6 @@ use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, StopRe
 use crate::parakeet::SharedTranscriptionModel;
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata};
 use crate::turso::{events as turso_events, TursoClient};
-use crate::window_context::get_active_window;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -195,40 +194,20 @@ pub async fn stop_recording(
             }
         }
 
-        // Store recording metadata in Turso
+        // Store recording metadata in Turso using storage abstraction
         if !metadata.file_path.is_empty() {
-            // Capture active window info
-            let (app_name, bundle_id, title) = match get_active_window() {
-                Ok(info) => (
-                    Some(info.app_name),
-                    info.bundle_id,
-                    info.window_title,
-                ),
-                Err(e) => {
-                    crate::debug!("Could not get active window info: {}", e);
-                    (None, None, None)
-                }
-            };
-
-            let recording_id = uuid::Uuid::new_v4().to_string();
-            if let Err(e) = turso_client
-                .add_recording(
-                    recording_id.clone(),
-                    metadata.file_path.clone(),
-                    metadata.duration_secs,
-                    metadata.sample_count as u64,
-                    metadata.stop_reason.clone(),
-                    app_name,
-                    bundle_id,
-                    title,
-                )
-                .await
+            let window_context = crate::storage::WindowContext::capture();
+            if let Err(e) = crate::storage::RecordingStorage::store(
+                turso_client.as_ref(),
+                metadata,
+                window_context,
+                &app_handle,
+            )
+            .await
             {
                 crate::warn!("Failed to store recording in Turso: {}", e);
             } else {
-                crate::debug!("Recording metadata stored in Turso");
-                // Emit recordings_updated event
-                turso_events::emit_recordings_updated(&app_handle, "add", Some(&recording_id));
+                crate::debug!("Recording metadata stored in Turso (button flow)");
             }
         }
 
