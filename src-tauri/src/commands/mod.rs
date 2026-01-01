@@ -791,7 +791,7 @@ pub fn get_recording_mode(app_handle: AppHandle) -> crate::hotkey::RecordingMode
     app_handle
         .store(&settings_file)
         .ok()
-        .and_then(|store| store.get("hotkey.recordingMode"))
+        .and_then(|store| store.get("shortcuts.recordingMode"))
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default()
 }
@@ -827,7 +827,7 @@ pub fn set_recording_mode(
     // Save to settings
     let settings_file = get_settings_file(&app_handle);
     if let Ok(store) = app_handle.store(&settings_file) {
-        store.set("hotkey.recordingMode", serde_json::to_value(&mode).unwrap_or_default());
+        store.set("shortcuts.recordingMode", serde_json::to_value(&mode).unwrap_or_default());
         if let Err(e) = store.save() {
             crate::warn!("Failed to persist settings: {}", e);
             return Err(format!("Failed to save settings: {}", e));

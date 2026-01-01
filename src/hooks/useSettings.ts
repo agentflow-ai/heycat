@@ -61,7 +61,7 @@ export async function initializeSettings(): Promise<void> {
     "shortcuts.distinguishLeftRight"
   );
   const recordingMode = await store.get<RecordingMode>(
-    "hotkey.recordingMode"
+    "shortcuts.recordingMode"
   );
 
   const settings: AppSettings = {

@@ -37,7 +37,7 @@ describe("useSettings", () => {
       mockStore.get.mockImplementation((key: string) => {
         if (key === "audio.selectedDevice") return Promise.resolve("USB Microphone");
         if (key === "shortcuts.distinguishLeftRight") return Promise.resolve(true);
-        if (key === "hotkey.recordingMode") return Promise.resolve("push-to-talk");
+        if (key === "shortcuts.recordingMode") return Promise.resolve("push-to-talk");
         return Promise.resolve(undefined);
       });
 

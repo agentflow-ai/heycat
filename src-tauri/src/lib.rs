@@ -469,7 +469,7 @@ pub fn run() {
             let recording_mode: hotkey::RecordingMode = app
                 .store(&settings_file)
                 .ok()
-                .and_then(|store| store.get("hotkey.recordingMode"))
+                .and_then(|store| store.get("shortcuts.recordingMode"))
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
 
@@ -526,18 +526,30 @@ pub fn run() {
                         let app_handle_release = app.handle().clone();
 
                         // Check if backend supports PTT mode (implements ShortcutBackendExt)
+                        // Try both platform-specific backends
+                        let mut ptt_registered = false;
+
+                        // Try CGEventTap backend (macOS)
+                        #[cfg(target_os = "macos")]
                         if let Some(ext_backend) = service.backend.as_any().downcast_ref::<hotkey::cgeventtap_backend::CGEventTapHotkeyBackend>() {
+                            let integration_press_clone = integration_press.clone();
+                            let state_press_clone = state_press.clone();
+                            let app_handle_press_clone = app_handle_press.clone();
+                            let integration_release_clone = integration_release.clone();
+                            let state_release_clone = state_release.clone();
+                            let app_handle_release_clone = app_handle_release.clone();
+
                             if let Err(e) = ext_backend.register_with_release(
                                 &shortcut,
                                 Box::new(move || {
                                     debug!("Hotkey pressed (PTT mode)!");
-                                    match integration_press.lock() {
+                                    match integration_press_clone.lock() {
                                         Ok(mut guard) => {
-                                            guard.handle_hotkey_press(&state_press);
+                                            guard.handle_hotkey_press(&state_press_clone);
                                         }
                                         Err(e) => {
                                             error!("Failed to acquire integration lock: {}", e);
-                                            let _ = app_handle_press.emit(
+                                            let _ = app_handle_press_clone.emit(
                                                 events::event_names::RECORDING_ERROR,
                                                 events::RecordingErrorPayload {
                                                     message: "Internal error: please restart the application"
@@ -549,13 +561,13 @@ pub fn run() {
                                 }),
                                 Box::new(move || {
                                     debug!("Hotkey released (PTT mode)!");
-                                    match integration_release.lock() {
+                                    match integration_release_clone.lock() {
                                         Ok(mut guard) => {
-                                            guard.handle_hotkey_release(&state_release);
+                                            guard.handle_hotkey_release(&state_release_clone);
                                         }
                                         Err(e) => {
                                             error!("Failed to acquire integration lock: {}", e);
-                                            let _ = app_handle_release.emit(
+                                            let _ = app_handle_release_clone.emit(
                                                 events::event_names::RECORDING_ERROR,
                                                 events::RecordingErrorPayload {
                                                     message: "Internal error: please restart the application"
@@ -567,9 +579,62 @@ pub fn run() {
                                 }),
                             ) {
                                 warn!("Failed to register PTT hotkey: {:?}", e);
-                                warn!("Application will continue without global hotkey support");
+                            } else {
+                                ptt_registered = true;
                             }
-                        } else {
+                        }
+
+                        // Try rdev backend (Windows/Linux)
+                        #[cfg(not(target_os = "macos"))]
+                        if !ptt_registered {
+                            if let Some(ext_backend) = service.backend.as_any().downcast_ref::<hotkey::RdevShortcutBackend>() {
+                                if let Err(e) = ext_backend.register_with_release(
+                                    &shortcut,
+                                    Box::new(move || {
+                                        debug!("Hotkey pressed (PTT mode)!");
+                                        match integration_press.lock() {
+                                            Ok(mut guard) => {
+                                                guard.handle_hotkey_press(&state_press);
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to acquire integration lock: {}", e);
+                                                let _ = app_handle_press.emit(
+                                                    events::event_names::RECORDING_ERROR,
+                                                    events::RecordingErrorPayload {
+                                                        message: "Internal error: please restart the application"
+                                                            .to_string(),
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }),
+                                    Box::new(move || {
+                                        debug!("Hotkey released (PTT mode)!");
+                                        match integration_release.lock() {
+                                            Ok(mut guard) => {
+                                                guard.handle_hotkey_release(&state_release);
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to acquire integration lock: {}", e);
+                                                let _ = app_handle_release.emit(
+                                                    events::event_names::RECORDING_ERROR,
+                                                    events::RecordingErrorPayload {
+                                                        message: "Internal error: please restart the application"
+                                                            .to_string(),
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }),
+                                ) {
+                                    warn!("Failed to register PTT hotkey: {:?}", e);
+                                } else {
+                                    ptt_registered = true;
+                                }
+                            }
+                        }
+
+                        if !ptt_registered {
                             // Backend doesn't support PTT - fall back to toggle mode with warning
                             warn!("PTT mode requested but backend doesn't support key release detection");
                             warn!("Falling back to toggle mode");
