@@ -38,6 +38,12 @@ vi.mock("../components/overlays", () => ({
 vi.mock("../hooks/useRecording", () => ({
   useRecording: () => ({
     isRecording: false,
+    isProcessing: false,
+    error: null,
+    startRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    isStarting: false,
+    isStopping: false,
   }),
 }));
 
