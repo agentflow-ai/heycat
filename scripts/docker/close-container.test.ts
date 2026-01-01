@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseArgs } from "./close-container";
+import { parseArgs, getContainerName, getVolumeNames } from "./close-container";
 
 describe("close-container", () => {
   describe("parseArgs", () => {
@@ -63,28 +63,32 @@ describe("close-container", () => {
     });
   });
 
-  describe("volume naming", () => {
+  describe("getVolumeNames", () => {
     it("generates correct volume names for dev ID", () => {
-      const devId = "feature-test";
-      const expectedVolumes = [
-        `heycat-bun-cache-${devId}`,
-        `heycat-cargo-registry-${devId}`,
-        `heycat-cargo-git-${devId}`,
-      ];
-
-      expect(expectedVolumes).toEqual([
+      const volumes = getVolumeNames("feature-test");
+      expect(volumes).toEqual([
         "heycat-bun-cache-feature-test",
         "heycat-cargo-registry-feature-test",
         "heycat-cargo-git-feature-test",
       ]);
     });
+
+    it("handles dev ID with dashes", () => {
+      const volumes = getVolumeNames("hey-123-my-feature");
+      expect(volumes).toHaveLength(3);
+      expect(volumes[0]).toBe("heycat-bun-cache-hey-123-my-feature");
+    });
   });
 
-  describe("container naming", () => {
+  describe("getContainerName", () => {
     it("generates correct container name from dev ID", () => {
-      const devId = "hey-123-add-feature";
-      const containerName = `heycat-dev-${devId}`;
+      const containerName = getContainerName("hey-123-add-feature");
       expect(containerName).toBe("heycat-dev-hey-123-add-feature");
+    });
+
+    it("handles simple dev ID", () => {
+      const containerName = getContainerName("test");
+      expect(containerName).toBe("heycat-dev-test");
     });
   });
 });

@@ -17,37 +17,7 @@
 import { existsSync } from "fs";
 import { resolve } from "path";
 import { validateLinearIssue } from "../lib/linear";
-
-// ANSI color codes for terminal output
-const colors = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  cyan: "\x1b[36m",
-};
-
-function log(message: string): void {
-  console.log(message);
-}
-
-function success(message: string): void {
-  console.log(`${colors.green}${colors.bold}${message}${colors.reset}`);
-}
-
-function error(message: string): void {
-  console.error(`${colors.red}${colors.bold}Error: ${message}${colors.reset}`);
-}
-
-function info(message: string): void {
-  console.log(`${colors.cyan}${message}${colors.reset}`);
-}
-
-function warn(message: string): void {
-  console.log(`${colors.yellow}${message}${colors.reset}`);
-}
+import { colors, log, success, error, info, warn } from "../lib/utils";
 
 /**
  * Parse command line arguments.
@@ -235,8 +205,11 @@ async function createBranchInContainer(containerName: string, branchName: string
   info(`\nCreating branch: ${branchName}`);
 
   // Configure git user if not set (needed for commits)
-  await execInContainer(containerName, ["git", "config", "--global", "user.name", "Docker Dev"]);
-  await execInContainer(containerName, ["git", "config", "--global", "user.email", "dev@heycat.local"]);
+  // Use environment variables if available, otherwise fall back to defaults
+  const gitName = process.env.GIT_AUTHOR_NAME || "Docker Dev";
+  const gitEmail = process.env.GIT_AUTHOR_EMAIL || "dev@heycat.local";
+  await execInContainer(containerName, ["git", "config", "--global", "user.name", gitName]);
+  await execInContainer(containerName, ["git", "config", "--global", "user.email", gitEmail]);
 
   // Create and checkout the branch
   const result = await execInContainer(containerName, ["git", "checkout", "-b", branchName], { inherit: true });

@@ -23,36 +23,22 @@
  *   - Bun and Rust toolchain installed on macOS host
  */
 
-// ANSI color codes for terminal output
-const colors = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  cyan: "\x1b[36m",
-  dim: "\x1b[2m",
-};
+import { colors, log, success, error, info, warn } from "../lib/utils";
 
-function log(message: string): void {
-  console.log(message);
-}
-
-function success(message: string): void {
-  console.log(`${colors.green}${colors.bold}${message}${colors.reset}`);
-}
-
-function error(message: string): void {
-  console.error(`${colors.red}${colors.bold}Error: ${message}${colors.reset}`);
-}
-
-function info(message: string): void {
-  console.log(`${colors.cyan}${message}${colors.reset}`);
-}
-
-function warn(message: string): void {
-  console.log(`${colors.yellow}${message}${colors.reset}`);
-}
+/**
+ * Patterns to exclude from rsync sync.
+ */
+export const RSYNC_EXCLUSIONS = [
+  "target/",
+  "node_modules/",
+  ".git/",
+  "dist/",
+  "*.log",
+  ".tcr-state.json",
+  ".tcr-errors.log",
+  ".tcr/",
+  "coverage/",
+];
 
 interface MacBuildConfig {
   host: string;
@@ -187,21 +173,8 @@ async function syncToMac(config: MacBuildConfig): Promise<boolean> {
   // -z: compress during transfer
   // --delete: delete files on destination that don't exist on source
   // --exclude: patterns to exclude
-  const rsyncArgs = [
-    "-avz",
-    "--delete",
-    "--exclude=target/",
-    "--exclude=node_modules/",
-    "--exclude=.git/",
-    "--exclude=dist/",
-    "--exclude=*.log",
-    "--exclude=.tcr-state.json",
-    "--exclude=.tcr-errors.log",
-    "--exclude=.tcr/",
-    "--exclude=coverage/",
-    "./",
-    sshTarget,
-  ];
+  const excludeArgs = RSYNC_EXCLUSIONS.map((pattern) => `--exclude=${pattern}`);
+  const rsyncArgs = ["-avz", "--delete", ...excludeArgs, "./", sshTarget];
 
   const result = await Bun.spawn(["rsync", ...rsyncArgs], {
     stdout: "inherit",

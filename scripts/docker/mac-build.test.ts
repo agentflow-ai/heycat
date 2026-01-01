@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { getConfig, parseArgs } from "./mac-build";
+import { getConfig, parseArgs, RSYNC_EXCLUSIONS } from "./mac-build";
 
 describe("mac-build", () => {
   // Save original env vars
@@ -116,25 +116,36 @@ describe("mac-build", () => {
     });
   });
 
-  describe("rsync exclusions", () => {
-    it("documents excluded directories", () => {
-      // This test documents the expected exclusions
-      const expectedExclusions = [
-        "target/",       // Rust build artifacts
-        "node_modules/", // npm/bun dependencies
-        ".git/",         // git repository data
-        "dist/",         // frontend build output
-        "*.log",         // log files
-        ".tcr-state.json",
-        ".tcr-errors.log",
-        ".tcr/",
-        "coverage/",
-      ];
+  describe("RSYNC_EXCLUSIONS", () => {
+    it("excludes build artifacts", () => {
+      expect(RSYNC_EXCLUSIONS).toContain("target/");
+      expect(RSYNC_EXCLUSIONS).toContain("dist/");
+    });
 
-      // Just verify the list is what we expect
-      expect(expectedExclusions.length).toBeGreaterThan(0);
-      expect(expectedExclusions).toContain("target/");
-      expect(expectedExclusions).toContain("node_modules/");
+    it("excludes dependency directories", () => {
+      expect(RSYNC_EXCLUSIONS).toContain("node_modules/");
+    });
+
+    it("excludes git repository data", () => {
+      expect(RSYNC_EXCLUSIONS).toContain(".git/");
+    });
+
+    it("excludes log files", () => {
+      expect(RSYNC_EXCLUSIONS).toContain("*.log");
+    });
+
+    it("excludes TCR state files", () => {
+      expect(RSYNC_EXCLUSIONS).toContain(".tcr-state.json");
+      expect(RSYNC_EXCLUSIONS).toContain(".tcr-errors.log");
+      expect(RSYNC_EXCLUSIONS).toContain(".tcr/");
+    });
+
+    it("excludes coverage directory", () => {
+      expect(RSYNC_EXCLUSIONS).toContain("coverage/");
+    });
+
+    it("has expected number of exclusions", () => {
+      expect(RSYNC_EXCLUSIONS).toHaveLength(9);
     });
   });
 

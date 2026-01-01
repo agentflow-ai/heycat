@@ -16,35 +16,25 @@
  * Can also detect container from HEYCAT_DEV_ID environment variable.
  */
 
-// ANSI color codes for terminal output
-const colors = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  cyan: "\x1b[36m",
-  dim: "\x1b[2m",
-};
+import { createInterface } from "readline";
+import { colors, log, success, error, info, warn } from "../lib/utils";
 
-function log(message: string): void {
-  console.log(message);
+/**
+ * Get the full container name from a dev ID.
+ */
+export function getContainerName(devId: string): string {
+  return `heycat-dev-${devId}`;
 }
 
-function success(message: string): void {
-  console.log(`${colors.green}${colors.bold}${message}${colors.reset}`);
-}
-
-function error(message: string): void {
-  console.error(`${colors.red}${colors.bold}Error: ${message}${colors.reset}`);
-}
-
-function info(message: string): void {
-  console.log(`${colors.cyan}${message}${colors.reset}`);
-}
-
-function warn(message: string): void {
-  console.log(`${colors.yellow}${message}${colors.reset}`);
+/**
+ * Get the volume names associated with a dev ID.
+ */
+export function getVolumeNames(devId: string): string[] {
+  return [
+    `heycat-bun-cache-${devId}`,
+    `heycat-cargo-registry-${devId}`,
+    `heycat-cargo-git-${devId}`,
+  ];
 }
 
 interface Flags {
@@ -125,7 +115,6 @@ ${colors.bold}Note:${colors.reset}
  * Prompt user for confirmation via readline.
  */
 async function confirm(message: string): Promise<boolean> {
-  const { createInterface } = await import("readline");
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -201,11 +190,7 @@ async function removeContainer(containerName: string): Promise<boolean> {
  * Remove Docker volumes associated with a container ID.
  */
 async function removeVolumes(devId: string): Promise<{ removed: string[]; failed: string[] }> {
-  const volumeNames = [
-    `heycat-bun-cache-${devId}`,
-    `heycat-cargo-registry-${devId}`,
-    `heycat-cargo-git-${devId}`,
-  ];
+  const volumeNames = getVolumeNames(devId);
 
   const removed: string[] = [];
   const failed: string[] = [];
