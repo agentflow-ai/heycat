@@ -1,4 +1,15 @@
-use super::*;
+use super::keycodes::{
+    keycode_to_name, media_keycode_to_name, NX_KEYTYPE_BRIGHTNESS_DOWN, NX_KEYTYPE_BRIGHTNESS_UP,
+    NX_KEYTYPE_FAST, NX_KEYTYPE_ILLUMINATION_DOWN, NX_KEYTYPE_ILLUMINATION_UP, NX_KEYTYPE_MUTE,
+    NX_KEYTYPE_NEXT, NX_KEYTYPE_PLAY, NX_KEYTYPE_PREVIOUS, NX_KEYTYPE_REWIND,
+    NX_KEYTYPE_SOUND_DOWN, NX_KEYTYPE_SOUND_UP,
+};
+use super::modifiers::{
+    determine_modifier_key_state, CG_EVENT_FLAG_MASK_SECONDARY_FN, NX_DEVICELCMDKEYMASK,
+    NX_DEVICELSHIFTKEYMASK, NX_DEVICERCMDKEYMASK, NX_DEVICERSHIFTKEYMASK,
+};
+use super::types::CapturedKeyEvent;
+use super::{get_consume_escape, set_consume_escape, CGEventTapCapture, ESCAPE_KEY_CODE};
 
 #[test]
 fn test_keycode_to_name_letters() {
