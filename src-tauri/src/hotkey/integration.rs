@@ -396,15 +396,6 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         self
     }
 
-    /// Get the settings file name for the current worktree context.
-    /// Falls back to "settings.json" if worktree state is not available.
-    fn get_settings_file(&self) -> String {
-        self.app_handle
-            .as_ref()
-            .map(crate::util::get_settings_file)
-            .unwrap_or_else(|| crate::worktree::DEFAULT_SETTINGS_FILE.to_string())
-    }
-
     /// Get the selected audio device from persistent settings store
     fn get_selected_audio_device(&self) -> Option<String> {
         use crate::util::SettingsAccess;

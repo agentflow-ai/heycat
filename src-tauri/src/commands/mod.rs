@@ -20,7 +20,7 @@ use logic::{
 };
 
 use crate::events::{
-    event_names, RecordingErrorPayload, RecordingStartedPayload, RecordingStoppedPayload,
+    event_names, RecordingStartedPayload, RecordingStoppedPayload,
     TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionStartedPayload,
 };
 use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, StopReason, encode_wav, SystemFileWriter};

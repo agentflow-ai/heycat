@@ -8,7 +8,7 @@ mod emitter;
 mod state_access;
 
 pub use emitter::TauriEventEmitter;
-pub use state_access::{get_settings_file, SettingsHelper};
+pub use state_access::get_settings_file;
 
 /// Helper macro to emit events with error logging.
 ///

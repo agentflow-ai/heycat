@@ -13,7 +13,6 @@ use crate::events::{
     RecordingStartedPayload, RecordingStoppedPayload, TranscriptionCompletedPayload,
     TranscriptionErrorPayload, TranscriptionEventEmitter, TranscriptionStartedPayload,
 };
-use crate::util::SettingsAccess;
 
 /// Tauri AppHandle-based event emitter for production use.
 ///
@@ -27,17 +26,6 @@ impl TauriEventEmitter {
     /// Create a new TauriEventEmitter with the given AppHandle.
     pub fn new(app_handle: AppHandle) -> Self {
         Self { app_handle }
-    }
-
-    /// Get a reference to the underlying AppHandle.
-    pub fn app_handle(&self) -> &AppHandle {
-        &self.app_handle
-    }
-}
-
-impl SettingsAccess for TauriEventEmitter {
-    fn app_handle(&self) -> Option<&AppHandle> {
-        Some(&self.app_handle)
     }
 }
 
