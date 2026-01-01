@@ -141,7 +141,7 @@ impl RdevShortcutBackend {
             // rdev::listen blocks until an error occurs
             if let Err(e) = listen(callback) {
                 // Log error but don't panic - the listener thread is stopping
-                eprintln!("RdevShortcutBackend: Listener error: {:?}", e);
+                crate::error!("RdevShortcutBackend: Listener error: {:?}", e);
             }
 
             running.store(false, Ordering::SeqCst);
