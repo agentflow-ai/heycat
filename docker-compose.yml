@@ -42,6 +42,8 @@ services:
       - cargo-git:/usr/local/cargo/git
 
       # SSH agent forwarding (macOS/Linux)
+      # Note: Falls back to /dev/null if SSH_AUTH_SOCK not set - SSH operations
+      # will fail with "Permission denied" if agent not properly forwarded.
       - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent:ro
 
     environment:
@@ -53,7 +55,8 @@ services:
       HEYCAT_DEV_ID: ${HEYCAT_DEV_ID:-default}
 
       # Mac host configuration for mac-build script
-      # Set these in .env or export before running
+      # REQUIRED for /mac-build: Set these in .env or export before running
+      # Not needed for TypeScript/Rust development without macOS builds
       HEYCAT_MAC_HOST: ${HEYCAT_MAC_HOST:-}
       HEYCAT_MAC_USER: ${HEYCAT_MAC_USER:-}
       HEYCAT_MAC_PATH: ${HEYCAT_MAC_PATH:-}
@@ -73,9 +76,10 @@ services:
 
     working_dir: /workspace
 
-    # Use host network for easier access to mac host
-    # This allows mac-build script to reach the host machine
-    network_mode: host
+    # Use bridge network for isolation and portability
+    # Use host.docker.internal to reach the host machine from container
+    networks:
+      - default
 
 # Named volumes for caching
 volumes:

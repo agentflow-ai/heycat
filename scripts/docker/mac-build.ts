@@ -105,10 +105,10 @@ ${colors.bold}Options:${colors.reset}
   --dev          Run 'tauri dev' instead of 'tauri build'
   --help, -h     Show this help message
 
-${colors.bold}Environment Variables (required):${colors.reset}
-  HEYCAT_MAC_HOST    macOS host (IP or hostname)
-  HEYCAT_MAC_USER    SSH username on macOS host
-  HEYCAT_MAC_PATH    Project path on macOS host
+${colors.bold}Environment Variables:${colors.reset}
+  HEYCAT_MAC_HOST    macOS host (default: host.docker.internal)
+  HEYCAT_MAC_USER    SSH username on macOS host (required)
+  HEYCAT_MAC_PATH    Project path on macOS host (required)
 
 ${colors.bold}Setup:${colors.reset}
   1. Configure SSH key authentication to macOS host
@@ -136,13 +136,14 @@ ${colors.bold}Excluded from sync:${colors.reset}
 
 /**
  * Get macOS build configuration from environment variables.
+ * Defaults HEYCAT_MAC_HOST to host.docker.internal for Docker Desktop compatibility.
  */
 export function getConfig(): MacBuildConfig | null {
-  const host = process.env.HEYCAT_MAC_HOST;
+  const host = process.env.HEYCAT_MAC_HOST || "host.docker.internal";
   const user = process.env.HEYCAT_MAC_USER;
   const path = process.env.HEYCAT_MAC_PATH;
 
-  if (!host || !user || !path) {
+  if (!user || !path) {
     return null;
   }
 
@@ -251,9 +252,10 @@ async function main(): Promise<void> {
   if (!config) {
     error("Missing required environment variables.");
     log("\nRequired variables:");
-    log("  HEYCAT_MAC_HOST - macOS host (IP or hostname)");
     log("  HEYCAT_MAC_USER - SSH username on macOS host");
     log("  HEYCAT_MAC_PATH - Project path on macOS host");
+    log("\nOptional (defaults to host.docker.internal):");
+    log("  HEYCAT_MAC_HOST - macOS host (IP or hostname)");
     log("\nSet these in your .env file or export them before running.");
     process.exit(1);
   }
