@@ -77,6 +77,17 @@ fn parse_shortcut_key(shortcut: &str) -> Result<Key, String> {
         "x" => Ok(Key::KeyX),
         "y" => Ok(Key::KeyY),
         "z" => Ok(Key::KeyZ),
+        // Number keys
+        "0" => Ok(Key::Num0),
+        "1" => Ok(Key::Num1),
+        "2" => Ok(Key::Num2),
+        "3" => Ok(Key::Num3),
+        "4" => Ok(Key::Num4),
+        "5" => Ok(Key::Num5),
+        "6" => Ok(Key::Num6),
+        "7" => Ok(Key::Num7),
+        "8" => Ok(Key::Num8),
+        "9" => Ok(Key::Num9),
         _ => Err(format!("Unknown key: {}", key_name)),
     }
 }
@@ -112,16 +123,15 @@ impl RdevShortcutBackend {
 
     /// Start the rdev listener if not already running
     fn start_listener(&self) -> Result<(), String> {
-        if self.running.load(Ordering::SeqCst) {
-            return Ok(());
+        // Use compare_exchange for atomic check-and-set to prevent TOCTOU race
+        if self.running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+            return Ok(()); // Already running
         }
 
         let shortcuts = self.registered_shortcuts.clone();
         let press_callbacks = self.press_callbacks.clone();
         let release_callbacks = self.release_callbacks.clone();
         let running = self.running.clone();
-
-        running.store(true, Ordering::SeqCst);
 
         let handle = thread::spawn(move || {
             let callback = move |event: Event| {
