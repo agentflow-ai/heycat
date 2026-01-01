@@ -50,6 +50,7 @@ interface Flags {
   syncOnly: boolean;
   dev: boolean;
   help: boolean;
+  fetchArtifacts: boolean;
 }
 
 /**
@@ -60,6 +61,7 @@ export function parseArgs(args: string[]): Flags {
     syncOnly: false,
     dev: false,
     help: false,
+    fetchArtifacts: false,
   };
 
   for (const arg of args) {
@@ -69,6 +71,8 @@ export function parseArgs(args: string[]): Flags {
       flags.dev = true;
     } else if (arg === "--help" || arg === "-h") {
       flags.help = true;
+    } else if (arg === "--fetch-artifacts" || arg === "--fetch") {
+      flags.fetchArtifacts = true;
     }
   }
 
@@ -87,9 +91,10 @@ ${colors.bold}Description:${colors.reset}
   This is necessary because Tauri/Swift requires macOS.
 
 ${colors.bold}Options:${colors.reset}
-  --sync-only    Only sync files, don't run build
-  --dev          Run 'tauri dev' instead of 'tauri build'
-  --help, -h     Show this help message
+  --sync-only        Only sync files, don't run build
+  --dev              Run 'tauri dev' instead of 'tauri build'
+  --fetch-artifacts  Fetch build artifacts after build completes
+  --help, -h         Show this help message
 
 ${colors.bold}Environment Variables:${colors.reset}
   HEYCAT_MAC_HOST    macOS host (default: host.docker.internal)
@@ -110,6 +115,9 @@ ${colors.bold}Examples:${colors.reset}
 
   ${colors.cyan}bun scripts/docker/mac-build.ts --sync-only${colors.reset}
     Only sync files without building
+
+  ${colors.cyan}bun scripts/docker/mac-build.ts --fetch-artifacts${colors.reset}
+    Build and copy artifacts back to ./bundle/
 
 ${colors.bold}Excluded from sync:${colors.reset}
   - target/         (Rust build artifacts)
@@ -211,6 +219,29 @@ async function runBuildOnMac(config: MacBuildConfig, isDev: boolean): Promise<bo
   return result === 0;
 }
 
+/**
+ * Fetch build artifacts from macOS host to local ./bundle/ directory.
+ */
+async function fetchArtifacts(config: MacBuildConfig): Promise<boolean> {
+  const escapedPath = config.path.replace(/'/g, "'\\''");
+  const remoteBundle = `${config.user}@${config.host}:'${escapedPath}/src-tauri/target/release/bundle/'`;
+  const localBundle = "./bundle/";
+
+  log(`\n${colors.bold}Fetching build artifacts...${colors.reset}`);
+  info(`From: ${config.path}/src-tauri/target/release/bundle/`);
+  info(`To: ${localBundle}`);
+
+  const result = await Bun.spawn(
+    ["rsync", "-avz", remoteBundle, localBundle],
+    {
+      stdout: "inherit",
+      stderr: "inherit",
+    }
+  ).exited;
+
+  return result === 0;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const flags = parseArgs(args);
@@ -281,10 +312,25 @@ To build manually on macOS host:
   const buildType = flags.dev ? "Development server" : "Build";
   success(`\n${buildType} completed successfully!`);
 
-  if (!flags.dev) {
+  // Fetch artifacts if requested (only for release builds)
+  if (flags.fetchArtifacts && !flags.dev) {
+    if (!(await fetchArtifacts(config))) {
+      error("Failed to fetch build artifacts.");
+      process.exit(1);
+    }
+    success("\nArtifacts fetched successfully!");
     log(`
-${colors.bold}Build artifacts location:${colors.reset}
+${colors.bold}Local artifacts location:${colors.reset}
+  ${colors.cyan}./bundle/${colors.reset}
+`);
+  } else if (!flags.dev) {
+    log(`
+${colors.bold}Build artifacts location (on macOS host):${colors.reset}
   ${colors.cyan}${config.path}/src-tauri/target/release/bundle/${colors.reset}
+
+To fetch artifacts to container:
+  ${colors.cyan}bun scripts/docker/mac-build.ts --fetch-artifacts${colors.reset}
+  Or manually: ${colors.cyan}rsync -avz ${config.user}@${config.host}:${config.path}/src-tauri/target/release/bundle/ ./bundle/${colors.reset}
 `);
   }
 }

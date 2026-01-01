@@ -51,11 +51,22 @@ describe("mac-build", () => {
       expect(flags.dev).toBe(true);
     });
 
+    it("parses --fetch-artifacts flag", () => {
+      const flags = parseArgs(["--fetch-artifacts"]);
+      expect(flags.fetchArtifacts).toBe(true);
+    });
+
+    it("parses --fetch alias", () => {
+      const flags = parseArgs(["--fetch"]);
+      expect(flags.fetchArtifacts).toBe(true);
+    });
+
     it("returns default flags when no args", () => {
       const flags = parseArgs([]);
       expect(flags.syncOnly).toBe(false);
       expect(flags.dev).toBe(false);
       expect(flags.help).toBe(false);
+      expect(flags.fetchArtifacts).toBe(false);
     });
   });
 
