@@ -53,46 +53,6 @@ pub trait SettingsAccess {
             .and_then(|v| v.as_str().map(|s| s.to_string()))
     }
 
-    /// Get a setting value with JSON deserialization.
-    ///
-    /// # Arguments
-    /// * `key` - The dot-notation key path
-    ///
-    /// # Returns
-    /// The deserialized value if found and valid, None otherwise.
-    fn get_setting_json<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
-        let app = self.app_handle()?;
-        let settings_file = self.settings_file_name();
-        app.store(&settings_file)
-            .ok()
-            .and_then(|store| store.get(key))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-    }
-
-    /// Set a setting value by key.
-    ///
-    /// # Arguments
-    /// * `key` - The dot-notation key path
-    /// * `value` - The value to set (will be serialized to JSON)
-    ///
-    /// # Returns
-    /// Ok(()) on success, Err with message on failure.
-    fn set_setting<T: serde::Serialize>(&self, key: &str, value: T) -> Result<(), String> {
-        let app = self.app_handle().ok_or("No app handle available")?;
-        let settings_file = self.settings_file_name();
-        let store = app
-            .store(&settings_file)
-            .map_err(|e| format!("Failed to open settings store: {}", e))?;
-
-        store.set(
-            key,
-            serde_json::to_value(value).map_err(|e| format!("Failed to serialize value: {}", e))?,
-        );
-
-        store
-            .save()
-            .map_err(|e| format!("Failed to save settings: {}", e))
-    }
 }
 
 #[cfg(test)]

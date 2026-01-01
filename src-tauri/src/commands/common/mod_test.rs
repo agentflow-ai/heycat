@@ -10,12 +10,6 @@ fn test_tauri_event_emitter_exported() {
 }
 
 #[test]
-fn test_settings_helper_exported() {
-    // Verify SettingsHelper is exported through the module
-    fn _takes_helper(_: &SettingsHelper) {}
-}
-
-#[test]
 fn test_get_settings_file_exported() {
     // Verify get_settings_file is exported
     // This is a compile-time check - we can't call without an AppHandle
