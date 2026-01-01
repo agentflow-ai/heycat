@@ -171,13 +171,35 @@ pub fn matches_shortcut(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
 }
 
 /// Check if a captured key release event matches a shortcut spec
+///
+/// For PTT (Push-to-Talk) mode, we match based on WHICH KEY is being released,
+/// not on modifier flag state. This is because:
+/// 1. For modifier-only shortcuts (e.g., "fn"): when fn is released, the fn flag
+///    is immediately cleared, so we can't check event.fn_key
+/// 2. For regular shortcuts (e.g., "⌘⇧R"): modifiers may be released before the
+///    main key, so we can't require modifier flags to still be set
 pub fn matches_shortcut_release(event: &CapturedKeyEvent, spec: &ShortcutSpec) -> bool {
     // Only match on key release, not press
     if event.pressed {
         return false;
     }
 
-    matches_shortcut_internal(event, spec)
+    match (&spec.key_name, spec.is_media_key) {
+        (None, _) => {
+            // Modifier-only shortcut - match when a required modifier key is released
+            // Use is_modifier_key_event which checks if the released key's NAME
+            // matches a required modifier (ignores flag state)
+            is_modifier_key_event(event, spec)
+        }
+        (Some(key_name), true) => {
+            // Media key release - just match key name
+            event.is_media_key && event.key_name.eq_ignore_ascii_case(key_name)
+        }
+        (Some(key_name), false) => {
+            // Regular key release - just match key name, ignore modifier flags
+            !event.is_media_key && event.key_name.eq_ignore_ascii_case(key_name)
+        }
+    }
 }
 
 /// Internal matching logic shared between press and release handlers
@@ -292,29 +314,47 @@ impl CGEventTapHotkeyBackend {
     }
 
     /// Handle a key event from CGEventTap
+    ///
+    /// IMPORTANT: This function is called from the CGEventTap callback which runs on macOS's
+    /// event processing thread. If this function blocks, ALL keyboard input system-wide will
+    /// freeze. We use try_lock() instead of lock() to ensure we never block - if locks are
+    /// contended, we skip processing this event rather than freezing the keyboard.
     fn handle_key_event(
         event: &CapturedKeyEvent,
         shortcuts: &Arc<Mutex<HashMap<String, ShortcutSpec>>>,
         callbacks: &CallbackMap,
         release_callbacks: &CallbackMap,
     ) {
-        // Get a snapshot of shortcuts and callbacks to avoid holding locks during callback execution
+        // Track timing to diagnose keyboard freezing issues
+        let start = std::time::Instant::now();
+
+        // Use try_lock to avoid blocking the CGEventTap callback
+        // If locks are contended, skip processing this event rather than freezing the keyboard
         let matching_callbacks: Vec<Arc<dyn Fn() + Send + Sync>> = {
-            let shortcuts_guard = match shortcuts.lock() {
+            let shortcuts_guard = match shortcuts.try_lock() {
                 Ok(g) => g,
-                Err(_) => return,
+                Err(_) => {
+                    crate::trace!("Skipping key event - shortcuts lock contended");
+                    return;
+                }
             };
 
             // Choose the appropriate callback map and matching function based on press/release
             let callbacks_guard = if event.pressed {
-                match callbacks.lock() {
+                match callbacks.try_lock() {
                     Ok(g) => g,
-                    Err(_) => return,
+                    Err(_) => {
+                        crate::trace!("Skipping key event - callbacks lock contended");
+                        return;
+                    }
                 }
             } else {
-                match release_callbacks.lock() {
+                match release_callbacks.try_lock() {
                     Ok(g) => g,
-                    Err(_) => return,
+                    Err(_) => {
+                        crate::trace!("Skipping key event - release_callbacks lock contended");
+                        return;
+                    }
                 }
             };
 
@@ -335,9 +375,31 @@ impl CGEventTapHotkeyBackend {
                 .collect()
         };
 
+        let lock_elapsed = start.elapsed();
+
         // Execute callbacks outside of lock
         for callback in matching_callbacks {
+            let cb_start = std::time::Instant::now();
             callback();
+            let cb_elapsed = cb_start.elapsed();
+            if cb_elapsed.as_millis() > 5 {
+                crate::warn!(
+                    "Callback execution took {:?} - SLOW! (pressed={})",
+                    cb_elapsed,
+                    event.pressed
+                );
+            }
+        }
+
+        let total_elapsed = start.elapsed();
+        if total_elapsed.as_millis() > 5 {
+            crate::warn!(
+                "handle_key_event took {:?} (lock: {:?}) - SLOW! (pressed={}, key={})",
+                total_elapsed,
+                lock_elapsed,
+                event.pressed,
+                event.key_name
+            );
         }
     }
 }

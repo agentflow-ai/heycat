@@ -1649,12 +1649,16 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
         #[cfg(test)]
         {
             match backend.register(super::ESCAPE_SHORTCUT, Box::new(move || {
-                if let Ok(mut det) = detector.lock() {
+                // Use try_lock to avoid blocking the CGEventTap callback
+                // If lock is contended, skip this escape tap rather than freezing keyboard
+                if let Ok(mut det) = detector.try_lock() {
                     if det.on_tap() {
                         crate::debug!("Double-tap Escape detected, cancel triggered");
                     } else {
                         crate::trace!("Single Escape tap recorded, waiting for double-tap");
                     }
+                } else {
+                    crate::trace!("Skipping escape tap - detector lock contended");
                 }
             })) {
                 Ok(()) => {
@@ -1692,12 +1696,16 @@ impl<R: RecordingEventEmitter, T: TranscriptionEventEmitter + 'static, C: Comman
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
                 match backend.register(super::ESCAPE_SHORTCUT, Box::new(move || {
-                    if let Ok(mut det) = detector.lock() {
+                    // Use try_lock to avoid blocking the CGEventTap callback
+                    // If lock is contended, skip this escape tap rather than freezing keyboard
+                    if let Ok(mut det) = detector.try_lock() {
                         if det.on_tap() {
                             crate::debug!("Double-tap Escape detected, cancel triggered");
                         } else {
                             crate::trace!("Single Escape tap recorded, waiting for double-tap");
                         }
+                    } else {
+                        crate::trace!("Skipping escape tap - detector lock contended");
                     }
                 })) {
                     Ok(()) => {

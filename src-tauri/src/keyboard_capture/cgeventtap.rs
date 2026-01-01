@@ -450,6 +450,9 @@ fn handle_cg_event(
     event: &CGEvent,
     state: &Arc<Mutex<CaptureState>>,
 ) {
+    // Track timing to diagnose keyboard freezing issues
+    let start = std::time::Instant::now();
+
     // Wrap everything in catch_unwind to prevent crashes from taking down the app
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         handle_cg_event_inner(event_type, event, state);
@@ -457,6 +460,15 @@ fn handle_cg_event(
 
     if let Err(e) = result {
         crate::error!("CGEventTap callback panicked: {:?}", e);
+    }
+
+    // Warn if callback took too long (could cause keyboard freeze)
+    let elapsed = start.elapsed();
+    if elapsed.as_millis() > 10 {
+        crate::warn!(
+            "handle_cg_event took {:?} - SLOW! This may cause keyboard freeze",
+            elapsed
+        );
     }
 }
 
@@ -606,20 +618,17 @@ fn handle_cg_event_inner(
     };
 
     // Invoke callback with the captured event
-    // Debug logging disabled for performance
-    // crate::info!(
-    //     "CGEventTap emitting event: key_name={}, pressed={}",
-    //     captured_event.key_name,
-    //     captured_event.pressed
-    // );
-    if let Ok(guard) = state.lock() {
+    // IMPORTANT: Use try_lock() instead of lock() to avoid blocking the CGEventTap callback.
+    // If we block here, ALL keyboard input system-wide will freeze until we return.
+    // If the lock is contended, we skip this event rather than freezing the keyboard.
+    if let Ok(guard) = state.try_lock() {
         if let Some(ref callback) = guard.callback {
             callback(captured_event);
         } else {
             crate::warn!("CGEventTap callback is None!");
         }
     } else {
-        crate::warn!("CGEventTap failed to lock state!");
+        crate::trace!("Skipping key event - state lock contended");
     }
 }
 
