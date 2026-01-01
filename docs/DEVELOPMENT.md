@@ -121,7 +121,7 @@ The wrapper script automatically detects the worktree context and configures bot
 
 Worktrees are ephemeral - created per-feature, deleted after PR merge:
 
-```
+```text
 /create-worktree → develop → /submit-pr → (review) → /close-worktree
 ```
 
@@ -192,7 +192,7 @@ bun scripts/docker/close-container.ts feature-my-feature
 
 Similar to worktrees, containers are ephemeral:
 
-```
+```text
 /create-container → develop → /mac-build → /submit-pr → /close-container
 ```
 
@@ -256,25 +256,25 @@ Multiple containers can run simultaneously, each with isolated dependencies.
 
 ### Troubleshooting Docker
 
-**"Docker is not running"**
+#### "Docker is not running"
 - Start Docker Desktop or: `sudo systemctl start docker`
 
-**"SSH connection failed" (for mac-build)**
+#### "SSH connection failed" (for mac-build)
 - Check SSH key: `ssh-add -l`
 - Test connection: `ssh ${HEYCAT_MAC_USER}@${HEYCAT_MAC_HOST} echo ok`
 
-**"Container already exists"**
+#### "Container already exists"
 - Remove existing: `docker rm -f heycat-dev-<id>`
 
-**"Build failed on macOS"**
+#### "Build failed on macOS"
 - Check Xcode: `xcode-select --install`
 - Verify Rust: `rustc --version`
 
-**Cleaning up all Docker resources**:
+#### Cleaning up all Docker resources
 ```bash
 # Remove all heycat containers
-docker rm -f $(docker ps -a --filter name=heycat-dev -q)
+docker ps -a --filter name=heycat-dev -q | xargs -r docker rm -f
 
 # Remove all heycat volumes
-docker volume rm $(docker volume ls --filter name=heycat- -q)
+docker volume ls --filter name=heycat- -q | xargs -r docker volume rm
 ```

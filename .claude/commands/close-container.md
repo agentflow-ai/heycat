@@ -144,10 +144,10 @@ docker volume rm heycat-bun-cache-<id> heycat-cargo-registry-<id> heycat-cargo-g
 To remove ALL heycat development containers and volumes:
 ```bash
 # Remove all heycat containers
-docker rm -f $(docker ps -a --filter name=heycat-dev -q)
+docker ps -a --filter name=heycat-dev -q | xargs -r docker rm -f
 
 # Remove all heycat volumes
-docker volume rm $(docker volume ls --filter name=heycat- -q)
+docker volume ls --filter name=heycat- -q | xargs -r docker volume rm
 ```
 
 **Warning**: This removes ALL heycat development resources, not just one container.

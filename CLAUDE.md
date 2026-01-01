@@ -1,5 +1,5 @@
 # CLAUDE.md
- 
+
 ## Project Overview
 
 heycat is a Tauri v2 desktop application with a React + TypeScript frontend and Rust backend.
