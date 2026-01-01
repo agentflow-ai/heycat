@@ -3,9 +3,13 @@
 // The actual logic is in logic.rs which is fully tested.
 #![cfg_attr(coverage_nightly, coverage(off))]
 
+pub mod common;
 pub mod dictionary;
 pub mod logic;
 pub mod window_context;
+
+// Re-export TauriEventEmitter from common module for backward compatibility
+pub use common::TauriEventEmitter;
 
 pub use logic::{PaginatedRecordingsResponse, RecordingContextData, RecordingStateInfo};
 use logic::{
@@ -16,12 +20,8 @@ use logic::{
 };
 
 use crate::events::{
-    command_events, event_names, hotkey_events, CommandAmbiguousPayload,
-    CommandEventEmitter, CommandExecutedPayload, CommandFailedPayload, CommandMatchedPayload,
-    HotkeyEventEmitter, RecordingCancelledPayload, RecordingErrorPayload,
-    RecordingEventEmitter, RecordingStartedPayload, RecordingStoppedPayload,
-    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionEventEmitter,
-    TranscriptionStartedPayload,
+    event_names, RecordingErrorPayload, RecordingStartedPayload, RecordingStoppedPayload,
+    TranscriptionCompletedPayload, TranscriptionErrorPayload, TranscriptionStartedPayload,
 };
 use crate::audio::{AudioDeviceError, AudioInputDevice, AudioThreadHandle, StopReason, encode_wav, SystemFileWriter};
 use crate::parakeet::SharedTranscriptionModel;
@@ -35,23 +35,11 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// Type alias for Turso client state
 pub type TursoClientState = Arc<TursoClient>;
 
-/// Helper macro to emit events with error logging
-macro_rules! emit_or_warn {
-    ($handle:expr, $event:expr, $payload:expr) => {
-        if let Err(e) = $handle.emit($event, $payload) {
-            crate::warn!("Failed to emit event '{}': {}", $event, e);
-        }
-    };
-}
+// Use the emit_or_warn macro from common module (re-exported from crate root)
+use crate::emit_or_warn;
 
-/// Get the settings file name for the current worktree context.
-/// Falls back to "settings.json" if worktree state is not available.
-fn get_settings_file(app_handle: &AppHandle) -> String {
-    app_handle
-        .try_state::<crate::worktree::WorktreeState>()
-        .map(|s| s.settings_file_name())
-        .unwrap_or_else(|| crate::worktree::DEFAULT_SETTINGS_FILE.to_string())
-}
+// Re-export get_settings_file for backward compatibility
+pub use common::get_settings_file;
 
 /// Type alias for audio thread state
 pub type AudioThreadState = Arc<AudioThreadHandle>;
@@ -64,80 +52,6 @@ pub type HotkeyIntegrationState = Arc<Mutex<crate::hotkey::HotkeyIntegration<Tau
 
 /// Type alias for transcription service state
 pub type TranscriptionServiceState = Arc<crate::transcription::RecordingTranscriptionService<TauriEventEmitter, TauriEventEmitter>>;
-
-/// Tauri AppHandle-based event emitter for production use
-pub struct TauriEventEmitter {
-    app_handle: AppHandle,
-}
-
-impl TauriEventEmitter {
-    pub fn new(app_handle: AppHandle) -> Self {
-        Self { app_handle }
-    }
-}
-
-impl RecordingEventEmitter for TauriEventEmitter {
-    fn emit_recording_started(&self, payload: RecordingStartedPayload) {
-        emit_or_warn!(self.app_handle, event_names::RECORDING_STARTED, payload);
-    }
-
-    fn emit_recording_stopped(&self, payload: RecordingStoppedPayload) {
-        emit_or_warn!(self.app_handle, event_names::RECORDING_STOPPED, payload);
-    }
-
-    fn emit_recording_cancelled(&self, payload: RecordingCancelledPayload) {
-        emit_or_warn!(self.app_handle, event_names::RECORDING_CANCELLED, payload);
-    }
-
-    fn emit_recording_error(&self, payload: RecordingErrorPayload) {
-        emit_or_warn!(self.app_handle, event_names::RECORDING_ERROR, payload);
-    }
-}
-
-impl TranscriptionEventEmitter for TauriEventEmitter {
-    fn emit_transcription_started(&self, payload: TranscriptionStartedPayload) {
-        emit_or_warn!(self.app_handle, event_names::TRANSCRIPTION_STARTED, payload);
-    }
-
-    fn emit_transcription_completed(&self, payload: TranscriptionCompletedPayload) {
-        emit_or_warn!(self.app_handle, event_names::TRANSCRIPTION_COMPLETED, payload);
-    }
-
-    fn emit_transcription_error(&self, payload: TranscriptionErrorPayload) {
-        emit_or_warn!(self.app_handle, event_names::TRANSCRIPTION_ERROR, payload);
-    }
-}
-
-impl CommandEventEmitter for TauriEventEmitter {
-    fn emit_command_matched(&self, payload: CommandMatchedPayload) {
-        emit_or_warn!(self.app_handle, command_events::COMMAND_MATCHED, payload);
-    }
-
-    fn emit_command_executed(&self, payload: CommandExecutedPayload) {
-        emit_or_warn!(self.app_handle, command_events::COMMAND_EXECUTED, payload);
-    }
-
-    fn emit_command_failed(&self, payload: CommandFailedPayload) {
-        emit_or_warn!(self.app_handle, command_events::COMMAND_FAILED, payload);
-    }
-
-    fn emit_command_ambiguous(&self, payload: CommandAmbiguousPayload) {
-        emit_or_warn!(self.app_handle, command_events::COMMAND_AMBIGUOUS, payload);
-    }
-}
-
-impl HotkeyEventEmitter for TauriEventEmitter {
-    fn emit_key_blocking_unavailable(
-        &self,
-        payload: hotkey_events::KeyBlockingUnavailablePayload,
-    ) {
-        emit_or_warn!(
-            self.app_handle,
-            hotkey_events::KEY_BLOCKING_UNAVAILABLE,
-            payload
-        );
-    }
-}
 
 /// Start recording audio from the microphone
 ///

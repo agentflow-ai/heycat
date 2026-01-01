@@ -37,14 +37,7 @@ impl ContextResolver {
     where
         F: std::future::Future<Output = T>,
     {
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
-            Err(_) => {
-                let rt = tokio::runtime::Runtime::new()
-                    .expect("Failed to create runtime for context resolver");
-                rt.block_on(future)
-            }
-        }
+        crate::util::run_async(future)
     }
 
     /// Get the effective commands based on active context

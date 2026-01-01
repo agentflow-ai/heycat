@@ -20,6 +20,7 @@ mod shutdown;
 mod swift;
 mod turso;
 mod transcription;
+mod util;
 mod voice_commands;
 mod wake_handler;
 mod window_context;
