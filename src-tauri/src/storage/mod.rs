@@ -26,7 +26,6 @@
 //! ```
 
 mod recording;
-mod traits;
 mod transcription;
 
 pub use recording::{store_recording, RecordingStorage, WindowContext};
