@@ -809,6 +809,7 @@ pub fn get_recording_mode(app_handle: AppHandle) -> crate::hotkey::RecordingMode
 pub fn set_recording_mode(
     app_handle: AppHandle,
     state: State<'_, ProductionState>,
+    integration: State<'_, HotkeyIntegrationState>,
     mode: crate::hotkey::RecordingMode,
 ) -> Result<(), String> {
     use tauri_plugin_store::StoreExt;
@@ -824,7 +825,14 @@ pub fn set_recording_mode(
     }
     drop(manager); // Release lock before saving
 
-    // Save to settings
+    // Update HotkeyIntegration in memory for immediate effect
+    let mut integration_guard = integration.lock().map_err(|_| {
+        "Unable to access hotkey integration. Please try again or restart the application."
+    })?;
+    integration_guard.set_recording_mode(mode);
+    drop(integration_guard);
+
+    // Persist to settings for restart persistence
     let settings_file = get_settings_file(&app_handle);
     if let Ok(store) = app_handle.store(&settings_file) {
         store.set("shortcuts.recordingMode", serde_json::to_value(&mode).unwrap_or_default());

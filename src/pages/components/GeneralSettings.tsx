@@ -85,8 +85,8 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
         type: "success",
         title: "Setting saved",
         description: mode === "toggle"
-          ? "Recording mode set to Toggle. Restart app for changes to take effect."
-          : "Recording mode set to Push-to-Talk. Restart app for changes to take effect.",
+          ? "Recording mode set to Toggle (press to start/stop)."
+          : "Recording mode set to Push-to-Talk (hold to record).",
       });
     } catch (error) {
       toast({
