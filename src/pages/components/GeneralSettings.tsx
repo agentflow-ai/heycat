@@ -85,8 +85,8 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
         type: "success",
         title: "Setting saved",
         description: mode === "toggle"
-          ? "Recording mode set to Toggle (press to start/stop)."
-          : "Recording mode set to Push-to-Talk (hold to record).",
+          ? "Recording mode set to Toggle. Restart app for changes to take effect."
+          : "Recording mode set to Push-to-Talk. Restart app for changes to take effect.",
       });
     } catch (error) {
       toast({
@@ -150,8 +150,12 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
                   disabled={isRecordingActive}
                   className="flex flex-col gap-2"
                 >
-                  <label className={`flex items-center gap-3 cursor-pointer ${isRecordingActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  <label
+                    htmlFor="mode-toggle"
+                    className={`flex items-center gap-3 cursor-pointer ${isRecordingActive ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
                     <RadioGroupPrimitive.Item
+                      id="mode-toggle"
                       value="toggle"
                       className="h-4 w-4 rounded-full border border-neutral-400 bg-white focus:outline-none focus:ring-2 focus:ring-heycat-teal focus:ring-offset-1 data-[state=checked]:border-heycat-orange data-[state=checked]:bg-heycat-orange disabled:cursor-not-allowed"
                     >
@@ -164,8 +168,12 @@ export function GeneralSettings({ className = "" }: GeneralSettingsProps) {
                       <span className="text-xs text-text-secondary">Press to start, press again to stop</span>
                     </div>
                   </label>
-                  <label className={`flex items-center gap-3 cursor-pointer ${isRecordingActive ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  <label
+                    htmlFor="mode-push-to-talk"
+                    className={`flex items-center gap-3 cursor-pointer ${isRecordingActive ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
                     <RadioGroupPrimitive.Item
+                      id="mode-push-to-talk"
                       value="push-to-talk"
                       className="h-4 w-4 rounded-full border border-neutral-400 bg-white focus:outline-none focus:ring-2 focus:ring-heycat-teal focus:ring-offset-1 data-[state=checked]:border-heycat-orange data-[state=checked]:bg-heycat-orange disabled:cursor-not-allowed"
                     >
