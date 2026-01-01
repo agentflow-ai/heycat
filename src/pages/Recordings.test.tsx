@@ -35,27 +35,9 @@ vi.mock("../components/overlays", () => ({
   }),
 }));
 
-// Mock useRecording hook with vi.hoisted for proper scoping
-const { mockStartRecording } = vi.hoisted(() => ({
-  mockStartRecording: vi.fn(),
-}));
-
 vi.mock("../hooks/useRecording", () => ({
   useRecording: () => ({
     isRecording: false,
-    startRecording: mockStartRecording,
-    stopRecording: vi.fn(),
-  }),
-}));
-
-// Mock useSettings hook
-vi.mock("../hooks/useSettings", () => ({
-  useSettings: () => ({
-    settings: {
-      audio: {
-        selectedDevice: "default",
-      },
-    },
   }),
 }));
 
@@ -170,11 +152,9 @@ describe("Recordings", () => {
       expect(screen.getByText("No recordings yet")).toBeDefined();
     });
 
+    // Recording button removed - only hotkey-based recording now
     expect(
       screen.getByText(/Press ⌘⇧R or say "Hey Cat" to start/i)
-    ).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: /start recording/i })
     ).toBeDefined();
   });
 
@@ -536,21 +516,6 @@ describe("Recordings", () => {
     await waitFor(() => {
       expect(screen.getByText("recording_2024-01-15.wav")).toBeDefined();
     });
-  });
-
-  it("starts recording when empty state button clicked", async () => {
-    const user = userEvent.setup();
-    mockInvoke.mockResolvedValue(emptyPaginatedResponse);
-
-    render(<Recordings />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByText("No recordings yet")).toBeDefined();
-    });
-
-    await user.click(screen.getByRole("button", { name: /start recording/i }));
-
-    expect(mockStartRecording).toHaveBeenCalled();
   });
 
   it("sorts recordings by newest first by default", async () => {

@@ -1,11 +1,7 @@
 import { Mic } from "lucide-react";
-import { Card, CardContent, Button } from "../../components/ui";
+import { Card, CardContent } from "../../components/ui";
 
-export interface RecordingsEmptyStateProps {
-  onStartRecording: () => void;
-}
-
-export function RecordingsEmptyState({ onStartRecording }: RecordingsEmptyStateProps) {
+export function RecordingsEmptyState() {
   return (
     <Card className="text-center py-12">
       <CardContent className="flex flex-col items-center gap-4">
@@ -23,11 +19,6 @@ export function RecordingsEmptyState({ onStartRecording }: RecordingsEmptyStateP
             Press ⌘⇧R or say "Hey Cat" to start
           </p>
         </div>
-
-        {/* CTA Button */}
-        <Button onClick={onStartRecording}>
-          Start Recording
-        </Button>
       </CardContent>
     </Card>
   );

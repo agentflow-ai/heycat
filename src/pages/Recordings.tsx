@@ -14,7 +14,6 @@ import {
 } from "../components/ui";
 import { useToast } from "../components/overlays";
 import { useRecording } from "../hooks/useRecording";
-import { useSettings } from "../hooks/useSettings";
 import { useAudioPlayback } from "../hooks/useAudioPlayback";
 import { RecordingItem, type RecordingInfo, type PaginatedRecordingsResponse } from "./components/RecordingItem";
 import { RecordingsEmptyState } from "./components/RecordingsEmptyState";
@@ -30,10 +29,7 @@ export interface RecordingsProps {
 
 export function Recordings(_props: RecordingsProps) {
   const { toast } = useToast();
-  const { settings } = useSettings();
-  const { startRecording, isRecording } = useRecording({
-    deviceName: settings.audio.selectedDevice,
-  });
+  const { isRecording } = useRecording();
 
   const queryClient = useQueryClient();
 
@@ -220,10 +216,6 @@ export function Recordings(_props: RecordingsProps) {
     }
   };
 
-  const handleStartRecording = async () => {
-    await startRecording();
-  };
-
   if (loading) {
     return (
       <div className="p-6 space-y-6" role="status" aria-label="Loading recordings">
@@ -340,7 +332,7 @@ export function Recordings(_props: RecordingsProps) {
 
       {/* Recording List */}
       {totalCount === 0 ? (
-        <RecordingsEmptyState onStartRecording={handleStartRecording} />
+        <RecordingsEmptyState />
       ) : filteredRecordings.length === 0 ? (
         <Card className="text-center py-8">
           <CardContent>
