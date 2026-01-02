@@ -18,14 +18,10 @@ fn test_escape_listener_registered_when_recording_starts() {
 
     let emitter = MockEmitter::new();
     let backend = Arc::new(MockShortcutBackend::new());
-    let callback_count = Arc::new(Mutex::new(0));
-    let callback_count_clone = callback_count.clone();
 
     let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0)
         .with_shortcut_backend(backend.clone())
-        .with_escape_callback(Arc::new(move || {
-            *callback_count_clone.lock().unwrap() += 1;
-        }));
+        .with_escape_callback(Arc::new(|| {}));
     let state = Mutex::new(RecordingManager::new());
 
     // Before recording, Escape should not be registered
@@ -85,14 +81,10 @@ fn test_escape_listener_unregistered_when_recording_stops() {
 
     let emitter = MockEmitter::new();
     let backend = Arc::new(MockShortcutBackend::new());
-    let callback_count = Arc::new(Mutex::new(0));
-    let callback_count_clone = callback_count.clone();
 
     let mut integration: TestIntegration = HotkeyIntegration::with_debounce(emitter.clone(), 0)
         .with_shortcut_backend(backend.clone())
-        .with_escape_callback(Arc::new(move || {
-            *callback_count_clone.lock().unwrap() += 1;
-        }));
+        .with_escape_callback(Arc::new(|| {}));
     let state = Mutex::new(RecordingManager::new());
 
     // Start recording
