@@ -17,6 +17,9 @@ pub use rdev_backend::RdevShortcutBackend;
 
 pub mod double_tap;
 
+#[cfg(test)]
+mod escape;
+
 pub mod integration;
 pub use integration::HotkeyIntegration;
 

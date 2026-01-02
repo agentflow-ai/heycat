@@ -23,6 +23,13 @@ mod silence_handler;
 mod toggle_handler;
 mod transcription_runner;
 
+#[cfg(test)]
+mod cancel_handler_test;
+#[cfg(test)]
+mod ptt_handler_test;
+#[cfg(test)]
+mod toggle_handler_test;
+
 pub use config::{
     EscapeKeyConfig, SilenceDetectionConfig, TranscriptionConfig, VoiceCommandConfig,
     DEBOUNCE_DURATION_MS, DEFAULT_TRANSCRIPTION_TIMEOUT_SECS, MAX_CONCURRENT_TRANSCRIPTIONS,

@@ -3,6 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Recordings, type RecordingInfo, type PaginatedRecordingsResponse } from "./Recordings";
+import {
+  sampleRecordings,
+  createPaginatedResponse,
+  emptyPaginatedResponse,
+} from "./Recordings/testUtils";
 
 // Mock Tauri invoke with vi.hoisted for proper scoping
 const { mockInvoke } = vi.hoisted(() => ({
@@ -80,49 +85,6 @@ function createWrapper() {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 }
-
-// Sample recording data
-const sampleRecordings: RecordingInfo[] = [
-  {
-    filename: "recording_2024-01-15.wav",
-    file_path: "/path/to/recording_2024-01-15.wav",
-    duration_secs: 120,
-    created_at: "2024-01-15T14:30:00Z",
-    file_size_bytes: 3600000,
-    transcription: "Hello, this is a test transcription.",
-  },
-  {
-    filename: "meeting_notes.wav",
-    file_path: "/path/to/meeting_notes.wav",
-    duration_secs: 300,
-    created_at: "2024-01-10T10:00:00Z",
-    file_size_bytes: 9000000,
-  },
-  {
-    filename: "quick_memo.wav",
-    file_path: "/path/to/quick_memo.wav",
-    duration_secs: 30,
-    created_at: "2024-01-20T08:15:00Z",
-    file_size_bytes: 900000,
-    transcription: "Quick memo about the project deadline.",
-  },
-];
-
-// Helper to create paginated response
-const createPaginatedResponse = (
-  recordings: RecordingInfo[],
-  hasMore = false
-): PaginatedRecordingsResponse => ({
-  recordings,
-  total_count: recordings.length,
-  has_more: hasMore,
-});
-
-const emptyPaginatedResponse: PaginatedRecordingsResponse = {
-  recordings: [],
-  total_count: 0,
-  has_more: false,
-};
 
 describe("Recordings", () => {
   beforeEach(() => {
