@@ -154,6 +154,8 @@ where
                         if let Some(ref app_handle) = self.app_handle {
                             if !metadata.file_path.is_empty() {
                                 crate::storage::store_recording(app_handle, &metadata, "PTT");
+                            } else {
+                                crate::warn!("Recording completed with empty file_path - storage skipped (PTT mode)");
                             }
                         }
 
