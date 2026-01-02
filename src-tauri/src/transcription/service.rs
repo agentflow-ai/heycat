@@ -354,10 +354,10 @@ where
                                 None
                             }
                         };
-                        // Apply context resolver to filter entries
+                        // Apply context resolver to filter entries (use async version since we're in async context)
                         match all_entries {
                             Some(all_entries) => {
-                                let entries = resolver.get_effective_dictionary(&all_entries);
+                                let entries = resolver.get_effective_dictionary_async(&all_entries).await;
                                 if !entries.is_empty() {
                                     crate::debug!(
                                         "[DictionaryExpansion] Using {} context-resolved entries for expansion",
@@ -539,10 +539,10 @@ where
             NoMatch,
         }
 
-        // Get effective commands - either context-resolved or all commands
+        // Get effective commands - either context-resolved or all commands (use async version since we're in async context)
         let match_result = match context_resolver {
             Some(resolver) => {
-                let effective_commands = resolver.get_effective_commands(&all_commands);
+                let effective_commands = resolver.get_effective_commands_async(&all_commands).await;
                 if effective_commands.is_empty() {
                     crate::debug!("No effective commands for current context, falling back to global");
                     matcher.match_commands(text, &all_commands)
