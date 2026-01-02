@@ -20,7 +20,7 @@ mod recording;
 mod transcription;
 
 pub use recording::{store_recording, RecordingStorage, WindowContext};
-pub use transcription::store_transcription;
+pub use transcription::{store_transcription, TranscriptionStorage};
 
 #[cfg(test)]
 #[path = "mod_test.rs"]

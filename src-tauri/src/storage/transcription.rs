@@ -91,6 +91,10 @@ impl TranscriptionStorage {
 ///
 /// This is a synchronous wrapper that handles the async-to-sync bridge,
 /// suitable for calling from non-async contexts.
+///
+/// Note: Currently unused since TranscriptionService uses the async version directly,
+/// but kept for potential future use in non-async contexts.
+#[allow(dead_code)]
 pub fn store_transcription(app_handle: &AppHandle, file_path: &str, text: &str, duration_ms: u64) {
     // Get Turso client from managed state
     let turso_client: Option<tauri::State<'_, Arc<TursoClient>>> = app_handle.try_state();

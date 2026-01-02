@@ -315,13 +315,20 @@ where
                 text.len()
             );
 
-            // Store transcription in Turso using storage abstraction
-            crate::storage::store_transcription(
-                &app_handle,
-                &file_path_for_storage,
-                &text,
-                duration_ms,
-            );
+            // Store transcription in Turso using storage abstraction (async since we're in async context)
+            if let Some(turso) = app_handle.try_state::<TursoClientState>() {
+                if let Err(e) = crate::storage::TranscriptionStorage::store(
+                    &turso,
+                    &file_path_for_storage,
+                    &text,
+                    duration_ms,
+                    &app_handle,
+                )
+                .await
+                {
+                    crate::warn!("Failed to store transcription: {}", e);
+                }
+            }
 
             // Apply dictionary expansion using context-resolved entries when available
             let expansion_result = {
