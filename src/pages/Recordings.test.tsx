@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Recordings, type RecordingInfo, type PaginatedRecordingsResponse } from "./Recordings";
+import { Recordings, type PaginatedRecordingsResponse } from "./Recordings";
 import {
   sampleRecordings,
   createPaginatedResponse,

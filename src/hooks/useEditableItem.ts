@@ -3,9 +3,9 @@ import { useState, useCallback } from "react";
 /**
  * Configuration options for useEditableItem hook.
  */
-export interface UseEditableItemOptions<T> {
+export interface UseEditableItemOptions<T, V extends Record<string, unknown> = Record<string, unknown>> {
   /** Function to get initial edit values from an item */
-  getInitialValues: (item: T) => Record<string, unknown>;
+  getInitialValues: (item: T) => V;
 }
 
 /**
@@ -51,7 +51,7 @@ export interface UseEditableItemReturn<T, V extends Record<string, unknown>> {
  * }
  */
 export function useEditableItem<T, V extends Record<string, unknown>>(
-  options: UseEditableItemOptions<T>
+  options: UseEditableItemOptions<T, V>
 ): UseEditableItemReturn<T, V> {
   const { getInitialValues } = options;
 

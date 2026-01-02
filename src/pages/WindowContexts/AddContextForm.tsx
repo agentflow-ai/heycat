@@ -88,23 +88,23 @@ export function AddContextForm() {
             <div className="flex items-center gap-2">
               <label className="text-sm text-text-secondary">Command mode:</label>
               <Toggle
-                checked={form.values.commandMode === "override"}
-                onCheckedChange={(checked) => form.setValue("commandMode", checked ? "override" : "merge")}
+                checked={form.values.commandMode === "replace"}
+                onCheckedChange={(checked) => form.setValue("commandMode", checked ? "replace" : "merge")}
                 aria-label="Command mode context only"
               />
               <span className="text-xs text-text-tertiary">
-                {form.values.commandMode === "override" ? "Context Only" : "Merge"}
+                {form.values.commandMode === "replace" ? "Context Only" : "Merge"}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-sm text-text-secondary">Dictionary mode:</label>
               <Toggle
-                checked={form.values.dictionaryMode === "override"}
-                onCheckedChange={(checked) => form.setValue("dictionaryMode", checked ? "override" : "merge")}
+                checked={form.values.dictionaryMode === "replace"}
+                onCheckedChange={(checked) => form.setValue("dictionaryMode", checked ? "replace" : "merge")}
                 aria-label="Dictionary mode context only"
               />
               <span className="text-xs text-text-tertiary">
-                {form.values.dictionaryMode === "override" ? "Context Only" : "Merge"}
+                {form.values.dictionaryMode === "replace" ? "Context Only" : "Merge"}
               </span>
             </div>
           </div>

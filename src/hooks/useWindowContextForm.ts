@@ -16,6 +16,8 @@ export interface WindowContextFormValues {
   dictionaryEntryIds: string[];
   priority: number;
   enabled: boolean;
+  // Index signature for useFormState compatibility
+  [key: string]: string | string[] | number | boolean | OverrideMode | undefined;
 }
 
 /**
