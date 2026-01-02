@@ -243,14 +243,16 @@ pub async fn list_recordings(
             );
         }
 
+        // Build reverse map: recording_id -> file_path for O(1) lookup
+        // This optimizes the O(n×m) nested loop to O(n+m)
+        let recording_id_to_file: std::collections::HashMap<&String, &String> =
+            file_to_recording_id.iter().map(|(f, r)| (r, f)).collect();
+
         if let Ok(all_transcriptions) = turso_client.list_transcriptions().await {
             for trans in all_transcriptions {
-                for (file_path, recording_id) in &file_to_recording_id {
-                    if *recording_id == trans.recording_id {
-                        if let Some(ctx) = recording_context.get_mut(file_path) {
-                            ctx.transcription = Some(trans.text.clone());
-                        }
-                        break;
+                if let Some(file_path) = recording_id_to_file.get(&trans.recording_id) {
+                    if let Some(ctx) = recording_context.get_mut(*file_path) {
+                        ctx.transcription = Some(trans.text.clone());
                     }
                 }
             }
