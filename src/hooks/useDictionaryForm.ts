@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
+import { useFormState } from "./useFormState";
 import { validateTrigger, validateSuffix, isDuplicateTrigger } from "../lib/validation";
 
 /**
@@ -55,6 +56,8 @@ export interface UseDictionaryFormReturn {
   reset: () => void;
   /** Check if form has non-default settings */
   hasSettings: boolean;
+  /** Whether form has unsaved changes */
+  isDirty: boolean;
 }
 
 const DEFAULT_VALUES: DictionaryFormValues = {
@@ -70,8 +73,8 @@ const DEFAULT_VALUES: DictionaryFormValues = {
 /**
  * Hook for managing dictionary entry form state with validation.
  *
- * Integrates with the validation utilities from lib/validation for
- * consistent trigger and suffix validation.
+ * Composes with useFormState for base form state management and adds
+ * dictionary-specific validation and settings panel functionality.
  *
  * @example
  * const form = useDictionaryForm({
@@ -86,111 +89,77 @@ export function useDictionaryForm(
 ): UseDictionaryFormReturn {
   const { existingTriggers, excludeId, initialValues, onSubmit } = options;
 
-  const [values, setValues] = useState<DictionaryFormValues>({
-    ...DEFAULT_VALUES,
-    ...initialValues,
-  });
-  const [triggerError, setTriggerError] = useState<string | null>(null);
-  const [suffixError, setSuffixError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const mergedInitialValues = useMemo(
+    () => ({ ...DEFAULT_VALUES, ...initialValues }),
+    [initialValues]
+  );
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  const setValue = useCallback(
-    <K extends keyof DictionaryFormValues>(field: K, value: DictionaryFormValues[K]) => {
-      setValues((prev) => ({ ...prev, [field]: value }));
+  // Create validation function that checks trigger and suffix
+  const validate = useCallback(
+    (values: DictionaryFormValues): Partial<Record<keyof DictionaryFormValues, string>> => {
+      const errors: Partial<Record<keyof DictionaryFormValues, string>> = {};
 
-      // Clear errors when fields are modified
-      if (field === "trigger") {
-        setTriggerError(null);
+      // Validate trigger
+      const triggerValidation = validateTrigger(values.trigger);
+      if (triggerValidation) {
+        errors.trigger = triggerValidation;
+      } else {
+        // Check for duplicates (excluding current entry if editing)
+        const triggersToCheck = excludeId
+          ? existingTriggers.filter((t) => t !== values.trigger.toLowerCase())
+          : existingTriggers;
+
+        if (isDuplicateTrigger(values.trigger, triggersToCheck)) {
+          errors.trigger = "This trigger already exists";
+        }
       }
-      if (field === "suffix" && typeof value === "string") {
-        const error = validateSuffix(value);
-        setSuffixError(error);
+
+      // Validate suffix
+      const suffixValidation = validateSuffix(values.suffix);
+      if (suffixValidation) {
+        errors.suffix = suffixValidation;
       }
+
+      return errors;
     },
-    []
+    [existingTriggers, excludeId]
   );
+
+  // Use the generic useFormState hook
+  const form = useFormState<DictionaryFormValues>({
+    initialValues: mergedInitialValues,
+    validate,
+    onSubmit,
+  });
 
   const toggleSettings = useCallback(() => {
     setIsSettingsOpen((prev) => !prev);
   }, []);
 
-  const validate = useCallback((): boolean => {
-    // Validate trigger
-    const triggerValidation = validateTrigger(values.trigger);
-    if (triggerValidation) {
-      setTriggerError(triggerValidation);
-      return false;
-    }
-
-    // Check for duplicates (excluding current entry if editing)
-    const triggersToCheck = excludeId
-      ? existingTriggers.filter((t) => t !== values.trigger.toLowerCase())
-      : existingTriggers;
-
-    if (isDuplicateTrigger(values.trigger, triggersToCheck)) {
-      setTriggerError("This trigger already exists");
-      return false;
-    }
-
-    // Validate suffix
-    const suffixValidation = validateSuffix(values.suffix);
-    if (suffixValidation) {
-      setSuffixError(suffixValidation);
-      return false;
-    }
-
-    return true;
-  }, [values, existingTriggers, excludeId]);
-
-  const handleSubmit = useCallback(
-    async (e?: React.FormEvent): Promise<boolean> => {
-      if (e) {
-        e.preventDefault();
-      }
-
-      if (!validate()) {
-        return false;
-      }
-
-      if (!onSubmit) {
-        return true;
-      }
-
-      setIsSubmitting(true);
-      try {
-        await onSubmit(values);
-        return true;
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [validate, onSubmit, values]
-  );
-
   const reset = useCallback(() => {
-    setValues({ ...DEFAULT_VALUES, ...initialValues });
-    setTriggerError(null);
-    setSuffixError(null);
+    form.reset();
     setIsSettingsOpen(false);
-  }, [initialValues]);
+  }, [form]);
 
   const hasSettings =
-    values.suffix !== "" ||
-    values.autoEnter ||
-    values.disableSuffix ||
-    values.completeMatchOnly;
+    form.values.suffix !== "" ||
+    form.values.autoEnter ||
+    form.values.disableSuffix ||
+    form.values.completeMatchOnly;
 
   return {
-    values,
-    triggerError,
-    suffixError,
-    isSubmitting,
+    values: form.values,
+    triggerError: form.errors.trigger ?? null,
+    suffixError: form.errors.suffix ?? null,
+    isSubmitting: form.isSubmitting,
     isSettingsOpen,
-    setValue,
+    setValue: form.setValue,
     toggleSettings,
-    handleSubmit,
+    handleSubmit: form.handleSubmit,
     reset,
     hasSettings,
+    isDirty: form.isDirty,
   };
 }
