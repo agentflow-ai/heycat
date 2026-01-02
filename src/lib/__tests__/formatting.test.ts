@@ -56,6 +56,17 @@ describe("file size formatting", () => {
     expect(formatFileSize(1048576)).toBe("1.0 MB");
     expect(formatFileSize(1073741824)).toBe("1.0 GB");
   });
+
+  it("handles edge cases gracefully", () => {
+    // Negative values
+    expect(formatFileSize(-1)).toBe("0 B");
+    expect(formatFileSize(-1000)).toBe("0 B");
+
+    // Non-finite values
+    expect(formatFileSize(Infinity)).toBe("0 B");
+    expect(formatFileSize(-Infinity)).toBe("0 B");
+    expect(formatFileSize(NaN)).toBe("0 B");
+  });
 });
 
 describe("keyboard shortcut formatting", () => {

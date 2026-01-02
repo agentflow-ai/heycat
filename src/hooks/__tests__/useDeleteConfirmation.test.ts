@@ -94,4 +94,27 @@ describe("useDeleteConfirmation", () => {
     expect(result.current.isConfirming("2")).toBe(true);
     expect(result.current.confirmingId).toBe("2");
   });
+
+  it("clears confirming state even when onConfirm rejects", async () => {
+    const error = new Error("Delete failed");
+    const onConfirm = vi.fn().mockRejectedValue(error);
+    const { result } = renderHook(() =>
+      useDeleteConfirmation({ onConfirm })
+    );
+
+    act(() => {
+      result.current.requestDelete("1");
+    });
+
+    expect(result.current.isPending).toBe(true);
+
+    // confirmDelete should not throw, but should still clear state
+    await act(async () => {
+      await expect(result.current.confirmDelete()).rejects.toThrow(error);
+    });
+
+    // State should be cleared even after error
+    expect(result.current.confirmingId).toBeNull();
+    expect(result.current.isPending).toBe(false);
+  });
 });
