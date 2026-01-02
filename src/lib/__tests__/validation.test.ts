@@ -16,6 +16,8 @@ import {
   validateSuffix,
   isSuffixTooLong,
   MAX_SUFFIX_LENGTH,
+  validateRegexPattern,
+  isValidRegex,
 } from "../validation";
 
 describe("trigger validation", () => {
@@ -78,5 +80,26 @@ describe("suffix validation", () => {
 
   it("MAX_SUFFIX_LENGTH is 5", () => {
     expect(MAX_SUFFIX_LENGTH).toBe(5);
+  });
+});
+
+describe("regex pattern validation", () => {
+  it("accepts empty patterns", () => {
+    expect(validateRegexPattern("")).toBeNull();
+    expect(validateRegexPattern("   ")).toBeNull();
+    expect(isValidRegex("")).toBe(true);
+  });
+
+  it("accepts valid regex patterns", () => {
+    expect(validateRegexPattern(".*")).toBeNull();
+    expect(validateRegexPattern("^test$")).toBeNull();
+    expect(validateRegexPattern("\\d+")).toBeNull();
+    expect(isValidRegex("^[a-z]+$")).toBe(true);
+  });
+
+  it("rejects invalid regex patterns", () => {
+    expect(validateRegexPattern("[")).toContain("Invalid regex");
+    expect(validateRegexPattern("(unclosed")).toContain("Invalid regex");
+    expect(isValidRegex("[")).toBe(false);
   });
 });

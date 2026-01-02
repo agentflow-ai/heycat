@@ -7,7 +7,7 @@ import { useDictionary } from "../hooks/useDictionary";
 import { useWindowContext } from "../hooks/useWindowContext";
 import type { DictionaryEntry } from "../types/dictionary";
 import type { WindowContext } from "../types/windowContext";
-import { MAX_SUFFIX_LENGTH, validateSuffix } from "../lib/validation";
+import { validateSuffix } from "../lib/validation";
 
 export interface DictionaryProps {
   /** Navigate to another page */

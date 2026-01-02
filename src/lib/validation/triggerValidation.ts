@@ -27,13 +27,11 @@ export function isEmptyTrigger(trigger: string): boolean {
  * Checks if a trigger already exists in the list of existing triggers.
  * @param trigger - The trigger to check
  * @param existingTriggers - Array of existing triggers (lowercase)
- * @param excludeId - Optional ID to exclude from duplicate check (for editing)
  * @returns True if the trigger is a duplicate
  */
 export function isDuplicateTrigger(
   trigger: string,
-  existingTriggers: string[],
-  excludeId?: string
+  existingTriggers: string[]
 ): boolean {
   const normalizedTrigger = trigger.toLowerCase();
   return existingTriggers.includes(normalizedTrigger);
