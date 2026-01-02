@@ -1,5 +1,5 @@
 /* v8 ignore file -- @preserve */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { RouterProvider } from "react-router-dom";
@@ -12,13 +12,45 @@ import { initializeSettings } from "./hooks/useSettings";
 import { ToastProvider } from "./components/overlays";
 
 /**
+ * Shows the main window and closes the splash window.
+ * Called when frontend initialization is complete.
+ * Includes timeout to prevent indefinite splash screen.
+ */
+async function showApp() {
+  const TIMEOUT_MS = 5000;
+
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("show_main_window timed out")), TIMEOUT_MS)
+    );
+
+    await Promise.race([invoke("show_main_window"), timeoutPromise]);
+  } catch (e) {
+    console.error("Failed to show main window:", e);
+    // Fallback: try to show window directly via Tauri API
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const mainWindow = getCurrentWindow();
+      await mainWindow.show();
+      await mainWindow.setFocus();
+      console.info("Showed main window via fallback");
+    } catch (fallbackError) {
+      console.error("Fallback also failed:", fallbackError);
+    }
+  }
+}
+
+/**
  * Component that initializes app state on mount:
  * 1. Loads settings from Tauri Store into Zustand
  * 2. Sets up the Event Bridge for backend events
+ * 3. Reveals the app when initialization is complete
  *
  * This is placed inside the QueryClientProvider so it has access to the query client.
  */
 function AppInitializer({ children }: { children: ReactNode }) {
+  const hasRevealed = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
     let cleanup: (() => void) | undefined;
@@ -50,6 +82,12 @@ function AppInitializer({ children }: { children: ReactNode }) {
       // Only assign cleanup if still mounted to prevent race condition
       if (isMounted) {
         cleanup = cleanupFn;
+
+        // Show main window and close splash when frontend is ready
+        if (!hasRevealed.current) {
+          hasRevealed.current = true;
+          showApp();
+        }
       } else {
         // Component unmounted during setup - clean up immediately
         cleanupFn();

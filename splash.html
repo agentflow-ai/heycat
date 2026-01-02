@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HeyCat</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        background: transparent;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      .splash-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 24px 40px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        backdrop-filter: blur(8px);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .splash-card {
+          background: rgba(40, 40, 40, 0.95);
+        }
+        .splash-title {
+          color: #ffffff;
+        }
+        .splash-text {
+          color: #a0a0a0;
+        }
+      }
+
+      .splash-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin-bottom: 12px;
+      }
+
+      .splash-logo {
+        font-size: 56px;
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.05);
+          opacity: 0.85;
+        }
+      }
+
+      .splash-text {
+        margin-top: 12px;
+        font-size: 13px;
+        color: #666666;
+        animation: fade 1.5s ease-in-out infinite;
+      }
+
+      @keyframes fade {
+        0%, 100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="splash-card">
+      <div class="splash-title">HeyCat</div>
+      <div class="splash-logo">🐱</div>
+      <div class="splash-text">Loading...</div>
+    </div>
+  </body>
+</html>

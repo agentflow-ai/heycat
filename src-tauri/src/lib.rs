@@ -683,6 +683,7 @@ pub fn run() {
             activation::activate_app();
 
             info!("Setup complete! Ready to record.");
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -779,7 +780,8 @@ pub fn run() {
             commands::window_context::update_window_context,
             commands::window_context::delete_window_context,
             commands::list_transcriptions,
-            commands::get_transcriptions_by_recording
+            commands::get_transcriptions_by_recording,
+            commands::show_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
