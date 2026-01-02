@@ -50,18 +50,27 @@ pub struct CommandDefinition {
 }
 
 /// Error types for voice command operations
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RegistryError {
     /// Trigger phrase is empty
-    #[error("Trigger phrase cannot be empty")]
     EmptyTrigger,
     /// Command not found
-    #[error("Command with ID {0} not found")]
     NotFound(Uuid),
     /// Failed to persist commands
-    #[error("Failed to persist commands: {0}")]
     PersistenceError(String),
     /// Failed to load commands
-    #[error("Failed to load commands: {0}")]
     LoadError(String),
 }
+
+impl std::fmt::Display for RegistryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RegistryError::EmptyTrigger => write!(f, "Trigger phrase cannot be empty"),
+            RegistryError::NotFound(id) => write!(f, "Command with ID {} not found", id),
+            RegistryError::PersistenceError(msg) => write!(f, "Failed to persist commands: {}", msg),
+            RegistryError::LoadError(msg) => write!(f, "Failed to load commands: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for RegistryError {}
