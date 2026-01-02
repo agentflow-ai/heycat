@@ -6,7 +6,6 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import { Card, CardContent } from "../../components/ui";
 import { useToast } from "../../components/overlays";
 import { useRecording } from "../../hooks/useRecording";
-import { useSettings } from "../../hooks/useSettings";
 import { useAudioPlayback } from "../../hooks/useAudioPlayback";
 import { useRecordingsFilter } from "../../hooks/useRecordingsFilter";
 import { RecordingItem, type RecordingInfo, type PaginatedRecordingsResponse } from "../components/RecordingItem";
