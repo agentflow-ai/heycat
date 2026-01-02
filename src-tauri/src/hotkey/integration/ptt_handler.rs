@@ -8,6 +8,7 @@ use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload,
 };
+#[cfg(target_os = "macos")]
 use crate::keyboard_capture::cgeventtap::set_consume_escape;
 use crate::model::{check_model_exists_for_type, ModelType};
 use crate::recording::{RecordingManager, RecordingState};
@@ -73,6 +74,7 @@ where
                         self.register_escape_listener();
 
                         // Enable Escape key consumption
+                        #[cfg(target_os = "macos")]
                         set_consume_escape(true);
 
                         // Note: PTT mode does NOT start silence detection
@@ -131,6 +133,7 @@ where
                 self.unregister_escape_listener();
 
                 // Disable Escape key consumption
+                #[cfg(target_os = "macos")]
                 set_consume_escape(false);
 
                 // Stop recording and process

@@ -8,6 +8,7 @@ use crate::events::{
     current_timestamp, RecordingErrorPayload, RecordingEventEmitter, RecordingStartedPayload,
     RecordingStoppedPayload,
 };
+#[cfg(target_os = "macos")]
 use crate::keyboard_capture::cgeventtap::set_consume_escape;
 use crate::model::{check_model_exists_for_type, ModelType};
 use crate::recording::{RecordingManager, RecordingState};
@@ -97,6 +98,7 @@ where
                 self.register_escape_listener();
 
                 // Enable Escape key consumption to prevent propagation to other apps
+                #[cfg(target_os = "macos")]
                 set_consume_escape(true);
 
                 // Start silence detection if enabled and configured
@@ -121,6 +123,7 @@ where
         self.unregister_escape_listener();
 
         // Disable Escape key consumption since recording is stopping
+        #[cfg(target_os = "macos")]
         set_consume_escape(false);
 
         // Stop silence detection first to prevent it from interfering

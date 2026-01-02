@@ -5,6 +5,7 @@
 use crate::events::{
     current_timestamp, RecordingCancelledPayload, RecordingErrorPayload, RecordingEventEmitter,
 };
+#[cfg(target_os = "macos")]
 use crate::keyboard_capture::cgeventtap::set_consume_escape;
 use crate::recording::{RecordingManager, RecordingState};
 use std::sync::Mutex;
@@ -58,6 +59,7 @@ where
         self.unregister_escape_listener();
 
         // 2. Disable Escape key consumption since recording is being cancelled
+        #[cfg(target_os = "macos")]
         set_consume_escape(false);
 
         // 3. Stop silence detection if active
