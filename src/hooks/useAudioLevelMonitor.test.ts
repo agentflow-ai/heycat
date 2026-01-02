@@ -188,7 +188,7 @@ describe("useAudioLevelMonitor", () => {
     });
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "Failed to start audio monitor:",
+      "[heycat] Failed to start audio monitor:",
       expect.any(Error)
     );
 

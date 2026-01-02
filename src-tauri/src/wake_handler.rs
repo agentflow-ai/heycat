@@ -85,6 +85,14 @@ extern "C" fn on_system_wake() {
 
 /// Async task that performs the actual model reload.
 ///
+/// Before reloading the model, this function restarts the audio engine if it's running
+/// to ensure fresh hardware connection after system wake. The sequence:
+/// 1. Check if audio engine is running
+/// 2. Stop the audio engine
+/// 3. Wait 200ms for Core Audio cleanup
+/// 4. Start the audio engine with default device
+/// 5. Reload the transcription model
+///
 /// Emits events to notify the frontend of reload progress:
 /// - `model_reloading`: Before reload starts
 /// - `model_reloaded`: On successful reload
@@ -99,11 +107,46 @@ async fn reload_model_async(
         crate::warn!("Failed to emit model_reloading event: {}", e);
     }
 
+    // Restart audio engine if it's running to ensure fresh hardware connection
+    let audio_was_running =
+        tauri::async_runtime::spawn_blocking(crate::swift::audio_engine_is_running)
+            .await
+            .unwrap_or(false);
+
+    if audio_was_running {
+        crate::info!("Audio engine was running - restarting for fresh hardware connection");
+
+        // Stop the audio engine
+        if let Err(e) = tauri::async_runtime::spawn_blocking(crate::swift::audio_engine_stop).await
+        {
+            crate::warn!("Failed to stop audio engine: {}", e);
+        }
+
+        // Wait 200ms for Core Audio cleanup
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // Start the audio engine with default device
+        let start_result = tauri::async_runtime::spawn_blocking(|| {
+            crate::swift::audio_engine_start(None)
+        })
+        .await;
+
+        match start_result {
+            Ok(crate::swift::AudioEngineResult::Ok) => {
+                crate::info!("Audio engine restarted successfully after system wake");
+            }
+            Ok(crate::swift::AudioEngineResult::Failed(e)) => {
+                crate::error!("Failed to restart audio engine after system wake: {}", e);
+            }
+            Err(e) => {
+                crate::error!("Audio engine restart task panicked: {}", e);
+            }
+        }
+    }
+
     // Reload is CPU-intensive, so use spawn_blocking
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        shared_model.reload(&model_path)
-    })
-    .await;
+    let result = tauri::async_runtime::spawn_blocking(move || shared_model.reload(&model_path))
+        .await;
 
     match result {
         Ok(Ok(())) => {
