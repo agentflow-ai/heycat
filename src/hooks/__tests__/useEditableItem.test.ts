@@ -15,6 +15,8 @@ interface TestItem {
 interface TestEditValues {
   name: string;
   value: number;
+  // Index signature for useEditableItem compatibility
+  [key: string]: string | number;
 }
 
 describe("useEditableItem", () => {

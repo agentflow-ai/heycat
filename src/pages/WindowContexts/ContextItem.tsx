@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pencil, Trash2, Check, X, BookText } from "lucide-react";
 import { Card, Button, Input, FormField, Toggle, Combobox, MultiSelect } from "../../components/ui";
 import type { ComboboxOption } from "../../components/ui";
-import type { WindowContext, OverrideMode } from "../../types/windowContext";
+import type { WindowContext } from "../../types/windowContext";
 import { validateRegexPattern } from "../../lib/validation";
 import { useWindowContextsContext } from "./WindowContextsContext";
 
@@ -102,27 +102,27 @@ export function ContextItem({ context }: ContextItemProps) {
           <div className="flex items-center gap-2">
             <label className="text-sm text-text-secondary">Command mode:</label>
             <Toggle
-              checked={editValues.commandMode === "override"}
+              checked={editValues.commandMode === "replace"}
               onCheckedChange={(checked) =>
-                handleEditChange("commandMode", checked ? "override" : "merge")
+                handleEditChange("commandMode", checked ? "replace" : "merge")
               }
               aria-label="Command mode context only"
             />
             <span className="text-xs text-text-tertiary">
-              {editValues.commandMode === "override" ? "Context Only" : "Merge"}
+              {editValues.commandMode === "replace" ? "Context Only" : "Merge"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm text-text-secondary">Dictionary mode:</label>
             <Toggle
-              checked={editValues.dictionaryMode === "override"}
+              checked={editValues.dictionaryMode === "replace"}
               onCheckedChange={(checked) =>
-                handleEditChange("dictionaryMode", checked ? "override" : "merge")
+                handleEditChange("dictionaryMode", checked ? "replace" : "merge")
               }
               aria-label="Dictionary mode context only"
             />
             <span className="text-xs text-text-tertiary">
-              {editValues.dictionaryMode === "override" ? "Context Only" : "Merge"}
+              {editValues.dictionaryMode === "replace" ? "Context Only" : "Merge"}
             </span>
           </div>
         </div>
@@ -175,7 +175,7 @@ export function ContextItem({ context }: ContextItemProps) {
             )}
           </span>
           <div className="flex gap-2 shrink-0">
-            {context.commandMode === "override" && (
+            {context.commandMode === "replace" && (
               <span
                 className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300"
                 title="Commands: Context Only mode"
@@ -183,7 +183,7 @@ export function ContextItem({ context }: ContextItemProps) {
                 Cmd
               </span>
             )}
-            {context.dictionaryMode === "override" && (
+            {context.dictionaryMode === "replace" && (
               <span
                 className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
                 title="Dictionary: Context Only mode"

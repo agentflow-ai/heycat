@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../../lib/queryKeys";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { Button, Card, CardContent } from "../../components/ui";
+import { Card, CardContent } from "../../components/ui";
 import { useToast } from "../../components/overlays";
 import { useRecording } from "../../hooks/useRecording";
 import { useSettings } from "../../hooks/useSettings";

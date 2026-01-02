@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo } from "react";
 /**
  * Configuration options for useFormState hook.
  */
-export interface UseFormStateOptions<T> {
+export interface UseFormStateOptions<T extends Record<string, unknown>> {
   /** Initial values for the form */
   initialValues: T;
   /** Optional validation function that returns errors */
@@ -118,15 +118,15 @@ export function useFormState<T extends Record<string, unknown>>(
     if (!validate) return true;
 
     const validationErrors = validate(values);
-    const filteredErrors: Partial<Record<keyof T, string>> = {};
+    const filteredErrors: Record<string, string> = {};
 
     for (const [key, value] of Object.entries(validationErrors)) {
       if (value) {
-        filteredErrors[key as keyof T] = value;
+        filteredErrors[key] = value;
       }
     }
 
-    setErrors(filteredErrors);
+    setErrors(filteredErrors as Partial<Record<keyof T, string>>);
     return Object.keys(filteredErrors).length === 0;
   }, [validate, values]);
 

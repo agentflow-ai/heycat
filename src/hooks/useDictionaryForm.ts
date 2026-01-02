@@ -13,6 +13,8 @@ export interface DictionaryFormValues {
   disableSuffix: boolean;
   completeMatchOnly: boolean;
   contextIds: string[];
+  // Index signature for useFormState compatibility
+  [key: string]: string | boolean | string[] | undefined;
 }
 
 /**
