@@ -4,7 +4,8 @@
 //! Each config struct represents a logical capability that can be optionally enabled.
 
 use crate::events::{CommandEventEmitter, TranscriptionEventEmitter};
-use crate::hotkey::ShortcutBackend;
+use crate::hotkey::double_tap::DEFAULT_DOUBLE_TAP_WINDOW_MS;
+use crate::hotkey::{NullShortcutBackend, ShortcutBackend};
 use crate::parakeet::SharedTranscriptionModel;
 use crate::recording::SilenceConfig;
 use crate::turso::TursoClient;
@@ -97,6 +98,16 @@ pub struct EscapeKeyConfig {
     /// Time window for double-tap detection in milliseconds.
     /// See [`DEFAULT_DOUBLE_TAP_WINDOW_MS`](crate::hotkey::double_tap::DEFAULT_DOUBLE_TAP_WINDOW_MS) for the default value (300ms).
     pub double_tap_window_ms: u64,
+}
+
+impl Default for EscapeKeyConfig {
+    fn default() -> Self {
+        Self {
+            backend: Arc::new(NullShortcutBackend),
+            callback: None,
+            double_tap_window_ms: DEFAULT_DOUBLE_TAP_WINDOW_MS,
+        }
+    }
 }
 
 /// Result of executing a transcription task
