@@ -65,10 +65,14 @@ export function useDeleteConfirmation(
   const confirmDelete = useCallback(async () => {
     if (!confirmingId) return;
 
-    if (onConfirm) {
-      await onConfirm(confirmingId);
+    try {
+      if (onConfirm) {
+        await onConfirm(confirmingId);
+      }
+    } finally {
+      // Always clear confirming state, even if onConfirm throws
+      setConfirmingId(null);
     }
-    setConfirmingId(null);
   }, [confirmingId, onConfirm]);
 
   const cancelDelete = useCallback(() => {
