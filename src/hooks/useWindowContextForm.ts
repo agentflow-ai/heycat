@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useFormState } from "./useFormState";
 import { validateRegexPattern } from "../lib/validation";
 import type { OverrideMode } from "../types/windowContext";
 
@@ -52,6 +53,8 @@ export interface UseWindowContextFormReturn {
   handleSubmit: (e?: React.FormEvent) => Promise<boolean>;
   /** Reset form to initial state */
   reset: () => void;
+  /** Whether form has unsaved changes */
+  isDirty: boolean;
 }
 
 const DEFAULT_VALUES: WindowContextFormValues = {
@@ -69,8 +72,8 @@ const DEFAULT_VALUES: WindowContextFormValues = {
 /**
  * Hook for managing window context form state with validation.
  *
- * Integrates with the validation utilities from lib/validation for
- * consistent regex pattern validation.
+ * Composes with useFormState for base form state management and adds
+ * window context-specific validation and app selection functionality.
  *
  * @example
  * const form = useWindowContextForm({
@@ -84,112 +87,76 @@ export function useWindowContextForm(
 ): UseWindowContextFormReturn {
   const { initialValues, onSubmit } = options;
 
-  const [values, setValues] = useState<WindowContextFormValues>({
-    ...DEFAULT_VALUES,
-    ...initialValues,
-  });
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [appNameError, setAppNameError] = useState<string | null>(null);
-  const [patternError, setPatternError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const mergedInitialValues = useMemo(
+    () => ({ ...DEFAULT_VALUES, ...initialValues }),
+    [initialValues]
+  );
 
+  // Create validation function
+  const validate = useCallback(
+    (values: WindowContextFormValues): Partial<Record<keyof WindowContextFormValues, string>> => {
+      const errors: Partial<Record<keyof WindowContextFormValues, string>> = {};
+
+      // Validate name
+      if (!values.name.trim()) {
+        errors.name = "Name is required";
+      }
+
+      // Validate app name
+      if (!values.appName.trim()) {
+        errors.appName = "App name is required";
+      }
+
+      // Validate pattern
+      const patternValidation = validateRegexPattern(values.titlePattern);
+      if (patternValidation) {
+        errors.titlePattern = patternValidation;
+      }
+
+      return errors;
+    },
+    []
+  );
+
+  // Use the generic useFormState hook
+  const form = useFormState<WindowContextFormValues>({
+    initialValues: mergedInitialValues,
+    validate,
+    onSubmit,
+  });
+
+  const handleAppSelect = useCallback(
+    (appName: string, bundleId?: string) => {
+      form.setValues({ appName, bundleId });
+    },
+    [form]
+  );
+
+  // Override setValue to clear bundleId when appName is manually typed
   const setValue = useCallback(
     <K extends keyof WindowContextFormValues>(
       field: K,
       value: WindowContextFormValues[K]
     ) => {
-      setValues((prev) => {
-        // Clear bundleId when appName is manually typed
-        if (field === "appName") {
-          return { ...prev, appName: value as string, bundleId: undefined };
-        }
-        return { ...prev, [field]: value };
-      });
-
-      // Clear errors when fields are modified
-      if (field === "name") {
-        setNameError(null);
-      }
       if (field === "appName") {
-        setAppNameError(null);
-      }
-      if (field === "titlePattern" && typeof value === "string") {
-        const error = validateRegexPattern(value);
-        setPatternError(error);
+        form.setValues({ appName: value as string, bundleId: undefined });
+      } else {
+        form.setValue(field, value);
       }
     },
-    []
+    [form]
   );
-
-  const handleAppSelect = useCallback((appName: string, bundleId?: string) => {
-    setValues((prev) => ({ ...prev, appName, bundleId }));
-    setAppNameError(null);
-  }, []);
-
-  const validate = useCallback((): boolean => {
-    // Validate name
-    if (!values.name.trim()) {
-      setNameError("Name is required");
-      return false;
-    }
-
-    // Validate app name
-    if (!values.appName.trim()) {
-      setAppNameError("App name is required");
-      return false;
-    }
-
-    // Validate pattern
-    const patternValidation = validateRegexPattern(values.titlePattern);
-    if (patternValidation) {
-      setPatternError(patternValidation);
-      return false;
-    }
-
-    return true;
-  }, [values]);
-
-  const handleSubmit = useCallback(
-    async (e?: React.FormEvent): Promise<boolean> => {
-      if (e) {
-        e.preventDefault();
-      }
-
-      if (!validate()) {
-        return false;
-      }
-
-      if (!onSubmit) {
-        return true;
-      }
-
-      setIsSubmitting(true);
-      try {
-        await onSubmit(values);
-        return true;
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-    [validate, onSubmit, values]
-  );
-
-  const reset = useCallback(() => {
-    setValues({ ...DEFAULT_VALUES, ...initialValues });
-    setNameError(null);
-    setAppNameError(null);
-    setPatternError(null);
-  }, [initialValues]);
 
   return {
-    values,
-    nameError,
-    appNameError,
-    patternError,
-    isSubmitting,
+    values: form.values,
+    nameError: form.errors.name ?? null,
+    appNameError: form.errors.appName ?? null,
+    patternError: form.errors.titlePattern ?? null,
+    isSubmitting: form.isSubmitting,
     setValue,
     handleAppSelect,
-    handleSubmit,
-    reset,
+    handleSubmit: form.handleSubmit,
+    reset: form.reset,
+    isDirty: form.isDirty,
   };
 }
