@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
-import { Button } from "../../components/ui";
-import { useSettings } from "../../hooks/useSettings";
-import { useShortcutRecorder } from "../../hooks/useShortcutRecorder";
+import { Button } from "../../../components/ui";
+import { useSettings } from "../../../hooks/useSettings";
+import { useShortcutRecorder } from "../../../hooks/useShortcutRecorder";
+import { ShortcutDisplay } from "./ShortcutDisplay";
+import { ShortcutRecordButton } from "./ShortcutRecordButton";
 
 export interface ShortcutEditorProps {
   open: boolean;
@@ -13,6 +15,10 @@ export interface ShortcutEditorProps {
   onSave: (displayShortcut: string, backendShortcut: string) => void;
 }
 
+/**
+ * Modal for editing keyboard shortcuts.
+ * Uses useShortcutRecorder hook for native key capture.
+ */
 export function ShortcutEditor({
   open,
   onOpenChange,
@@ -59,6 +65,13 @@ export function ShortcutEditor({
     }
   }, [shortcutSuspended]);
 
+  // Helper to close the modal
+  const handleClose = useCallback(() => {
+    stopRecording();
+    resumeShortcut();
+    onOpenChange(false);
+  }, [stopRecording, resumeShortcut, onOpenChange]);
+
   // Reset state when modal opens
   useEffect(() => {
     if (open) {
@@ -73,31 +86,32 @@ export function ShortcutEditor({
 
     const handleClickOutside = (e: MouseEvent) => {
       if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
-        stopRecording();
-        resumeShortcut();
-        onOpenChange(false);
+        handleClose();
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open, onOpenChange, resumeShortcut, stopRecording]);
+  }, [open, handleClose]);
 
-  // Handle Escape to close (when not recording) - still use JS event for this
+  // Handle Escape to close (when not recording)
   useEffect(() => {
     if (!open) return;
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !recording) {
-        stopRecording();
-        resumeShortcut();
-        onOpenChange(false);
+        handleClose();
       }
     };
 
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [open, recording, onOpenChange, resumeShortcut, stopRecording]);
+  }, [open, recording, handleClose]);
+
+  const handleStartRecording = useCallback(async () => {
+    await suspendShortcut();
+    await startRecording();
+  }, [suspendShortcut, startRecording]);
 
   if (!open) return null;
 
@@ -129,11 +143,7 @@ export function ShortcutEditor({
         {/* Close button */}
         <button
           type="button"
-          onClick={() => {
-            stopRecording();
-            resumeShortcut();
-            onOpenChange(false);
-          }}
+          onClick={handleClose}
           className="
             absolute top-4 right-4
             p-1 rounded
@@ -157,32 +167,11 @@ export function ShortcutEditor({
         </p>
 
         {/* Shortcut Display */}
-        <div className="mb-6">
-          <div
-            className={`
-              flex items-center justify-center
-              h-20
-              bg-surface
-              border-2 rounded-lg
-              transition-colors
-              ${
-                recording
-                  ? "border-heycat-teal border-dashed animate-pulse"
-                  : permissionError
-                    ? "border-red-500"
-                    : "border-border"
-              }
-            `}
-          >
-            {recording ? (
-              <span className="text-text-secondary">Press your shortcut...</span>
-            ) : (
-              <kbd className="px-4 py-2 text-2xl font-mono bg-surface-elevated text-text-primary border border-border rounded-lg">
-                {displayShortcut}
-              </kbd>
-            )}
-          </div>
-        </div>
+        <ShortcutDisplay
+          shortcut={displayShortcut}
+          isRecording={recording}
+          hasPermissionError={!!permissionError}
+        />
 
         {/* Permission Error */}
         {permissionError && (
@@ -205,24 +194,13 @@ export function ShortcutEditor({
 
         {/* Actions */}
         <div className="flex items-center justify-between">
-          <Button
-            variant="secondary"
-            onClick={async () => {
-              // Suspend global shortcut before entering recording mode
-              await suspendShortcut();
-              await startRecording();
-            }}
-            disabled={recording}
-          >
-            {recording ? "Recording..." : "Record New Shortcut"}
-          </Button>
+          <ShortcutRecordButton
+            isRecording={recording}
+            onStartRecording={handleStartRecording}
+          />
 
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => {
-              stopRecording();
-              resumeShortcut();
-              onOpenChange(false);
-            }}>
+            <Button variant="ghost" onClick={handleClose}>
               Cancel
             </Button>
             <Button
