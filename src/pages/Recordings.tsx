@@ -416,4 +416,5 @@ export function Recordings(_props: RecordingsProps) {
 }
 
 // Re-export for use by other components
-export { type RecordingInfo, type PaginatedRecordingsResponse, formatDuration, formatDate, formatFileSize } from "./components/RecordingItem";
+export { type RecordingInfo, type PaginatedRecordingsResponse } from "./components/RecordingItem";
+export { formatDuration, formatDate, formatFileSize } from "../lib/formatting";

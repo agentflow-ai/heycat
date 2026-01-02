@@ -14,3 +14,8 @@ export {
   validateSuffix,
   isSuffixTooLong,
 } from "./suffixValidation";
+
+export {
+  validateRegexPattern,
+  isValidRegex,
+} from "./regexValidation";

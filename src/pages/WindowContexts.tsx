@@ -7,6 +7,7 @@ import { useWindowContext, useRunningApplications } from "../hooks/useWindowCont
 import { useDictionary } from "../hooks/useDictionary";
 import type { WindowContext, OverrideMode, RunningApplication } from "../types/windowContext";
 import type { DictionaryEntry } from "../types/dictionary";
+import { validateRegexPattern } from "../lib/validation";
 
 export interface WindowContextsProps {
   /** Navigate to another page */
@@ -71,16 +72,10 @@ function AddContextForm({ onSubmit, runningApps, dictionaryEntries }: AddContext
     setAppNameError(null);
   }, []);
 
-  const validatePattern = (pattern: string): boolean => {
-    if (!pattern.trim()) return true;
-    try {
-      new RegExp(pattern);
-      setPatternError(null);
-      return true;
-    } catch (e) {
-      setPatternError(`Invalid regex: ${e instanceof Error ? e.message : String(e)}`);
-      return false;
-    }
+  const handlePatternValidation = (pattern: string): boolean => {
+    const error = validateRegexPattern(pattern);
+    setPatternError(error);
+    return error === null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -98,7 +93,7 @@ function AddContextForm({ onSubmit, runningApps, dictionaryEntries }: AddContext
       return;
     }
 
-    if (!validatePattern(titlePattern)) {
+    if (!handlePatternValidation(titlePattern)) {
       return;
     }
 
@@ -167,7 +162,7 @@ function AddContextForm({ onSubmit, runningApps, dictionaryEntries }: AddContext
                 value={titlePattern}
                 onChange={(e) => {
                   setTitlePattern(e.target.value);
-                  validatePattern(e.target.value);
+                  handlePatternValidation(e.target.value);
                 }}
                 aria-label="Window title pattern"
               />
@@ -612,19 +607,10 @@ export function WindowContexts(_props: WindowContextsProps) {
     setPatternError(null);
   }, []);
 
-  const validatePattern = (pattern: string): boolean => {
-    if (!pattern.trim()) {
-      setPatternError(null);
-      return true;
-    }
-    try {
-      new RegExp(pattern);
-      setPatternError(null);
-      return true;
-    } catch (e) {
-      setPatternError(`Invalid regex: ${e instanceof Error ? e.message : String(e)}`);
-      return false;
-    }
+  const handleEditPatternValidation = (pattern: string): boolean => {
+    const error = validateRegexPattern(pattern);
+    setPatternError(error);
+    return error === null;
   };
 
   const handleEditChange = useCallback((field: string, value: string | number | boolean | string[]) => {
@@ -637,7 +623,8 @@ export function WindowContexts(_props: WindowContextsProps) {
     });
     if (field === "name") setEditError(null);
     if (field === "titlePattern" && typeof value === "string") {
-      validatePattern(value);
+      const error = validateRegexPattern(value);
+      setPatternError(error);
     }
   }, []);
 
@@ -662,7 +649,7 @@ export function WindowContexts(_props: WindowContextsProps) {
       return;
     }
 
-    if (!validatePattern(editValues.titlePattern)) {
+    if (!handleEditPatternValidation(editValues.titlePattern)) {
       return;
     }
 
