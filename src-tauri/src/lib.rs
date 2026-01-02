@@ -129,7 +129,9 @@ pub fn run() {
             commands::window_context::list_window_contexts,
             commands::window_context::add_window_context,
             commands::window_context::update_window_context,
-            commands::window_context::delete_window_context
+            commands::window_context::delete_window_context,
+            // Window commands
+            commands::window::show_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

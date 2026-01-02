@@ -486,6 +486,9 @@ describe("Recordings", () => {
     });
   });
 
+  // Test removed: "starts recording when empty state button clicked"
+  // Recording button was removed from UI - only hotkey-based recording now
+
   it("sorts recordings by newest first by default", async () => {
     mockInvoke.mockResolvedValue(createPaginatedResponse(sampleRecordings));
 

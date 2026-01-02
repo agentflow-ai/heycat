@@ -599,10 +599,20 @@ fn setup_window_monitor(
 
 /// Handle window destroyed event for cleanup.
 pub fn on_window_destroyed(window: &tauri::Window) {
+    // Only trigger shutdown when the main window is destroyed
+    // (not for splash or other transient windows)
+    if window.label() != "main" {
+        crate::debug!(
+            "Non-main window '{}' destroyed, skipping cleanup",
+            window.label()
+        );
+        return;
+    }
+
     // Signal shutdown FIRST - prevents async tasks from pasting during cleanup
     shutdown::signal_shutdown();
 
-    crate::debug!("Window destroyed, cleaning up...");
+    crate::debug!("Main window destroyed, cleaning up...");
 
     // Get worktree context for cleanup
     let worktree_context = window
