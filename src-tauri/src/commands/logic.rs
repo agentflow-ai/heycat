@@ -1,6 +1,10 @@
 // Command implementation logic - testable functions separate from Tauri wrappers
 
 use crate::audio::{parse_duration_from_file, AudioThreadHandle, QualityWarning, TARGET_SAMPLE_RATE};
+
+/// Error identifier for microphone access failures.
+/// Used to detect microphone-related errors without fragile string matching.
+pub const MICROPHONE_ERROR_MARKER: &str = "[MICROPHONE_ACCESS_ERROR]";
 use crate::recording::{AudioData, RecordingManager, RecordingMetadata, RecordingState};
 
 /// Extended result from stop_recording_impl that includes diagnostics
@@ -121,9 +125,10 @@ pub fn start_recording_impl(
                 // Audio capture failed - rollback state and return error
                 crate::error!("Audio capture failed: {:?}", e);
                 manager.reset_to_idle();
-                return Err(
-                    "Could not access the microphone. Please check that your microphone is connected and permissions are granted.".to_string(),
-                );
+                return Err(format!(
+                    "{} Could not access the microphone. Please check that your microphone is connected and permissions are granted.",
+                    MICROPHONE_ERROR_MARKER
+                ));
             }
         }
     } else {

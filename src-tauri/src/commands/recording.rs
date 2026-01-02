@@ -14,7 +14,7 @@ use super::logic::{
     clear_last_recording_buffer_impl, delete_recording_impl, get_last_recording_buffer_impl,
     get_recording_state_impl, list_recordings_impl, start_recording_impl,
     stop_recording_impl_extended, PaginatedRecordingsResponse, RecordingContextData,
-    RecordingStateInfo,
+    RecordingStateInfo, MICROPHONE_ERROR_MARKER,
 };
 use super::{AudioMonitorState, AudioThreadState, ProductionState, TranscriptionServiceState, TursoClientState};
 
@@ -76,7 +76,8 @@ pub fn start_recording(
             );
         }
         Err(err_msg) => {
-            if err_msg.contains("microphone") {
+            // Use error marker constant instead of fragile string matching
+            if err_msg.contains(MICROPHONE_ERROR_MARKER) {
                 let error = AudioDeviceError::CaptureError {
                     message: err_msg.clone(),
                 };

@@ -77,7 +77,10 @@ where
         crate::info!("Starting recording from Idle state...");
 
         // Check model availability (TDT for batch transcription)
-        let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or(false);
+        let model_available = check_model_exists_for_type(ModelType::ParakeetTDT).unwrap_or_else(|e| {
+            crate::warn!("Failed to check model availability: {}", e);
+            false
+        });
 
         // Read selected device from persistent settings store
         let device_name = self.get_selected_audio_device();
