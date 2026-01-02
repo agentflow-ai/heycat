@@ -108,7 +108,7 @@ export function useCatOverlay() {
           await window.setPosition(new LogicalPosition(position.x, position.y));
         }
         // Emit mode to overlay window for visual distinction
-        await window.emit("overlay-mode", { mode: overlayMode });
+        await window.emit("overlay_mode", { mode: overlayMode });
         await window.show();
       } else {
         await window.hide();

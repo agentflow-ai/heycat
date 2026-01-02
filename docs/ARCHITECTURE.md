@@ -71,7 +71,7 @@ Backend emit() ──▶ Event Bridge ──┬──▶ Query invalidation (ser
 | Event Type | Routing | Example |
 |------------|---------|---------|
 | Server state change | `queryClient.invalidateQueries()` | `recording_started` → refetch recording state |
-| UI state change | `store.setOverlayMode()` | `overlay-mode` → update Zustand directly |
+| UI state change | `store.setOverlayMode()` | `overlay_mode` → update Zustand directly |
 
 ```typescript
 // src/lib/eventBridge.ts
@@ -82,7 +82,7 @@ export async function setupEventBridge(queryClient: QueryClient, store: AppStore
   });
 
   // UI state → Zustand update
-  await listen('overlay-mode', (event) => {
+  await listen('overlay_mode', (event) => {
     store.setOverlayMode(event.payload);
   });
 }
@@ -137,7 +137,7 @@ export async function setupEventBridge(queryClient: QueryClient, store: AppStore
 │                       │                                 │                          │   │
 │                       │  listen('recording_started') ───┼──▶ invalidateQueries()   │   │
 │                       │  listen('transcription_done') ──┼──▶ invalidateQueries()   │   │
-│                       │  listen('overlay-mode') ────────┴──▶ store.setOverlay()    │   │
+│                       │  listen('overlay_mode') ────────┴──▶ store.setOverlay()    │   │
 │                       │                                                            │   │
 │                       └────────────────────────────────────────────────────────────┘   │
 │                                  ▲                                                     │

@@ -6,7 +6,7 @@ import "./CatOverlay.css";
 /** Overlay visual mode */
 type OverlayMode = "hidden" | "recording";
 
-/** Payload for overlay-mode event from main window */
+/** Payload for overlay_mode event from main window */
 interface OverlayModePayload {
   mode: OverlayMode;
 }
@@ -30,7 +30,7 @@ export function CatOverlay() {
     let unlisten: UnlistenFn | undefined;
 
     const setupListener = async () => {
-      unlisten = await listen<OverlayModePayload>("overlay-mode", (event) => {
+      unlisten = await listen<OverlayModePayload>("overlay_mode", (event) => {
         setMode(event.payload.mode);
       });
     };

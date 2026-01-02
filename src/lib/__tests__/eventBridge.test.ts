@@ -193,7 +193,7 @@ describe("eventBridge", () => {
   });
 
   describe("UI state events update Zustand store", () => {
-    it("overlay-mode event updates store with string payload", async () => {
+    it("overlay_mode event updates store with string payload", async () => {
       await setupEventBridge(queryClient, mockStore);
 
       emitMockEvent(eventNames.OVERLAY_MODE, "recording");
@@ -201,7 +201,7 @@ describe("eventBridge", () => {
       expect(mockStore.setOverlayMode).toHaveBeenCalledWith("recording");
     });
 
-    it("overlay-mode event updates store with null payload", async () => {
+    it("overlay_mode event updates store with null payload", async () => {
       await setupEventBridge(queryClient, mockStore);
 
       emitMockEvent(eventNames.OVERLAY_MODE, null);

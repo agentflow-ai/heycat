@@ -6,13 +6,13 @@ import { CatOverlay } from "./CatOverlay";
 const mockListen = vi.fn();
 const mockUnlisten = vi.fn();
 
-// Track callbacks for overlay-mode event
+// Track callbacks for overlay_mode event
 let overlayModeCallback: ((event: { payload: { mode: string } }) => void) | null = null;
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (eventName: string, callback: (event: { payload: unknown }) => void) => {
     mockListen(eventName, callback);
-    if (eventName === "overlay-mode") {
+    if (eventName === "overlay_mode") {
       overlayModeCallback = callback as (event: { payload: { mode: string } }) => void;
     }
     return Promise.resolve(mockUnlisten);

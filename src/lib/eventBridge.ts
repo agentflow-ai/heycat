@@ -49,11 +49,11 @@ export const eventNames = {
   TRANSCRIPTIONS_UPDATED: "transcriptions_updated",
 
   // UI state events
-  OVERLAY_MODE: "overlay-mode",
+  OVERLAY_MODE: "overlay_mode",
 } as const;
 
 /**
- * Payload type for overlay-mode event.
+ * Payload type for overlay_mode event.
  * The mode can be null to indicate no overlay should be shown.
  */
 export type OverlayModePayload = string | null;
