@@ -6,6 +6,8 @@ description: Create a new ephemeral worktree for feature development
 
 You are creating a new ephemeral worktree for developing a feature. This is part of the "cattle" worktree model - worktrees are created per-feature and deleted after the PR is merged.
 
+**IMPORTANT**: All worktrees MUST be associated with a Linear issue (format: `HEY-xxx`). This is enforced by the creation scripts.
+
 ## Prerequisites Check
 
 1. Verify you are in the main repository (not a worktree):
@@ -20,19 +22,22 @@ You are creating a new ephemeral worktree for developing a feature. This is part
 
 ## Execution Flow
 
-### Step 1: Determine branch name
+### Step 1: Get Linear issue ID (REQUIRED)
 
-1. **Check for Linear issue**: Ask the user if they have a Linear issue ID (e.g., `HEY-123`)
-   - If yes, ask for a short description (2-3 words, kebab-case)
-   - Generate branch name: `HEY-123-short-description`
+1. **Ask for Linear issue ID**: Request the Linear issue ID from the user
+   - Format: `HEY-<number>` (e.g., `HEY-123`)
+   - This is MANDATORY - do not proceed without a valid issue ID
 
-2. **Alternative**: If no Linear issue, suggest these formats:
-   - For features: `feature/<name>` (e.g., `feature/dark-mode`)
-   - For bugfixes: `fix/<name>` (e.g., `fix/memory-leak`)
+2. **Ask for description**: Request a short description (2-3 words, kebab-case)
+   - Examples: `fix-audio`, `add-dark-mode`, `improve-performance`
 
-**Preferred format for Linear issues**: `HEY-<id>-<description>`
-- Example: `HEY-42-audio-improvements`
-- This enables automatic PR linking in Linear when using `/submit-pr`
+3. **Construct branch name**: `HEY-<number>-<description>`
+   - Example: `HEY-42-audio-improvements`
+
+**Why Linear issue is required**: This enables:
+- Automatic PR linking with Linear
+- Issue auto-closing when PR merges
+- Proper tracking of work items
 
 ### Step 2: Fetch latest main
 
@@ -85,6 +90,7 @@ Remind the user of the full workflow:
 
 ## Notes
 
+- **Linear issue required**: Every worktree must have a Linear issue ID (HEY-xxx)
 - Each worktree gets a unique dev port (1421-1429) so multiple instances can run simultaneously
 - Each worktree gets a unique recording hotkey to avoid conflicts
 - Data is stored in isolated directories (`~/.local/share/heycat-<id>/`)
@@ -113,3 +119,8 @@ When the branch name starts with a Linear issue ID (e.g., `HEY-123-fix-audio`):
 
 **"Working directory is not clean"**
 - Commit or stash your changes before creating a worktree.
+
+**"Branch name must start with a Linear issue ID"**
+- You need a Linear issue before creating a worktree
+- Create an issue in Linear first: `bun <plugin-path>/agile.ts issue create`
+- Then use the issue ID: `--issue HEY-123`

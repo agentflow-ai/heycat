@@ -6,22 +6,23 @@ WORKTREES_DIR="$MAIN_REPO/worktrees"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [OPTIONS] [branch-name]
+Usage: $(basename "$0") [OPTIONS]
 
 Start a Claude session in a worktree (create new or resume existing).
 
 Options:
-  -i, --issue ID       Create worktree for Linear issue (e.g., HEY-123)
+  -i, --issue ID       Linear issue ID (REQUIRED for new worktrees, e.g., HEY-123)
   -r, --resume NAME    Resume session in existing worktree
   -l, --list           List available worktrees
   -h, --help           Show this help
 
 Examples:
-  $(basename "$0") --issue HEY-123      # Create worktree for Linear issue (PREFERRED)
-  $(basename "$0") feature/audio        # Create new worktree, start Claude
-  $(basename "$0") --resume feature/audio  # Resume in existing worktree
+  $(basename "$0") --issue HEY-123      # Create worktree for Linear issue
+  $(basename "$0") --resume HEY-123-fix-audio  # Resume in existing worktree
   $(basename "$0") -l                   # List worktrees
-  $(basename "$0")                      # Interactive: Claude helps choose
+  $(basename "$0")                      # Interactive: prompts for Linear issue
+
+Note: All new worktrees require a Linear issue ID (format: HEY-xxx)
 EOF
 }
 
@@ -54,7 +55,6 @@ start_claude_in() {
 
 # Parse arguments
 RESUME=""
-BRANCH_NAME=""
 ISSUE_ID=""
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -63,9 +63,18 @@ while [[ $# -gt 0 ]]; do
     -l|--list) list_worktrees; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "Unknown option: $1"; usage; exit 1 ;;
-    *) BRANCH_NAME="$1"; shift ;;
+    *) echo "Error: Positional arguments not allowed. Use --issue HEY-xxx"; usage; exit 1 ;;
   esac
 done
+
+# Validate issue ID format if provided
+if [ -n "$ISSUE_ID" ]; then
+  if ! [[ "$ISSUE_ID" =~ ^HEY-[0-9]+$ ]]; then
+    echo "Error: Invalid issue ID format: $ISSUE_ID"
+    echo "Expected format: HEY-<number> (e.g., HEY-123)"
+    exit 1
+  fi
+fi
 
 # Show configuration
 echo ""
@@ -76,11 +85,8 @@ if [ -n "$RESUME" ]; then
 elif [ -n "$ISSUE_ID" ]; then
   echo "  Mode: Create from Linear issue"
   echo "  Issue: $ISSUE_ID"
-elif [ -n "$BRANCH_NAME" ]; then
-  echo "  Mode: Create new worktree"
-  echo "  Branch: $BRANCH_NAME"
 else
-  echo "  Mode: Interactive (will prompt for branch/issue)"
+  echo "  Mode: Interactive (will prompt for Linear issue ID)"
 fi
 echo ""
 
@@ -107,16 +113,17 @@ fi
 
 SCHEMA='{"type":"object","properties":{"worktreePath":{"type":"string","description":"Full absolute path to the created worktree"},"success":{"type":"boolean"},"error":{"type":"string"}},"required":["success","worktreePath"]}'
 
-# Build prompt with optional branch name or issue ID
+# Build prompt with issue ID context
 if [ -n "$ISSUE_ID" ]; then
   BRANCH_CONTEXT="Linear issue: $ISSUE_ID
 Ask me for a short description (2-3 words, kebab-case) to complete the branch name.
-Branch format should be: $ISSUE_ID-<description> (e.g., $ISSUE_ID-fix-audio)"
-elif [ -n "$BRANCH_NAME" ]; then
-  BRANCH_CONTEXT="Branch name: $BRANCH_NAME"
+Branch format will be: $ISSUE_ID-<description> (e.g., $ISSUE_ID-fix-audio)"
 else
-  BRANCH_CONTEXT="Ask me for a Linear issue ID (e.g., HEY-123) or branch name.
-PREFERRED: Use Linear issue format like HEY-123-description for automatic PR linking."
+  BRANCH_CONTEXT="No issue ID provided.
+Ask me for a Linear issue ID (format: HEY-xxx, e.g., HEY-123).
+Then ask for a short description (2-3 words, kebab-case).
+The branch format will be: HEY-<number>-<description> (e.g., HEY-123-fix-audio)
+IMPORTANT: A Linear issue ID is REQUIRED. Do not proceed without one."
 fi
 
 PROMPT="Create a git worktree for feature development.
@@ -126,13 +133,18 @@ $BRANCH_CONTEXT
 Steps:
 1. Verify we're in the main repo (not a worktree) - check if .git is a directory
 2. Check for clean working directory with git status --porcelain
-3. If no branch/issue provided, ask what to create (prefer Linear issue format: HEY-xxx-description)
-4. Fetch origin main
-5. Run: bun scripts/create-worktree.ts <branch-name>
-6. Run: cd <worktree-path> && bun install
+3. If no issue ID provided, ask for one (format: HEY-xxx) - this is REQUIRED
+4. Get a short description from the user (2-3 words, kebab-case)
+5. Construct branch name as: <issue-id>-<description>
+6. Validate that branch name matches HEY-\\d+-\\w+ pattern
+7. Fetch origin main
+8. Run: bun scripts/create-worktree.ts <branch-name>
+9. Run: cd <worktree-path> && bun install
 
-IMPORTANT: Return the full absolute path to the worktree in your response.
-NOTE: Branch names starting with HEY-xxx enable automatic PR linking in Linear."
+IMPORTANT:
+- A Linear issue ID (HEY-xxx) is MANDATORY
+- Do NOT accept branch names that don't start with HEY-<number>
+- Return the full absolute path to the worktree in your response."
 
 echo "Creating worktree via Claude..."
 echo "  Sending request to Claude CLI..."
