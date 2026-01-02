@@ -688,10 +688,17 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
+                // Only trigger shutdown when the main window is destroyed
+                // (not for splash or other transient windows)
+                if window.label() != "main" {
+                    debug!("Non-main window '{}' destroyed, skipping cleanup", window.label());
+                    return;
+                }
+
                 // Signal shutdown FIRST - prevents async tasks from pasting during cleanup
                 shutdown::signal_shutdown();
 
-                debug!("Window destroyed, cleaning up...");
+                debug!("Main window destroyed, cleaning up...");
 
                 // Get worktree context for cleanup
                 let worktree_context = window.app_handle()
