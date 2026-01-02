@@ -25,6 +25,20 @@ pub type WakeCallback = extern "C" fn();
 swift_rs::swift!(fn swift_register_wake_callback(callback: *const std::ffi::c_void));
 swift_rs::swift!(fn swift_unregister_wake_callback());
 
+// =============================================================================
+// Audio Device Change Notification
+// =============================================================================
+
+/// Type alias for the device change callback function pointer.
+/// The callback takes no arguments and returns void.
+/// Used by: restart-audio-engine-on-device-change spec
+#[allow(dead_code)]
+pub type DeviceChangeCallback = extern "C" fn();
+
+// Pass the callback as a raw pointer since swift_rs doesn't support fn pointers directly
+swift_rs::swift!(fn swift_register_device_change_callback(callback: *const std::ffi::c_void));
+swift_rs::swift!(fn swift_unregister_device_change_callback());
+
 // Audio device enumeration functions
 swift_rs::swift!(fn swift_refresh_audio_devices() -> i64);
 swift_rs::swift!(fn swift_get_device_name(index: i64) -> SRString);
@@ -299,6 +313,36 @@ pub fn register_wake_callback(callback: WakeCallback) {
 #[allow(dead_code)]
 pub fn unregister_wake_callback() {
     unsafe { swift_unregister_wake_callback() }
+}
+
+// =============================================================================
+// Audio Device Change Notification API
+// =============================================================================
+
+/// Register a callback to be invoked when audio devices connect/disconnect.
+/// The callback will be called when Core Audio detects device list changes.
+///
+/// # Arguments
+/// * `callback` - Function pointer to call on device change
+///
+/// # Safety
+/// The callback must be a valid function pointer that remains valid for the
+/// duration of the registration. Only one callback can be registered at a time;
+/// calling again replaces the previous callback.
+///
+/// Used by: restart-audio-engine-on-device-change spec
+#[allow(dead_code)]
+pub fn register_device_change_callback(callback: DeviceChangeCallback) {
+    unsafe { swift_register_device_change_callback(callback as *const std::ffi::c_void) }
+}
+
+/// Unregister the device change callback and stop listening for device changes.
+/// Safe to call even if no callback is registered.
+///
+/// Used by: restart-audio-engine-on-device-change spec
+#[allow(dead_code)]
+pub fn unregister_device_change_callback() {
+    unsafe { swift_unregister_device_change_callback() }
 }
 
 #[cfg(test)]

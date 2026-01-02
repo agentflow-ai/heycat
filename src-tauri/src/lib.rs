@@ -24,6 +24,7 @@ mod transcription;
 mod turso;
 mod util;
 mod voice_commands;
+mod device_handler;
 mod wake_handler;
 mod window_context;
 mod worktree;

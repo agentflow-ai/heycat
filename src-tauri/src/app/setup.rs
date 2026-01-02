@@ -10,6 +10,7 @@ use crate::app::platform::register_hotkey_with_release;
 use crate::app::state::HotkeyServiceHandle;
 use crate::audio;
 use crate::commands;
+use crate::device_handler;
 use crate::dictionary;
 use crate::hotkey;
 use crate::keyboard_capture;
@@ -363,6 +364,9 @@ fn setup_audio_engine(
     } else {
         crate::info!("Audio engine pre-initialized and running");
     }
+
+    // Initialize device change handler to restart audio engine when devices connect/disconnect
+    device_handler::init_device_change_handler();
 }
 
 /// Set up voice command executor and registry.
