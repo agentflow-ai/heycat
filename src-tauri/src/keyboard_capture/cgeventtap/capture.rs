@@ -312,10 +312,10 @@ fn run_cgeventtap_loop(
     // Run the loop until stopped
     // Use kCFRunLoopDefaultMode (not kCFRunLoopCommonModes which is for adding sources)
     while running.load(Ordering::SeqCst) {
-        // Run for 1 second at a time, checking if we should stop
+        // Run for 200ms at a time for responsive shutdown (was 1 second)
         CFRunLoop::run_in_mode(
             unsafe { kCFRunLoopDefaultMode },
-            Duration::from_secs(1),
+            Duration::from_millis(200),
             false,
         );
     }
