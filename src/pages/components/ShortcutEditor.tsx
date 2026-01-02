@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { X } from "lucide-react";
 import { Button } from "../../components/ui";
 import { useSettings } from "../../hooks/useSettings";
-import { formatBackendKeyForDisplay, formatBackendKeyForBackend, isValidHotkey } from "../../lib/formatting";
-import type { CapturedKeyEvent } from "../../lib/constants";
+import { useShortcutRecorder } from "../../hooks/useShortcutRecorder";
 
 export interface ShortcutEditorProps {
   open: boolean;
@@ -23,15 +21,21 @@ export function ShortcutEditor({
   onSave,
 }: ShortcutEditorProps) {
   const { settings } = useSettings();
-  const [recording, setRecording] = useState(false);
-  const [recordedShortcut, setRecordedShortcut] = useState<{
-    display: string;
-    backend: string;
-  } | null>(null);
   const [shortcutSuspended, setShortcutSuspended] = useState(false);
-  const [permissionError, setPermissionError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  // Use the shortcut recorder hook
+  const {
+    isRecording: recording,
+    recordedShortcut,
+    permissionError,
+    startRecording,
+    stopRecording,
+    clearRecordedShortcut,
+    openAccessibilityPreferences,
+  } = useShortcutRecorder({
+    distinguishLeftRight: settings.shortcuts?.distinguishLeftRight ?? false,
+  });
 
   // Suspend global shortcut when entering recording mode
   const suspendShortcut = useCallback(async () => {
@@ -55,108 +59,13 @@ export function ShortcutEditor({
     }
   }, [shortcutSuspended]);
 
-  // Start backend keyboard capture
-  const startCapture = useCallback(async () => {
-    try {
-      // Start the backend keyboard capture
-      await invoke("start_shortcut_recording");
-      console.log("[ShortcutEditor] Backend keyboard capture started");
-      setPermissionError(null);
-    } catch (error) {
-      console.error("Failed to start keyboard capture:", error);
-      const errorMessage = String(error);
-
-      // Check if this is a permission error
-      if (errorMessage.includes("Accessibility permission")) {
-        setPermissionError(errorMessage);
-      }
-
-      setRecording(false);
-    }
-  }, []);
-
-  // Stop backend keyboard capture
-  const stopCapture = useCallback(async () => {
-    try {
-      await invoke("stop_shortcut_recording");
-      console.log("[ShortcutEditor] Backend keyboard capture stopped");
-    } catch (error) {
-      console.error("Failed to stop keyboard capture:", error);
-    }
-  }, []);
-
-  // Open System Preferences to Accessibility
-  const openAccessibilityPreferences = useCallback(async () => {
-    try {
-      await invoke("open_accessibility_preferences");
-    } catch (error) {
-      console.error("Failed to open preferences:", error);
-    }
-  }, []);
-
   // Reset state when modal opens
   useEffect(() => {
     if (open) {
-      setRecording(false);
-      setRecordedShortcut(null);
+      clearRecordedShortcut();
       setShortcutSuspended(false);
-      setPermissionError(null);
     }
-  }, [open]);
-
-  // Handle backend key events when recording
-  useEffect(() => {
-    if (!recording) {
-      // Clean up listener when not recording
-      if (unlistenRef.current) {
-        unlistenRef.current();
-        unlistenRef.current = null;
-      }
-      return;
-    }
-
-    // Start backend capture and listen for events
-    let isMounted = true;
-
-    const setupCapture = async () => {
-      // Start backend capture
-      await startCapture();
-
-      // Listen for captured key events
-      const unlisten = await listen<CapturedKeyEvent>("shortcut_key_captured", (event) => {
-        if (!isMounted) return;
-
-        const keyEvent = event.payload;
-        console.log("[ShortcutEditor] Key captured from backend:", keyEvent);
-
-        // Process both press and release events - isValidHotkey handles the logic
-        // (release events are needed for modifier-only shortcuts)
-        if (isValidHotkey(keyEvent)) {
-          const distinguishLeftRight = settings.shortcuts?.distinguishLeftRight ?? false;
-          const display = formatBackendKeyForDisplay(keyEvent, distinguishLeftRight);
-          const backend = formatBackendKeyForBackend(keyEvent);
-          console.log("[ShortcutEditor] Recording shortcut - display:", display, "backend:", backend);
-          setRecordedShortcut({ display, backend });
-          setRecording(false);
-          // Stop capture after recording
-          stopCapture();
-        }
-      });
-
-      unlistenRef.current = unlisten;
-    };
-
-    setupCapture();
-
-    return () => {
-      isMounted = false;
-      if (unlistenRef.current) {
-        unlistenRef.current();
-        unlistenRef.current = null;
-      }
-      stopCapture();
-    };
-  }, [recording, startCapture, stopCapture, settings]);
+  }, [open, clearRecordedShortcut]);
 
   // Handle click outside to close
   useEffect(() => {
@@ -164,7 +73,7 @@ export function ShortcutEditor({
 
     const handleClickOutside = (e: MouseEvent) => {
       if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
-        stopCapture();
+        stopRecording();
         resumeShortcut();
         onOpenChange(false);
       }
@@ -172,7 +81,7 @@ export function ShortcutEditor({
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open, onOpenChange, resumeShortcut, stopCapture]);
+  }, [open, onOpenChange, resumeShortcut, stopRecording]);
 
   // Handle Escape to close (when not recording) - still use JS event for this
   useEffect(() => {
@@ -180,7 +89,7 @@ export function ShortcutEditor({
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !recording) {
-        stopCapture();
+        stopRecording();
         resumeShortcut();
         onOpenChange(false);
       }
@@ -188,7 +97,7 @@ export function ShortcutEditor({
 
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [open, recording, onOpenChange, resumeShortcut, stopCapture]);
+  }, [open, recording, onOpenChange, resumeShortcut, stopRecording]);
 
   if (!open) return null;
 
@@ -221,7 +130,7 @@ export function ShortcutEditor({
         <button
           type="button"
           onClick={() => {
-            stopCapture();
+            stopRecording();
             resumeShortcut();
             onOpenChange(false);
           }}
@@ -301,8 +210,7 @@ export function ShortcutEditor({
             onClick={async () => {
               // Suspend global shortcut before entering recording mode
               await suspendShortcut();
-              setRecording(true);
-              setRecordedShortcut(null);
+              await startRecording();
             }}
             disabled={recording}
           >
@@ -311,7 +219,7 @@ export function ShortcutEditor({
 
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => {
-              stopCapture();
+              stopRecording();
               resumeShortcut();
               onOpenChange(false);
             }}>

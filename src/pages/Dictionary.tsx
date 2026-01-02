@@ -5,6 +5,8 @@ import type { MultiSelectOption } from "../components/ui";
 import { useToast } from "../components/overlays";
 import { useDictionary } from "../hooks/useDictionary";
 import { useWindowContext } from "../hooks/useWindowContext";
+import { useSearch } from "../hooks/useSearch";
+import { useDeleteConfirmation } from "../hooks/useDeleteConfirmation";
 import type { DictionaryEntry } from "../types/dictionary";
 import type { WindowContext } from "../types/windowContext";
 import { validateSuffix } from "../lib/validation";
@@ -580,9 +582,7 @@ export function Dictionary(_props: DictionaryProps) {
   const { entries, addEntry, updateEntry, deleteEntry } = useDictionary();
   const { contexts, updateContext } = useWindowContext();
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState({
     trigger: "",
     expansion: "",
@@ -597,6 +597,39 @@ export function Dictionary(_props: DictionaryProps) {
 
   const entryList = Array.isArray(entries.data) ? entries.data : [];
   const contextList = Array.isArray(contexts.data) ? contexts.data : [];
+
+  // Use the search hook for filtering entries
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredItems: filteredEntries,
+  } = useSearch({
+    items: entryList,
+    getSearchableText: (entry) => `${entry.trigger} ${entry.expansion}`,
+  });
+
+  // Use the delete confirmation hook
+  const deletion = useDeleteConfirmation({
+    onConfirm: async (id) => {
+      const entry = entryList.find((e) => e.id === id);
+      try {
+        await deleteEntry.mutateAsync({ id });
+        toast({
+          type: "success",
+          title: "Entry deleted",
+          description: entry
+            ? `"${entry.trigger}" has been removed.`
+            : "Entry removed.",
+        });
+      } catch (e) {
+        toast({
+          type: "error",
+          title: "Failed to delete entry",
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+  });
 
   // Reverse lookup: entry ID -> contexts that include it
   const contextsByEntryId = useMemo(() => {
@@ -628,16 +661,6 @@ export function Dictionary(_props: DictionaryProps) {
     () => entryList.map((e) => e.trigger.toLowerCase()),
     [entryList]
   );
-
-  const filteredEntries = useMemo(() => {
-    if (!searchQuery.trim()) return entryList;
-    const query = searchQuery.toLowerCase();
-    return entryList.filter(
-      (entry) =>
-        entry.trigger.toLowerCase().includes(query) ||
-        entry.expansion.toLowerCase().includes(query)
-    );
-  }, [entryList, searchQuery]);
 
   const handleAddEntry = useCallback(
     async (
@@ -830,29 +853,6 @@ export function Dictionary(_props: DictionaryProps) {
     setEditSuffixError(null);
   }, []);
 
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deleteConfirmId) return;
-
-    const entry = entryList.find((e) => e.id === deleteConfirmId);
-    try {
-      await deleteEntry.mutateAsync({ id: deleteConfirmId });
-      toast({
-        type: "success",
-        title: "Entry deleted",
-        description: entry
-          ? `"${entry.trigger}" has been removed.`
-          : "Entry removed.",
-      });
-      setDeleteConfirmId(null);
-    } catch (e) {
-      toast({
-        type: "error",
-        title: "Failed to delete entry",
-        description: e instanceof Error ? e.message : String(e),
-      });
-    }
-  }, [deleteConfirmId, entryList, deleteEntry, toast]);
-
   const handleFocusAdd = useCallback(() => {
     // Focus the trigger input in the add form
     const triggerInput = document.querySelector(
@@ -943,9 +943,9 @@ export function Dictionary(_props: DictionaryProps) {
               entry={entry}
               assignedContexts={contextsByEntryId.get(entry.id) ?? []}
               onEdit={handleStartEdit}
-              onDelete={(id) => setDeleteConfirmId(id)}
+              onDelete={deletion.requestDelete}
               isEditing={editingId === entry.id}
-              isDeleting={deleteConfirmId === entry.id}
+              isDeleting={deletion.isConfirming(entry.id)}
               editValues={editValues}
               editError={editError}
               editSuffixError={editSuffixError}
@@ -953,8 +953,8 @@ export function Dictionary(_props: DictionaryProps) {
               onEditChange={handleEditChange}
               onSaveEdit={handleSaveEdit}
               onCancelEdit={handleCancelEdit}
-              onConfirmDelete={handleConfirmDelete}
-              onCancelDelete={() => setDeleteConfirmId(null)}
+              onConfirmDelete={deletion.confirmDelete}
+              onCancelDelete={deletion.cancelDelete}
             />
           ))}
         </div>

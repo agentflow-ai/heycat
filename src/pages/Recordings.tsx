@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../lib/queryKeys";
@@ -15,13 +15,12 @@ import {
 import { useToast } from "../components/overlays";
 import { useRecording } from "../hooks/useRecording";
 import { useAudioPlayback } from "../hooks/useAudioPlayback";
+import { useRecordingsFilter } from "../hooks/useRecordingsFilter";
+import type { FilterOption, SortOption } from "../hooks/useRecordingsFilter";
 import { RecordingItem, type RecordingInfo, type PaginatedRecordingsResponse } from "./components/RecordingItem";
 import { RecordingsEmptyState } from "./components/RecordingsEmptyState";
 
 const PAGE_SIZE = 20;
-
-export type FilterOption = "all" | "transcribed" | "pending";
-export type SortOption = "newest" | "oldest" | "longest" | "shortest";
 
 export interface RecordingsProps {
   onNavigate?: (page: string) => void;
@@ -77,9 +76,18 @@ export function Recordings(_props: RecordingsProps) {
 
   const error = queryError ? (queryError instanceof Error ? queryError.message : String(queryError)) : null;
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterOption, setFilterOption] = useState<FilterOption>("all");
-  const [sortOption, setSortOption] = useState<SortOption>("newest");
+  // Use the recordings filter hook for search, filter, and sort
+  const {
+    searchQuery,
+    setSearchQuery,
+    filterOption,
+    setFilterOption,
+    sortOption,
+    setSortOption,
+    filteredRecordings,
+    hasActiveFilters,
+    clearFilters,
+  } = useRecordingsFilter({ recordings });
 
   // Expanded item state
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
@@ -89,47 +97,6 @@ export function Recordings(_props: RecordingsProps) {
 
   // Transcribing state
   const [transcribingPath, setTranscribingPath] = useState<string | null>(null);
-
-  
-  // Filter and sort recordings
-  const filteredRecordings = useMemo(() => {
-    let result = [...recordings];
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (rec) =>
-          rec.filename.toLowerCase().includes(query) ||
-          rec.transcription?.toLowerCase().includes(query)
-      );
-    }
-
-    // Apply status filter
-    if (filterOption === "transcribed") {
-      result = result.filter((rec) => Boolean(rec.transcription));
-    } else if (filterOption === "pending") {
-      result = result.filter((rec) => !rec.transcription);
-    }
-
-    // Apply sort
-    result.sort((a, b) => {
-      switch (sortOption) {
-        case "newest":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case "oldest":
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        case "longest":
-          return b.duration_secs - a.duration_secs;
-        case "shortest":
-          return a.duration_secs - b.duration_secs;
-        default:
-          return 0;
-      }
-    });
-
-    return result;
-  }, [recordings, searchQuery, filterOption, sortOption]);
 
   const handleToggleExpand = (filePath: string) => {
     setExpandedPath((current) => (current === filePath ? null : filePath));
@@ -273,8 +240,6 @@ export function Recordings(_props: RecordingsProps) {
     );
   }
 
-  const hasFiltersActive = searchQuery.trim() !== "" || filterOption !== "all";
-
   return (
     <div className="p-6 space-y-6">
       {/* Page Header */}
@@ -339,13 +304,10 @@ export function Recordings(_props: RecordingsProps) {
             <p className="text-text-secondary">
               No recordings match your search
             </p>
-            {hasFiltersActive && (
+            {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearchQuery("");
-                  setFilterOption("all");
-                }}
+                onClick={clearFilters}
                 className="mt-2 text-sm text-heycat-orange hover:text-heycat-orange-light"
               >
                 Clear filters
