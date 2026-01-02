@@ -1,24 +1,18 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "../lib/queryKeys";
+import { queryKeys } from "../../lib/queryKeys";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  Button,
-  Card,
-  CardContent,
-  Input,
-  Select,
-  SelectItem,
-} from "../components/ui";
-import { useToast } from "../components/overlays";
-import { useRecording } from "../hooks/useRecording";
-import { useAudioPlayback } from "../hooks/useAudioPlayback";
-import { useRecordingsFilter } from "../hooks/useRecordingsFilter";
-import type { FilterOption, SortOption } from "../hooks/useRecordingsFilter";
-import { RecordingItem, type RecordingInfo, type PaginatedRecordingsResponse } from "./components/RecordingItem";
-import { RecordingsEmptyState } from "./components/RecordingsEmptyState";
+import { Button, Card, CardContent } from "../../components/ui";
+import { useToast } from "../../components/overlays";
+import { useRecording } from "../../hooks/useRecording";
+import { useSettings } from "../../hooks/useSettings";
+import { useAudioPlayback } from "../../hooks/useAudioPlayback";
+import { useRecordingsFilter } from "../../hooks/useRecordingsFilter";
+import { RecordingItem, type RecordingInfo, type PaginatedRecordingsResponse } from "../components/RecordingItem";
+import { RecordingsEmptyState } from "../components/RecordingsEmptyState";
+import { RecordingsFilters } from "./RecordingsFilters";
+import { RecordingsPagination } from "./RecordingsPagination";
 
 const PAGE_SIZE = 20;
 
@@ -26,6 +20,10 @@ export interface RecordingsProps {
   onNavigate?: (page: string) => void;
 }
 
+/**
+ * Recordings page component.
+ * Lists recordings with search, filter, sort, and pagination.
+ */
 export function Recordings(_props: RecordingsProps) {
   const { toast } = useToast();
   const { isRecording } = useRecording();
@@ -33,7 +31,13 @@ export function Recordings(_props: RecordingsProps) {
   const queryClient = useQueryClient();
 
   // Audio playback hook
-  const { toggle: togglePlayback, stop: stopPlayback, isPlaying: isAudioPlaying, currentFilePath: playingFilePath, error: playbackError } = useAudioPlayback();
+  const {
+    toggle: togglePlayback,
+    stop: stopPlayback,
+    isPlaying: isAudioPlaying,
+    currentFilePath: playingFilePath,
+    error: playbackError,
+  } = useAudioPlayback();
 
   // Stop audio playback when a new recording starts
   useEffect(() => {
@@ -58,7 +62,7 @@ export function Recordings(_props: RecordingsProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const offset = currentPage * PAGE_SIZE;
 
-  // Fetch recordings via React Query - auto-updates via event bridge
+  // Fetch recordings via React Query
   const {
     data: paginatedResponse,
     isLoading: loading,
@@ -66,7 +70,11 @@ export function Recordings(_props: RecordingsProps) {
     refetch,
   } = useQuery({
     queryKey: queryKeys.tauri.listRecordings(PAGE_SIZE, offset),
-    queryFn: () => invoke<PaginatedRecordingsResponse>("list_recordings", { limit: PAGE_SIZE, offset }),
+    queryFn: () =>
+      invoke<PaginatedRecordingsResponse>("list_recordings", {
+        limit: PAGE_SIZE,
+        offset,
+      }),
   });
 
   const recordings = paginatedResponse?.recordings ?? [];
@@ -74,7 +82,11 @@ export function Recordings(_props: RecordingsProps) {
   const hasMore = paginatedResponse?.has_more ?? false;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
-  const error = queryError ? (queryError instanceof Error ? queryError.message : String(queryError)) : null;
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : String(queryError)
+    : null;
 
   // Use the recordings filter hook for search, filter, and sort
   const {
@@ -110,8 +122,9 @@ export function Recordings(_props: RecordingsProps) {
     setTranscribingPath(filePath);
     try {
       await invoke<string>("transcribe_file", { filePath });
-      // Invalidate all pages to refetch with updated transcription
-      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listRecordings() });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.tauri.listRecordings(),
+      });
       toast({
         type: "success",
         title: "Transcription complete",
@@ -163,8 +176,9 @@ export function Recordings(_props: RecordingsProps) {
     const recording = recordings.find((r) => r.file_path === filePath);
     try {
       await invoke("delete_recording", { filePath });
-      // Invalidate all pages to refetch without the deleted recording
-      await queryClient.invalidateQueries({ queryKey: queryKeys.tauri.listRecordings() });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.tauri.listRecordings(),
+      });
       setDeleteConfirmPath(null);
       if (expandedPath === filePath) {
         setExpandedPath(null);
@@ -172,7 +186,9 @@ export function Recordings(_props: RecordingsProps) {
       toast({
         type: "success",
         title: "Recording deleted",
-        description: recording ? `"${recording.filename}" has been removed.` : "Recording removed.",
+        description: recording
+          ? `"${recording.filename}" has been removed.`
+          : "Recording removed.",
       });
     } catch (e) {
       toast({
@@ -244,56 +260,21 @@ export function Recordings(_props: RecordingsProps) {
     <div className="p-6 space-y-6">
       {/* Page Header */}
       <header>
-        <h1 className="text-2xl font-semibold text-text-primary">
-          Recordings
-        </h1>
+        <h1 className="text-2xl font-semibold text-text-primary">Recordings</h1>
         <p className="text-text-secondary mt-1">
           Manage your voice recordings and transcriptions.
         </p>
       </header>
 
       {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary" />
-          <Input
-            type="text"
-            placeholder="Search recordings..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-            aria-label="Search recordings"
-          />
-        </div>
-
-        {/* Filter Dropdown */}
-        <div className="w-full sm:w-40">
-          <Select
-            value={filterOption}
-            onValueChange={(value) => setFilterOption(value as FilterOption)}
-            placeholder="Filter"
-          >
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="transcribed">Transcribed</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-          </Select>
-        </div>
-
-        {/* Sort Dropdown */}
-        <div className="w-full sm:w-40">
-          <Select
-            value={sortOption}
-            onValueChange={(value) => setSortOption(value as SortOption)}
-            placeholder="Sort by"
-          >
-            <SelectItem value="newest">Newest</SelectItem>
-            <SelectItem value="oldest">Oldest</SelectItem>
-            <SelectItem value="longest">Longest</SelectItem>
-            <SelectItem value="shortest">Shortest</SelectItem>
-          </Select>
-        </div>
-      </div>
+      <RecordingsFilters
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        filterOption={filterOption}
+        onFilterChange={setFilterOption}
+        sortOption={sortOption}
+        onSortChange={setSortOption}
+      />
 
       {/* Recording List */}
       {totalCount === 0 ? (
@@ -301,9 +282,7 @@ export function Recordings(_props: RecordingsProps) {
       ) : filteredRecordings.length === 0 ? (
         <Card className="text-center py-8">
           <CardContent>
-            <p className="text-text-secondary">
-              No recordings match your search
-            </p>
+            <p className="text-text-secondary">No recordings match your search</p>
             {hasActiveFilters && (
               <button
                 type="button"
@@ -340,36 +319,16 @@ export function Recordings(_props: RecordingsProps) {
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4">
-              <p className="text-sm text-text-secondary">
-                Showing {offset + 1}-{Math.min(offset + recordings.length, totalCount)} of {totalCount} recordings
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                  disabled={currentPage === 0}
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <span className="text-sm text-text-secondary px-2">
-                  Page {currentPage + 1} of {totalPages}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => p + 1)}
-                  disabled={!hasMore}
-                  aria-label="Next page"
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+            <RecordingsPagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              pageSize={PAGE_SIZE}
+              recordingsOnPage={recordings.length}
+              hasMore={hasMore}
+              onPreviousPage={() => setCurrentPage((p) => Math.max(0, p - 1))}
+              onNextPage={() => setCurrentPage((p) => p + 1)}
+            />
           )}
         </>
       )}
@@ -378,5 +337,5 @@ export function Recordings(_props: RecordingsProps) {
 }
 
 // Re-export for use by other components
-export { type RecordingInfo, type PaginatedRecordingsResponse } from "./components/RecordingItem";
-export { formatDuration, formatDate, formatFileSize } from "../lib/formatting";
+export { type RecordingInfo, type PaginatedRecordingsResponse } from "../components/RecordingItem";
+export { formatDuration, formatDate, formatFileSize } from "../../lib/formatting";
