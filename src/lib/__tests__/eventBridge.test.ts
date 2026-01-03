@@ -115,7 +115,7 @@ describe("eventBridge", () => {
       expect(mockStore.transcriptionStarted).toHaveBeenCalled();
     });
 
-    it("transcription_completed updates store and invalidates listRecordings query", async () => {
+    it("transcription_completed updates store and invalidates listRecordingsAll query", async () => {
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
       await setupEventBridge(queryClient, mockStore);
 
@@ -129,7 +129,7 @@ describe("eventBridge", () => {
         1234
       );
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: queryKeys.tauri.listRecordings(),
+        queryKey: queryKeys.tauri.listRecordingsAll,
       });
     });
 

@@ -11,6 +11,9 @@
  */
 export const queryKeys = {
   tauri: {
+    /** Base query key for list_recordings - used for cache invalidation */
+    listRecordingsAll: ["tauri", "list_recordings"] as const,
+
     /** Query key factory for list_recordings command with pagination */
     listRecordings: (limit?: number, offset?: number) =>
       ["tauri", "list_recordings", { limit, offset }] as const,

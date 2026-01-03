@@ -206,7 +206,7 @@ export async function setupEventBridge(
   unlistenFns.push(
     await listen<RecordingsUpdatedPayload>(eventNames.RECORDINGS_UPDATED, () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.listRecordings(),
+        queryKey: queryKeys.tauri.listRecordingsAll,
       });
     })
   );
@@ -216,7 +216,7 @@ export async function setupEventBridge(
   unlistenFns.push(
     await listen<TranscriptionsUpdatedPayload>(eventNames.TRANSCRIPTIONS_UPDATED, () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.listRecordings(),
+        queryKey: queryKeys.tauri.listRecordingsAll,
       });
     })
   );
@@ -244,7 +244,7 @@ export async function setupEventBridge(
       store.transcriptionCompleted(event.payload.text, event.payload.duration_ms);
       // Also invalidate all paginated recordings lists since transcription produces a recording
       queryClient.invalidateQueries({
-        queryKey: queryKeys.tauri.listRecordings(),
+        queryKey: queryKeys.tauri.listRecordingsAll,
       });
     })
   );
