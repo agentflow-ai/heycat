@@ -22,7 +22,8 @@ static DEVICE_HANDLER: OnceLock<DeviceHandlerState> = OnceLock::new();
 static LAST_USER_DEVICE_CHANGE: AtomicU64 = AtomicU64::new(0);
 
 /// Duration to suppress auto-restart after user-initiated device change.
-const SUPPRESSION_WINDOW_MS: u64 = 500;
+/// Extended to 1000ms to account for slower device switches and Core Audio propagation.
+const SUPPRESSION_WINDOW_MS: u64 = 1000;
 
 /// Delay before executing auto-restart to debounce rapid device changes.
 const DEBOUNCE_DELAY_MS: u64 = 300;
@@ -144,11 +145,24 @@ extern "C" fn on_device_change() {
 ///
 /// This ensures a fresh hardware connection after device changes.
 /// The sequence:
-/// 1. Check if audio engine is running
-/// 2. Stop the audio engine
-/// 3. Wait 200ms for Core Audio cleanup
-/// 4. Start the audio engine with default device
+/// 1. Check if audio capture is in progress (skip if so - don't interrupt recording)
+/// 2. Check if audio engine is running
+/// 3. Stop the audio engine
+/// 4. Wait 200ms for Core Audio cleanup
+/// 5. Start the audio engine with default device
 async fn restart_audio_engine_async() {
+    // Check if audio CAPTURE is in progress - if so, skip auto-restart to preserve recording
+    // The Swift side will handle device switching while preserving capture state
+    let is_capturing =
+        tauri::async_runtime::spawn_blocking(crate::swift::audio_engine_is_capturing)
+            .await
+            .unwrap_or(false);
+
+    if is_capturing {
+        crate::info!("Audio capture in progress - skipping auto-restart to preserve recording");
+        return;
+    }
+
     // Check if audio engine is running
     let audio_was_running =
         tauri::async_runtime::spawn_blocking(crate::swift::audio_engine_is_running)

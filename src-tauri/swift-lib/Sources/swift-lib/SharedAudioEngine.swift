@@ -140,7 +140,8 @@ private class SharedAudioEngineManager {
     }
 
     /// Internal stop - must be called on audioQueue
-    private func stopEngineInternal() {
+    /// - Parameter preserveCaptureFile: If true, don't clear capture state (used during device switch while recording)
+    private func stopEngineInternal(preserveCaptureFile: Bool = false) {
         guard isRunning else { return }
 
         audioEngine?.inputNode.removeTap(onBus: 0)
@@ -148,13 +149,17 @@ private class SharedAudioEngineManager {
         audioEngine = nil
 
         isRunning = false
-        isCapturing = false
 
-        // Clean up capture file if still open
-        captureFile = nil
-        if let url = captureFileURL {
-            try? FileManager.default.removeItem(at: url)
-            captureFileURL = nil
+        // Only clear capture state if not preserving (e.g., during device switch while recording)
+        if !preserveCaptureFile {
+            isCapturing = false
+
+            // Clean up capture file if still open
+            captureFile = nil
+            if let url = captureFileURL {
+                try? FileManager.default.removeItem(at: url)
+                captureFileURL = nil
+            }
         }
 
         stateLock.lock()
@@ -163,9 +168,13 @@ private class SharedAudioEngineManager {
     }
 
     /// Switch to a different audio device while engine is running.
+    /// Preserves capture state if recording is in progress.
     private func switchDevice(deviceName: String?) -> Bool {
-        // Stop current engine
-        stopEngineInternal()
+        // Save capture state - if we're capturing, we need to preserve the file
+        let wasCapturing = isCapturing
+
+        // Stop current engine, preserving capture file if we were recording
+        stopEngineInternal(preserveCaptureFile: wasCapturing)
 
         // Small delay for Core Audio cleanup
         Thread.sleep(forTimeInterval: 0.15)
